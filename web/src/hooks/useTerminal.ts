@@ -28,8 +28,8 @@ export function useTerminal(options: UseTerminalOptions) {
         background: '#1a1b26',
         foreground: '#a9b1d6',
         cursor: '#c0caf5',
-        selectionBackground: 'rgba(122, 162, 247, 0.35)',
-        selectionForeground: '#c0caf5',
+        selectionBackground: '#7aa2f7',
+        selectionForeground: '#15161e',
         black: '#15161e',
         red: '#f7768e',
         green: '#9ece6a',
@@ -61,6 +61,14 @@ export function useTerminal(options: UseTerminalOptions) {
     terminal.open(containerRef.current)
     fitAddon.fit()
 
+    // Wait for fonts to finish loading before the final fit. xterm.js measures
+    // character size immediately; if the real font hasn't loaded yet, the row
+    // height is wrong and the terminal can render with a one-line offset.
+    const fitTimeout = setTimeout(() => fitAddon.fit(), 100)
+    document.fonts.ready.then(() => {
+      fitAddon.fit()
+    })
+
     terminalRef.current = terminal
     fitAddonRef.current = fitAddon
 
@@ -73,6 +81,7 @@ export function useTerminal(options: UseTerminalOptions) {
     window.addEventListener('resize', handleResize)
 
     return () => {
+      clearTimeout(fitTimeout)
       window.removeEventListener('resize', handleResize)
       terminal.dispose()
       terminalRef.current = null

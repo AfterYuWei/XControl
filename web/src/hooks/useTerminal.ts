@@ -15,7 +15,10 @@ export function useTerminal(options: UseTerminalOptions) {
   const terminalRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const onDataRef = useRef(onData)
-  onDataRef.current = onData
+
+  useEffect(() => {
+    onDataRef.current = onData
+  })
 
   // Create terminal once per container
   useEffect(() => {
@@ -75,6 +78,29 @@ export function useTerminal(options: UseTerminalOptions) {
     // Use ref so the callback is always current without re-creating the terminal
     terminal.onData((data) => onDataRef.current?.(data))
 
+    // Left-click copies the current selection, right-click pastes from clipboard.
+    const terminalElement = terminal.element ?? containerRef.current
+    const handleMouseUp = (event: MouseEvent) => {
+      if (event.button !== 0) return
+      if (terminal.hasSelection()) {
+        const selected = terminal.getSelection()
+        if (selected) {
+          navigator.clipboard.writeText(selected).catch(() => {})
+          terminal.clearSelection()
+        }
+      }
+    }
+    const handleContextMenu = (event: MouseEvent) => {
+      event.preventDefault()
+      navigator.clipboard.readText().then((text) => {
+        if (text) {
+          terminal.input(text)
+        }
+      }).catch(() => {})
+    }
+    terminalElement?.addEventListener('mouseup', handleMouseUp)
+    terminalElement?.addEventListener('contextmenu', handleContextMenu)
+
     const handleResize = () => {
       fitAddon.fit()
     }
@@ -83,6 +109,8 @@ export function useTerminal(options: UseTerminalOptions) {
     return () => {
       clearTimeout(fitTimeout)
       window.removeEventListener('resize', handleResize)
+      terminalElement?.removeEventListener('mouseup', handleMouseUp)
+      terminalElement?.removeEventListener('contextmenu', handleContextMenu)
       terminal.dispose()
       terminalRef.current = null
       fitAddonRef.current = null
@@ -125,7 +153,6 @@ export function useTerminal(options: UseTerminalOptions) {
   }, [])
 
   return {
-    terminal: terminalRef.current,
     write,
     writeln,
     clear,

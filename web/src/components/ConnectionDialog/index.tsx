@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { X, Loader2, CheckCircle2, XCircle } from 'lucide-react'
+import { Loader2, CheckCircle2, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 
@@ -33,85 +33,18 @@ export function ConnectionDialog({
   errorMessage,
   onCancel,
 }: ConnectionDialogProps) {
-  const [steps, setSteps] = useState<ConnectionStep[]>([
-    { id: 'init', label: '初始化安全通道', status: 'pending' },
-    { id: 'resolve', label: `解析主机 ${host}`, status: 'pending' },
-    { id: 'connect', label: `连接到 ${host}:${port}`, status: 'pending' },
-    { id: 'auth', label: 'SSH 认证', status: 'pending' },
-    { id: 'shell', label: '启动 Shell', status: 'pending' },
-  ])
-
   const [elapsed, setElapsed] = useState(0)
 
   useEffect(() => {
-    if (!open) return
-    setElapsed(0)
-    setSteps([
-      { id: 'init', label: '初始化安全通道', status: 'active' },
-      { id: 'resolve', label: `解析主机 ${host}`, status: 'pending' },
-      { id: 'connect', label: `连接到 ${host}:${port}`, status: 'pending' },
-      { id: 'auth', label: 'SSH 认证', status: 'pending' },
-      { id: 'shell', label: '启动 Shell', status: 'pending' },
-    ])
-
     const timer = setInterval(() => setElapsed((e) => e + 1), 1000)
     return () => clearInterval(timer)
-  }, [open, host, port])
+  }, [])
 
   useEffect(() => {
-    if (status === 'connecting') {
-      setSteps((prev) =>
-        prev.map((step, i) => {
-          if (i === 0) return { ...step, status: 'done' }
-          if (i === 1) return { ...step, status: 'active' }
-          return step
-        })
-      )
-
-      const t1 = setTimeout(() => {
-        setSteps((prev) =>
-          prev.map((step, i) => {
-            if (i === 1) return { ...step, status: 'done' }
-            if (i === 2) return { ...step, status: 'active' }
-            return step
-          })
-        )
-      }, 500)
-
-      const t2 = setTimeout(() => {
-        setSteps((prev) =>
-          prev.map((step, i) => {
-            if (i === 2) return { ...step, status: 'done' }
-            if (i === 3) return { ...step, status: 'active' }
-            return step
-          })
-        )
-      }, 1000)
-
-      return () => {
-        clearTimeout(t1)
-        clearTimeout(t2)
-      }
-    }
-
-    if (status === 'connected') {
-      setSteps((prev) =>
-        prev.map((step) => ({ ...step, status: 'done' }))
-      )
-      setTimeout(() => onOpenChange(false), 500)
-    }
-
-    if (status === 'error') {
-      setSteps((prev) =>
-        prev.map((step, i) => {
-          if (step.status === 'active') {
-            return { ...step, status: 'error', detail: errorMessage }
-          }
-          return step
-        })
-      )
-    }
-  }, [status, errorMessage, onOpenChange])
+    if (status !== 'connected') return
+    const timer = setTimeout(() => onOpenChange(false), 500)
+    return () => clearTimeout(timer)
+  }, [status, onOpenChange])
 
   const getStatusIcon = (stepStatus: ConnectionStep['status']) => {
     switch (stepStatus) {
@@ -130,6 +63,45 @@ export function ConnectionDialog({
 
   const timeout = 120
   const remaining = Math.max(0, timeout - elapsed)
+
+  const steps: ConnectionStep[] = (() => {
+    const baseSteps: ConnectionStep[] = [
+      { id: 'init', label: '初始化安全通道', status: 'pending' },
+      { id: 'resolve', label: `解析主机 ${host}`, status: 'pending' },
+      { id: 'connect', label: `连接到 ${host}:${port}`, status: 'pending' },
+      { id: 'auth', label: 'SSH 认证', status: 'pending' },
+      { id: 'shell', label: '启动 Shell', status: 'pending' },
+    ]
+
+    if (status === 'connected') {
+      return baseSteps.map((step) => ({ ...step, status: 'done' as const }))
+    }
+
+    if (status === 'error') {
+      const activeIndex = elapsed >= 2 ? 3 : elapsed >= 1 ? 2 : 1
+      return baseSteps.map((step, i) => {
+        if (i < activeIndex) return { ...step, status: 'done' as const }
+        if (i === activeIndex) return { ...step, status: 'error' as const, detail: errorMessage }
+        return step
+      })
+    }
+
+    // status === 'connecting'
+    if (elapsed < 1) {
+      baseSteps[0].status = 'done'
+      baseSteps[1].status = 'active'
+    } else if (elapsed < 2) {
+      baseSteps[0].status = 'done'
+      baseSteps[1].status = 'done'
+      baseSteps[2].status = 'active'
+    } else {
+      baseSteps[0].status = 'done'
+      baseSteps[1].status = 'done'
+      baseSteps[2].status = 'done'
+      baseSteps[3].status = 'active'
+    }
+    return baseSteps
+  })()
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">

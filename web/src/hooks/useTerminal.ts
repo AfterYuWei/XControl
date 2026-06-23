@@ -78,26 +78,55 @@ export function useTerminal(options: UseTerminalOptions) {
     // Use ref so the callback is always current without re-creating the terminal
     terminal.onData((data) => onDataRef.current?.(data))
 
-    // Left-click copies the current selection, right-click pastes from clipboard.
+    // Termius-style mouse behavior:
+    // - Drag to select (no auto-copy on release).
+    // - Left-click on an existing selection to copy it.
+    // - Right-click on an existing selection to copy and paste it.
+    // - Right-click with no selection to paste from clipboard.
     const terminalElement = terminal.element ?? containerRef.current
+    let downX = 0
+    let downY = 0
+    let selectionOnDown = ''
+    const handleMouseDown = (event: MouseEvent) => {
+      if (event.button !== 0) return
+      downX = event.clientX
+      downY = event.clientY
+      // Capture the selection that existed before xterm.js starts a new selection
+      // on this mousedown. If the user clicked inside the existing selection and
+      // xterm.js kept it, this will match on mouseup and we copy the original text.
+      selectionOnDown = terminal.getSelection()
+    }
     const handleMouseUp = (event: MouseEvent) => {
       if (event.button !== 0) return
-      if (terminal.hasSelection()) {
-        const selected = terminal.getSelection()
-        if (selected) {
-          navigator.clipboard.writeText(selected).catch(() => {})
-          terminal.clearSelection()
-        }
+      const dx = event.clientX - downX
+      const dy = event.clientY - downY
+      const moved = Math.sqrt(dx * dx + dy * dy) > 5
+      if (moved) return
+      // Only copy when it was a click (not a drag) and the selection is still the
+      // same one that existed at mousedown. If xterm.js cleared or replaced the
+      // selection (e.g. click outside), we do nothing and let the selection cancel.
+      const selected = terminal.getSelection()
+      if (selected && selected === selectionOnDown) {
+        navigator.clipboard.writeText(selected).catch(() => {})
+        terminal.clearSelection()
       }
     }
     const handleContextMenu = (event: MouseEvent) => {
       event.preventDefault()
+      const selected = terminal.getSelection()
+      if (selected) {
+        navigator.clipboard.writeText(selected).catch(() => {})
+        terminal.input(selected)
+        terminal.clearSelection()
+        return
+      }
       navigator.clipboard.readText().then((text) => {
         if (text) {
           terminal.input(text)
         }
       }).catch(() => {})
     }
+    terminalElement?.addEventListener('mousedown', handleMouseDown)
     terminalElement?.addEventListener('mouseup', handleMouseUp)
     terminalElement?.addEventListener('contextmenu', handleContextMenu)
 
@@ -109,6 +138,7 @@ export function useTerminal(options: UseTerminalOptions) {
     return () => {
       clearTimeout(fitTimeout)
       window.removeEventListener('resize', handleResize)
+      terminalElement?.removeEventListener('mousedown', handleMouseDown)
       terminalElement?.removeEventListener('mouseup', handleMouseUp)
       terminalElement?.removeEventListener('contextmenu', handleContextMenu)
       terminal.dispose()

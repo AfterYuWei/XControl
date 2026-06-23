@@ -109,6 +109,10 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   useEffect(() => {
     if (!isActive) return
 
+    // Explicitly fit when the pane becomes visible; otherwise a terminal created
+    // while the pane was hidden (display: none) can leave a clipped/offset top row.
+    fit()
+
     const observer = new ResizeObserver(() => {
       fit()
       const { cols, rows } = getSize()
@@ -129,7 +133,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   }
 
   return (
-    <div className="h-full w-full bg-[#1a1b26] p-1 relative">
+    <div className="h-full w-full bg-[#1a1b26] relative">
       <div ref={containerRef} className="h-full w-full" />
 
       <ConnectionDialog

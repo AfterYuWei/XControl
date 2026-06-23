@@ -57,32 +57,5 @@
   }
 }
 
-/* xterm.js: hide helper textarea — do NOT set z-index or size to 0,
-   xterm.js needs it positioned correctly for focus and selection to work */
-.xterm .xterm-helper-textarea {
-  position: absolute;
-  opacity: 0;
-  left: -9999px;
-  top: -9999px;
-  border: none;
-  padding: 0;
-  margin: 0;
-  overflow: hidden;
-  resize: none;
-  outline: none;
-}
-
-/* xterm.js: selection layer — let xterm.js manage z-index internally */
-.xterm .xterm-selection {
-  pointer-events: none;
-}
-
-/* xterm.js: ensure viewport scrollbar doesn't overlap selection */
-.xterm .xterm-viewport {
-  overflow-y: scroll;
-}
-
-/* xterm.js: canvas must not block selection or mouse events */
-.xterm canvas {
-  pointer-events: none;
-}
+/* xterm.js styles are imported from @xterm/xterm/css/xterm.css in main.tsx.
+   Avoid overriding xterm internals here to prevent canvas/selection misalignment. */

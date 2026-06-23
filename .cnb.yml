@@ -1,0 +1,9 @@
+$:
+  vscode:
+    - runner:
+        cpus: 8
+      docker:
+        build: .ide/Dockerfile
+      services:
+        - vscode
+        - docker

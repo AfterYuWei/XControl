@@ -190,6 +190,7 @@ export function Sidebar() {
 
       {/* Profile form dialog */}
       <ProfileForm
+        key={showForm ? editingProfile?.id || 'new' : 'closed'}
         open={showForm}
         onOpenChange={setShowForm}
         profile={editingProfile}

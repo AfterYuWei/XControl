@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -24,25 +24,9 @@ export function ProfileForm({ open, onOpenChange, profile }: ProfileFormProps) {
   const { groups, createProfile, updateProfile } = useProfileStore()
   const isEditing = !!profile
 
-  const [form, setForm] = useState<ProfileCreateRequest>({
-    name: '',
-    host: '',
-    port: 22,
-    username: 'root',
-    auth_type: 'password',
-    password: '',
-    private_key: '',
-    group_id: '',
-    tags: [],
-    note: '',
-  })
-
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
+  const [form, setForm] = useState<ProfileCreateRequest>(() => {
     if (profile) {
-      setForm({
+      return {
         name: profile.name,
         host: profile.host,
         port: profile.port,
@@ -53,23 +37,24 @@ export function ProfileForm({ open, onOpenChange, profile }: ProfileFormProps) {
         group_id: profile.group_id || '',
         tags: profile.tags,
         note: profile.note,
-      })
-    } else {
-      setForm({
-        name: '',
-        host: '',
-        port: 22,
-        username: 'root',
-        auth_type: 'password',
-        password: '',
-        private_key: '',
-        group_id: '',
-        tags: [],
-        note: '',
-      })
+      }
     }
-    setError('')
-  }, [profile, open])
+    return {
+      name: '',
+      host: '',
+      port: 22,
+      username: 'root',
+      auth_type: 'password',
+      password: '',
+      private_key: '',
+      group_id: '',
+      tags: [],
+      note: '',
+    }
+  })
+
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

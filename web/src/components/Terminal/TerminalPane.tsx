@@ -6,6 +6,8 @@ import { useSettingsStore } from '@/store/settings'
 import { ConnectionDialog } from '@/components/ConnectionDialog'
 import type { WSMessage, MetaPayload, ErrorPayload } from '@/types/ws'
 
+type WSStatus = 'connecting' | 'connected' | 'disconnected'
+
 interface TerminalPaneProps {
   tab: {
     id: string
@@ -29,6 +31,21 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   const [dialogStatus, setDialogStatus] = useState<'connecting' | 'connected' | 'error'>('connecting')
   const hasSpecificError = useRef(false)
 
+  const wsStatusRef = useRef<WSStatus>('connecting')
+  const sendInputRef = useRef<(data: string) => void>(() => {})
+  const sendResizeRef = useRef<(cols: number, rows: number) => void>(() => {})
+
+  const { write, writeln, clear, reset, fit, getSize } = useTerminal({
+    containerRef,
+    fontSize,
+    fontFamily,
+    onData: (data) => {
+      if (tab.sessionId && wsStatusRef.current === 'connected') {
+        sendInputRef.current(data)
+      }
+    },
+  })
+
   const handleWSMessage = useCallback(
     (msg: WSMessage) => {
       switch (msg.type) {
@@ -37,7 +54,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
             write(msg.data)
           }
           break
-        case 'metadata':
+        case 'metadata': {
           const meta = msg.payload as MetaPayload
           reset()
           clear()
@@ -45,20 +62,22 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
           setDialogStatus('connected')
           setTimeout(() => setShowDialog(false), 500)
           break
+        }
         case 'exit':
           updateTabStatus(tab.id, 'disconnected')
           writeln('\r\n\x1b[33m[会话已结束]\x1b[0m')
           break
-        case 'error':
+        case 'error': {
           const err = msg.payload as ErrorPayload
           hasSpecificError.current = true
           setConnectionError(err.message)
           setDialogStatus('error')
           updateTabStatus(tab.id, 'disconnected')
           break
+        }
       }
     },
-    [tab.id, updateTabStatus]
+    [tab.id, updateTabStatus, write, writeln, clear, reset]
   )
 
   const { status: wsStatus, sendInput, sendResize } = useWebSocket({
@@ -69,7 +88,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
       setTimeout(() => {
         fit()
         const { cols, rows } = getSize()
-        sendResize(cols, rows)
+        sendResizeRef.current(cols, rows)
       }, 50)
     },
     onError: () => {
@@ -79,31 +98,30 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     },
   })
 
-  const { write, writeln, clear, reset, fit, getSize } = useTerminal({
-    containerRef,
-    fontSize,
-    fontFamily,
-    onData: (data) => {
-      if (tab.sessionId && wsStatus === 'connected') {
-        sendInput(data)
-      }
-    },
-  })
+  useEffect(() => {
+    wsStatusRef.current = wsStatus
+    sendInputRef.current = sendInput
+    sendResizeRef.current = sendResize
+  }, [wsStatus, sendInput, sendResize])
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
     if (tab.status === 'connecting' && tab.sessionId) {
       setShowDialog(true)
       setDialogStatus('connecting')
       setConnectionError('')
       hasSpecificError.current = false
     }
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [tab.status, tab.sessionId])
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
     if (wsStatus === 'disconnected' && tab.status === 'connecting' && !hasSpecificError.current) {
       setConnectionError('无法连接到服务器')
       setDialogStatus('error')
     }
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [wsStatus, tab.status])
 
   useEffect(() => {
@@ -116,8 +134,8 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     const observer = new ResizeObserver(() => {
       fit()
       const { cols, rows } = getSize()
-      if (tab.sessionId && wsStatus === 'connected') {
-        sendResize(cols, rows)
+      if (tab.sessionId && wsStatusRef.current === 'connected') {
+        sendResizeRef.current(cols, rows)
       }
     })
 
@@ -126,7 +144,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     }
 
     return () => observer.disconnect()
-  }, [isActive, tab.sessionId, wsStatus, fit, getSize, sendResize])
+  }, [isActive, tab.sessionId, fit, getSize])
 
   const handleCancel = () => {
     updateTabStatus(tab.id, 'disconnected')
@@ -137,6 +155,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
       <div ref={containerRef} className="h-full w-full" />
 
       <ConnectionDialog
+        key={showDialog ? tab.id : 'closed'}
         open={showDialog}
         onOpenChange={setShowDialog}
         profileName={tab.profileName}

@@ -18,7 +18,10 @@ export function useWebSocket(options: UseWebSocketOptions) {
 
   // Store callbacks in refs so the effect only depends on sessionId
   const callbacksRef = useRef({ onMessage, onOpen, onClose, onError })
-  callbacksRef.current = { onMessage, onOpen, onClose, onError }
+
+  useEffect(() => {
+    callbacksRef.current = { onMessage, onOpen, onClose, onError }
+  })
 
   useEffect(() => {
     if (!sessionId) return

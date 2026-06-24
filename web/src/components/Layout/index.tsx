@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Search, X } from 'lucide-react'
 import { Sidebar } from '@/components/Sidebar'
 import { TerminalView } from '@/components/Terminal'
 import { TabBar } from '@/components/Terminal/TabBar'
@@ -15,7 +16,7 @@ export function Layout() {
   const [panelOpen, setPanelOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
 
-  const { fetchProfiles, fetchGroups } = useProfileStore()
+  const { fetchProfiles, fetchGroups, searchQuery, setSearchQuery } = useProfileStore()
 
   useEffect(() => {
     fetchProfiles()
@@ -45,41 +46,68 @@ export function Layout() {
 
   return (
     <div className="sshx-app" role="application" aria-label="Terminal">
-      {/* Sidebar */}
-      <aside
-        className={`sshx-sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}
-        role="navigation"
-        aria-label="Server list"
-      >
-        <Sidebar onCollapse={() => setSidebarCollapsed(true)} />
-      </aside>
-
-      {/* Content */}
-      <div className="cnt-wrap">
-        <div className="expand-wrap">
-          <button
-            className="expand-btn"
-            title="Show Sidebar (⌘B)"
-            onClick={() => setSidebarCollapsed(false)}
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-              <line x1="3" y1="3" x2="3" y2="13" />
-              <polyline points="7 5 11 8 7 11" />
-            </svg>
-          </button>
+      {/* Header — full width, centered search */}
+      <header className="sshx-header">
+        <div className="header-search">
+          <Search size={14} className="header-search-icon" />
+          <input
+            type="text"
+            placeholder="搜索服务器…"
+            autoComplete="off"
+            spellCheck={false}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          {searchQuery && (
+            <button
+              className="header-search-clear"
+              title="清除搜索"
+              aria-label="清除搜索"
+              onClick={() => setSearchQuery('')}
+            >
+              <X size={13} />
+            </button>
+          )}
         </div>
+      </header>
 
-        {/* TabBar is always visible so the theme toggle and panel toggle
-            remain accessible even before any server is connected. */}
-        <TabBar panelOpen={panelOpen} onTogglePanel={() => setPanelOpen((v) => !v)} />
+      {/* Body — sidebar + content */}
+      <div className="sshx-body">
+        {/* Sidebar */}
+        <aside
+          className={`sshx-sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}
+          role="navigation"
+          aria-label="Server list"
+        >
+          <Sidebar onCollapse={() => setSidebarCollapsed(true)} />
+        </aside>
 
-        {tabs.length === 0 ? <EmptyState /> : <TerminalView panelOpen={panelOpen} />}
+        {/* Content */}
+        <div className="cnt-wrap">
+          <div className="expand-wrap">
+            <button
+              className="expand-btn"
+              title="显示侧边栏 (⌘B)"
+              onClick={() => setSidebarCollapsed(false)}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <line x1="3" y1="3" x2="3" y2="13" />
+                <polyline points="7 5 11 8 7 11" />
+              </svg>
+            </button>
+          </div>
 
-        <StatusBar />
+          <TabBar panelOpen={panelOpen} onTogglePanel={() => setPanelOpen((v) => !v)} />
 
-        {/* Right Panel */}
-        <ServerPanel open={panelOpen} onClose={() => setPanelOpen(false)} />
+          {tabs.length === 0 ? <EmptyState /> : <TerminalView panelOpen={panelOpen} />}
+
+          {/* Right Panel */}
+          <ServerPanel open={panelOpen} onClose={() => setPanelOpen(false)} />
+        </div>
       </div>
+
+      {/* Status bar — full width */}
+      <StatusBar />
 
       {/* Command Palette */}
       <CommandPalette

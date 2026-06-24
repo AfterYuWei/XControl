@@ -149,6 +149,8 @@
   /* Smooth theme transition for all chrome elements — terminal container
      (.term-wrap and its descendants) is excluded to avoid animating the
      xterm canvas, which must stay fixed. */
+  .sshx-header,
+  .sshx-header *,
   .sshx-sidebar,
   .sshx-sidebar *,
   .tabbar,
@@ -170,8 +172,84 @@
 /* ═══════════════════ APP SHELL ═══════════════════ */
 .sshx-app {
   display: flex;
+  flex-direction: column;
   height: 100vh;
   overflow: hidden;
+}
+
+/* ===== HEADER (full width) ===== */
+.sshx-header {
+  height: var(--tabbar-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  padding: 0 12px;
+  position: relative;
+  z-index: 30;
+}
+.header-search {
+  position: relative;
+  width: 100%;
+  max-width: 440px;
+  display: flex;
+  align-items: center;
+}
+.header-search-icon {
+  position: absolute;
+  left: 10px;
+  color: var(--fg-3);
+  pointer-events: none;
+}
+.header-search input {
+  width: 100%;
+  height: 28px;
+  padding: 0 28px 0 30px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-pill);
+  color: var(--fg);
+  font: 400 12px / 1 var(--sans);
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+.header-search input::placeholder {
+  color: var(--fg-4);
+}
+.header-search input:focus {
+  border-color: var(--accent);
+  background: var(--bg-panel);
+}
+.header-search-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--fg-4);
+  cursor: pointer;
+  border-radius: var(--r-xs);
+  transition: background 0.1s, color 0.1s;
+}
+.header-search-clear:hover {
+  background: var(--bg-hover);
+  color: var(--fg-2);
+}
+
+/* ===== BODY (sidebar + content) ===== */
+.sshx-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
 }
 
 /* ===== SIDEBAR — Tabby / Warp inspired layout ===== */

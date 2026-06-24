@@ -1,6 +1,7 @@
-import { useState, useMemo, useRef, useEffect } from 'react'
-import { Plus, Server, Trash2, Edit, X } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { Server, Trash2, Edit } from 'lucide-react'
 import { ProfileForm } from '@/components/ProfileForm'
+import { ThemeToggle } from '@/components/ThemeToggle'
 import { useProfileStore } from '@/store/profile'
 import { useSessionStore } from '@/store/session'
 import type { Profile } from '@/types/profile'
@@ -41,7 +42,6 @@ export function Sidebar({ onCollapse }: SidebarProps) {
     groups: rawGroups,
     searchQuery,
     loading,
-    setSearchQuery,
     deleteProfile,
   } = useProfileStore()
 
@@ -57,36 +57,6 @@ export function Sidebar({ onCollapse }: SidebarProps) {
     y: number
     profile: Profile
   } | null>(null)
-  const [searchOpen, setSearchOpen] = useState(false)
-  const searchInputRef = useRef<HTMLInputElement>(null)
-
-  // Focus the input when search opens
-  useEffect(() => {
-    if (searchOpen) {
-      const t = setTimeout(() => searchInputRef.current?.focus(), 50)
-      return () => clearTimeout(t)
-    }
-  }, [searchOpen])
-
-  // Close search on Escape, clear query when closed
-  useEffect(() => {
-    if (!searchOpen) return
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setSearchQuery('')
-        setSearchOpen(false)
-      }
-    }
-    document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
-  }, [searchOpen, setSearchQuery])
-
-  const openSearch = () => setSearchOpen(true)
-  const closeSearch = () => {
-    setSearchQuery('')
-    setSearchOpen(false)
-  }
-
   // Determine which profile is active (has an open tab that is the active tab)
   const activeProfileId = useMemo(() => {
     const tab = tabs.find((t) => t.id === activeTabId)
@@ -155,11 +125,11 @@ export function Sidebar({ onCollapse }: SidebarProps) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Unified header */}
+      {/* Sidebar header — collapse (left) + theme toggle (right) */}
       <div className="sidebar-hdr">
         <button
           className="hdr-icon-btn"
-          title="Collapse Sidebar (⌘B)"
+          title="折叠侧边栏 (⌘B)"
           aria-label="Collapse sidebar"
           onClick={onCollapse}
         >
@@ -168,53 +138,9 @@ export function Sidebar({ onCollapse }: SidebarProps) {
             <line x1="6" y1="3" x2="6" y2="13" />
           </svg>
         </button>
-        <button
-          className={`hdr-icon-btn ${searchOpen ? 'active' : ''}`}
-          title="Search servers (⌘K)"
-          aria-label="Search servers"
-          onClick={searchOpen ? closeSearch : openSearch}
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="7" cy="7" r="4.5" />
-            <line x1="10.2" y1="10.2" x2="14" y2="14" />
-          </svg>
-        </button>
-        <button
-          className="hdr-icon-btn ml-auto"
-          title="New connection"
-          aria-label="New connection"
-          onClick={() => {
-            setEditingProfile(null)
-            setShowForm(true)
-          }}
-        >
-          <Plus size={14} />
-        </button>
-      </div>
-
-      {/* Inline search bar — slides down when searchOpen, pushing the list below. */}
-      <div className={`search-wrap ${searchOpen ? 'open' : ''}`}>
-        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="search-wrap-icon">
-          <circle cx="7" cy="7" r="4.5" />
-          <line x1="10.2" y1="10.2" x2="14" y2="14" />
-        </svg>
-        <input
-          ref={searchInputRef}
-          type="text"
-          placeholder="Search servers..."
-          autoComplete="off"
-          spellCheck={false}
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
-        <button
-          className="search-wrap-close"
-          title="Close search (Esc)"
-          aria-label="Close search"
-          onClick={closeSearch}
-        >
-          <X size={13} />
-        </button>
+        <div className="ml-auto">
+          <ThemeToggle className="hdr-icon-btn" />
+        </div>
       </div>
 
       {/* Server list */}
@@ -229,7 +155,7 @@ export function Sidebar({ onCollapse }: SidebarProps) {
               <circle cx="7" cy="7" r="4.5" />
               <line x1="10.2" y1="10.2" x2="14" y2="14" />
             </svg>
-            <span>{searchQuery ? `No servers match "${searchQuery}"` : '暂无连接，点击 + 创建'}</span>
+            <span>{searchQuery ? `没有匹配 "${searchQuery}" 的服务器` : '暂无连接'}</span>
           </div>
         ) : (
           grouped.orderedGroupNames.map((gid) => {
@@ -281,16 +207,6 @@ export function Sidebar({ onCollapse }: SidebarProps) {
             )
           })
         )}
-      </div>
-
-      {/* Footer: kbd hints */}
-      <div className="sidebar-ft">
-        <div className="kbd-hint">
-          <kbd>⌘K</kbd>
-        </div>
-        <div className="kbd-hint">
-          <kbd>⌘B</kbd>
-        </div>
       </div>
 
       {/* Context menu */}

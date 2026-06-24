@@ -1,7 +1,7 @@
 import { Sun, Moon } from 'lucide-react'
 import { useSettingsStore } from '@/store/settings'
 
-export function ThemeToggle() {
+export function ThemeToggle({ className = 'tab-act' }: { className?: string }) {
   const { theme, setTheme } = useSettingsStore()
 
   // Determine the currently resolved theme for the icon display
@@ -20,11 +20,10 @@ export function ThemeToggle() {
 
   return (
     <button
-      className="tab-act"
+      className={className}
       data-tip={theme === 'system' ? 'Theme: System' : isDark ? 'Theme: Dark' : 'Theme: Light'}
       onClick={cycle}
       aria-label="Toggle theme"
-      style={{ width: 26, height: 22 }}
     >
       {isDark ? <Moon size={13} /> : <Sun size={13} />}
     </button>

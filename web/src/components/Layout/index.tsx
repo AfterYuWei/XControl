@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { Search, X } from 'lucide-react'
 import { Sidebar } from '@/components/Sidebar'
 import { TerminalView } from '@/components/Terminal'
-import { TabBar } from '@/components/Terminal/TabBar'
 import { StatusBar } from '@/components/StatusBar'
 import { ServerPanel } from '@/components/ServerPanel'
 import { CommandPalette } from '@/components/CommandPalette'
@@ -126,8 +125,6 @@ export function Layout() {
 
         {/* Content */}
         <div className="cnt-wrap">
-          <TabBar />
-
           {tabs.length === 0 ? <EmptyState /> : <TerminalView panelOpen={panelOpen} />}
 
           {/* Right Panel */}

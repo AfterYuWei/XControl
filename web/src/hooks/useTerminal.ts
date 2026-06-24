@@ -26,29 +26,29 @@ export function useTerminal(options: UseTerminalOptions) {
 
     const terminal = new Terminal({
       fontSize,
-      fontFamily: fontFamily || 'Menlo, Monaco, "Courier New", monospace',
+      fontFamily: fontFamily || "'JetBrains Mono', 'Fira Code', ui-monospace, monospace",
       theme: {
-        background: '#1a1b26',
-        foreground: '#a9b1d6',
-        cursor: '#c0caf5',
-        selectionBackground: '#7aa2f7',
-        selectionForeground: '#15161e',
-        black: '#15161e',
-        red: '#f7768e',
-        green: '#9ece6a',
-        yellow: '#e0af68',
-        blue: '#7aa2f7',
-        magenta: '#bb9af7',
-        cyan: '#7dcfff',
-        white: '#a9b1d6',
-        brightBlack: '#414868',
-        brightRed: '#f7768e',
-        brightGreen: '#9ece6a',
-        brightYellow: '#e0af68',
-        brightBlue: '#7aa2f7',
-        brightMagenta: '#bb9af7',
-        brightCyan: '#7dcfff',
-        brightWhite: '#c0caf5',
+        background: '#0A0A0A',
+        foreground: '#A3A3A3',
+        cursor: '#E5E5E5',
+        selectionBackground: '#3B82F6',
+        selectionForeground: '#0A0A0A',
+        black: '#333333',
+        red: '#EF4444',
+        green: '#22C55E',
+        yellow: '#F59E0B',
+        blue: '#3B82F6',
+        magenta: '#D946EF',
+        cyan: '#22D3EE',
+        white: '#A3A3A3',
+        brightBlack: '#525252',
+        brightRed: '#EF4444',
+        brightGreen: '#22C55E',
+        brightYellow: '#F59E0B',
+        brightBlue: '#60A5FA',
+        brightMagenta: '#D946EF',
+        brightCyan: '#22D3EE',
+        brightWhite: '#E5E5E5',
       },
       allowProposedApi: true,
       // We handle right-click copy/paste ourselves (Termius-style), so disable
@@ -231,7 +231,7 @@ export function useTerminal(options: UseTerminalOptions) {
     const terminal = terminalRef.current
     if (!terminal) return
     terminal.options.fontSize = fontSize
-    terminal.options.fontFamily = fontFamily || 'Menlo, Monaco, "Courier New", monospace'
+    terminal.options.fontFamily = fontFamily || "'JetBrains Mono', 'Fira Code', ui-monospace, monospace"
     fitAddonRef.current?.fit()
   }, [fontSize, fontFamily])
 

@@ -10,11 +10,12 @@ import (
 )
 
 type GroupHandler struct {
-	groups store.GroupStore
+	groups   store.GroupStore
+	profiles store.ProfileStore
 }
 
-func NewGroupHandler(gs store.GroupStore) *GroupHandler {
-	return &GroupHandler{groups: gs}
+func NewGroupHandler(gs store.GroupStore, ps store.ProfileStore) *GroupHandler {
+	return &GroupHandler{groups: gs, profiles: ps}
 }
 
 func (h *GroupHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -37,7 +38,7 @@ func (h *GroupHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Icon == "" {
-		req.Icon = "📁"
+		req.Icon = "folder"
 	}
 
 	group := &model.Group{
@@ -76,9 +77,46 @@ func (h *GroupHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 func (h *GroupHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+
+	// Block deletion when the group still contains servers — the user must
+	// move or delete them first so no connection is orphaned silently.
+	count, err := h.profiles.CountByGroup(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "DB_ERROR", err.Error())
+		return
+	}
+	if count > 0 {
+		writeError(w, http.StatusConflict, "GROUP_NOT_EMPTY",
+			"该分组下仍有 "+itoa(count)+" 台服务器，请先移动或删除后再删除分组")
+		return
+	}
+
 	if err := h.groups.Delete(id); err != nil {
 		writeError(w, http.StatusInternalServerError, "DB_ERROR", err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// itoa is a small helper to avoid pulling strconv into every handler build.
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	var b [20]byte
+	i := len(b)
+	for n > 0 {
+		i--
+		b[i] = byte('0' + n%10)
+		n /= 10
+	}
+	if neg {
+		i--
+		b[i] = '-'
+	}
+	return string(b[i:])
 }

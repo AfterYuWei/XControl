@@ -9,6 +9,7 @@ type Profile struct {
 	Port       int       `json:"port"`
 	Username   string    `json:"username"`
 	AuthType   string    `json:"auth_type"` // password | key | agent
+	Icon       string    `json:"icon,omitempty"` // line-icon key, e.g. "server", "database"
 	VaultID    string    `json:"vault_id,omitempty"`
 	GroupID    string    `json:"group_id,omitempty"`
 	Tags       []string  `json:"tags"`
@@ -25,14 +26,15 @@ type ProfileCreateRequest struct {
 	Host     string   `json:"host"`
 	Port     int      `json:"port"`
 	Username string   `json:"username"`
-	AuthType string   `json:"auth_type"`
-	Password string   `json:"password,omitempty"`
-	PrivKey  string   `json:"private_key,omitempty"`
-	Passphrase string `json:"passphrase,omitempty"`
-	GroupID  string   `json:"group_id,omitempty"`
-	Tags     []string `json:"tags,omitempty"`
-	Options  string   `json:"options,omitempty"`
-	Note     string   `json:"note,omitempty"`
+	AuthType   string   `json:"auth_type"`
+	Icon       string   `json:"icon,omitempty"`
+	Password   string   `json:"password,omitempty"`
+	PrivKey    string   `json:"private_key,omitempty"`
+	Passphrase string   `json:"passphrase,omitempty"`
+	GroupID    string   `json:"group_id,omitempty"`
+	Tags       []string `json:"tags,omitempty"`
+	Options    string   `json:"options,omitempty"`
+	Note       string   `json:"note,omitempty"`
 }
 
 type ProfileUpdateRequest struct {
@@ -41,6 +43,7 @@ type ProfileUpdateRequest struct {
 	Port       *int     `json:"port,omitempty"`
 	Username   *string  `json:"username,omitempty"`
 	AuthType   *string  `json:"auth_type,omitempty"`
+	Icon       *string  `json:"icon,omitempty"`
 	VaultID    *string  `json:"vault_id,omitempty"`
 	Password   *string  `json:"password,omitempty"`
 	PrivKey    *string  `json:"private_key,omitempty"`

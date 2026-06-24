@@ -1,35 +1,16 @@
 import { useState, useMemo } from 'react'
-import { Server, Trash2, Edit } from 'lucide-react'
+import { Plus, Edit, Trash2, Server, FolderPlus, FolderEdit } from 'lucide-react'
 import { ProfileForm } from '@/components/ProfileForm'
+import { GroupForm } from '@/components/Sidebar/GroupForm'
 import { useProfileStore } from '@/store/profile'
 import { useSessionStore } from '@/store/session'
+import { toast } from '@/store/toast'
+import { resolveServerIcon } from '@/lib/serverIcons'
+import { resolveGroupIcon } from '@/lib/groupIcons'
 import type { Profile } from '@/types/profile'
+import type { Group } from '@/types/group'
 
-/* Deterministic color palette for server icons — each profile gets a
-   consistent hue derived from its id so the icon is always the same
-   color regardless of render order or grouping. */
-const ICON_PALETTE = [
-  '#F97316', // orange
-  '#EF4444', // red
-  '#3B82F6', // blue
-  '#22C55E', // green
-  '#8B5CF6', // violet
-  '#EC4899', // pink
-  '#14B8A6', // teal
-  '#EAB308', // yellow
-  '#06B6D4', // cyan
-  '#A855F7', // purple
-  '#D97706', // amber
-  '#059669', // emerald
-]
-function iconColorForId(id: string): string {
-  let hash = 0
-  for (let i = 0; i < id.length; i++) {
-    hash = ((hash << 5) - hash) + id.charCodeAt(i)
-    hash |= 0
-  }
-  return ICON_PALETTE[Math.abs(hash) % ICON_PALETTE.length]
-}
+const UNGROUPED_ID = '__ungrouped__'
 
 export function Sidebar() {
   const {
@@ -38,6 +19,8 @@ export function Sidebar() {
     searchQuery,
     loading,
     deleteProfile,
+    deleteGroup,
+    updateProfile,
   } = useProfileStore()
 
   const profiles = rawProfiles ?? []
@@ -45,14 +28,23 @@ export function Sidebar() {
 
   const { openTab, tabs, activeTabId } = useSessionStore()
 
-  const [showForm, setShowForm] = useState(false)
+  // Profile form
+  const [showProfileForm, setShowProfileForm] = useState(false)
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null)
-  const [contextMenu, setContextMenu] = useState<{
-    x: number
-    y: number
-    profile: Profile
-  } | null>(null)
-  // Determine which profile is active (has an open tab that is the active tab)
+
+  // Group form
+  const [showGroupForm, setShowGroupForm] = useState(false)
+  const [editingGroup, setEditingGroup] = useState<Group | null>(null)
+  const [groupFormParent, setGroupFormParent] = useState<string>('')
+
+  // Context menus
+  const [profileMenu, setProfileMenu] = useState<{ x: number; y: number; profile: Profile } | null>(null)
+  const [groupMenu, setGroupMenu] = useState<{ x: number; y: number; group: Group } | null>(null)
+  const [blankMenu, setBlankMenu] = useState<{ x: number; y: number } | null>(null)
+
+  // Drag-and-drop
+  const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null)
+
   const activeProfileId = useMemo(() => {
     const tab = tabs.find((t) => t.id === activeTabId)
     return tab?.profileId
@@ -62,71 +54,199 @@ export function Sidebar() {
     openTab(profile.id, profile.name, profile.host, profile.port, profile.username)
   }
 
-  const handleEdit = (profile: Profile) => {
+  const handleEditProfile = (profile: Profile) => {
     setEditingProfile(profile)
-    setShowForm(true)
-    setContextMenu(null)
+    setShowProfileForm(true)
+    setProfileMenu(null)
   }
 
-  const handleDelete = async (profile: Profile) => {
+  const handleDeleteProfile = async (profile: Profile) => {
     if (confirm(`确定删除连接 "${profile.name}"?`)) {
-      await deleteProfile(profile.id)
-    }
-    setContextMenu(null)
-  }
-
-  const handleContextMenu = (e: React.MouseEvent, profile: Profile) => {
-    e.preventDefault()
-    setContextMenu({ x: e.clientX, y: e.clientY, profile })
-  }
-
-  // Group profiles by their group; ungrouped go to "Ungrouped"
-  const grouped = useMemo(() => {
-    const map: Record<string, Profile[]> = {}
-    const orderedGroupNames: string[] = []
-    groups.forEach((g) => {
-      map[g.id] = []
-      orderedGroupNames.push(g.id)
-    })
-    if (!orderedGroupNames.includes('__ungrouped__')) {
-      map['__ungrouped__'] = []
-      orderedGroupNames.push('__ungrouped__')
-    }
-    profiles.forEach((p) => {
-      const key = p.group_id && map[p.group_id] !== undefined ? p.group_id : '__ungrouped__'
-      if (!map[key]) {
-        map[key] = []
-        if (!orderedGroupNames.includes(key)) orderedGroupNames.push(key)
+      try {
+        await deleteProfile(profile.id)
+        toast('连接已删除')
+      } catch (err) {
+        toast((err as Error).message || '删除失败')
       }
-      map[key].push(p)
+    }
+    setProfileMenu(null)
+  }
+
+  const handleProfileContextMenu = (e: React.MouseEvent, profile: Profile) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setProfileMenu({ x: e.clientX, y: e.clientY, profile })
+  }
+
+  // New servers always default to no group (ungrouped). Grouping is done
+  // afterwards via drag-and-drop or manual selection in the form.
+  const handleAddServer = () => {
+    setEditingProfile(null)
+    setShowProfileForm(true)
+    setBlankMenu(null)
+  }
+
+  // Group CRUD
+  const handleAddGroup = (parentId?: string) => {
+    setEditingGroup(null)
+    setGroupFormParent(parentId ?? '')
+    setShowGroupForm(true)
+    setGroupMenu(null)
+    setBlankMenu(null)
+  }
+
+  const handleEditGroup = (group: Group) => {
+    setEditingGroup(group)
+    setGroupFormParent('')
+    setShowGroupForm(true)
+    setGroupMenu(null)
+  }
+
+  const handleDeleteGroup = async (group: Group) => {
+    setGroupMenu(null)
+    // Front-end guard: backend also enforces 409, but this gives instant UX.
+    const count = profiles.filter((p) => p.group_id === group.id).length
+    if (count > 0) {
+      toast(`该分组下仍有 ${count} 台服务器，请先移动或删除后再删除分组`)
+      return
+    }
+    if (confirm(`确定删除分组 "${group.name}"?`)) {
+      try {
+        await deleteGroup(group.id)
+        toast('分组已删除')
+      } catch (err) {
+        toast((err as Error).message || '删除失败')
+      }
+    }
+  }
+
+  const handleGroupContextMenu = (e: React.MouseEvent, group: Group) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setGroupMenu({ x: e.clientX, y: e.clientY, group })
+  }
+
+  // Blank-area context menu (right-click on empty sidebar space).
+  const handleBlankContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault()
+    setBlankMenu({ x: e.clientX, y: e.clientY })
+  }
+
+  // Move a server (by id) into a target group via drag-and-drop.
+  const handleDropToGroup = async (e: React.DragEvent, targetGid: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragOverGroupId(null)
+    const profileId = e.dataTransfer.getData('text/profile-id')
+    if (!profileId) return
+    const targetGroupId = targetGid === UNGROUPED_ID ? '' : targetGid
+    const profile = profiles.find((p) => p.id === profileId)
+    if (!profile) return
+    if ((profile.group_id || '') === targetGroupId) return // same group, no-op
+    try {
+      await updateProfile(profileId, { group_id: targetGroupId })
+      const label = targetGroupId
+        ? groups.find((g) => g.id === targetGroupId)?.name || '分组'
+        : '服务器管理'
+      toast(`已移动到「${label}」`)
+    } catch (err) {
+      toast((err as Error).message || '移动失败')
+    }
+  }
+
+  // Group profiles by their group; ungrouped go to "服务器管理"
+  // Split servers into those belonging to a real group vs. loose (no group).
+  // Groups render first (folder-like, higher priority); loose servers render
+  // last, like files outside any folder.
+  const serversByGroup = useMemo(() => {
+    const map: Record<string, Profile[]> = {}
+    groups.forEach((g) => { map[g.id] = [] })
+    profiles.forEach((p) => {
+      if (p.group_id && map[p.group_id] !== undefined) map[p.group_id].push(p)
     })
-    return { map, orderedGroupNames }
+    return map
   }, [profiles, groups])
 
-  const groupName = (gid: string) => {
-    if (gid === '__ungrouped__') return 'Ungrouped'
-    const g = groups.find((gg) => gg.id === gid)
-    return g ? `${g.icon || ''} ${g.name}`.trim() : 'Ungrouped'
-  }
-
-  /* SVG for the terminal-window icon inside each colored square */
-  const termIcon = (
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor">
-      <rect x="2" y="4" width="12" height="10" rx="1.5" />
-      <line x1="5" y1="2" x2="11" y2="2" />
-      <line x1="8" y1="2" x2="8" y2="4" />
-    </svg>
+  const looseServers = useMemo(
+    () => profiles.filter((p) => !p.group_id || !groups.some((g) => g.id === p.group_id)),
+    [profiles, groups]
   )
+
+  const renderServerRow = (profile: Profile) => {
+    const isActive = profile.id === activeProfileId
+    const tab = tabs.find((t) => t.profileId === profile.id)
+    const status = tab?.status ?? 'disconnected'
+    const dotClass =
+      status === 'connected' ? 'on' : status === 'connecting' ? 'loading' : 'off'
+    const Icon = resolveServerIcon(profile.icon)
+    const meta =
+      profile.port && profile.port !== 22
+        ? `${profile.username}@${profile.host}:${profile.port}`
+        : `${profile.username}@${profile.host}`
+
+    return (
+      <div
+        key={profile.id}
+        className={`srv ${status === 'disconnected' ? 'offline' : ''} ${isActive ? 'active' : ''}`}
+        role="button"
+        tabIndex={0}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData('text/profile-id', profile.id)
+          e.dataTransfer.effectAllowed = 'move'
+        }}
+        aria-label={`连接到 ${profile.name} (${profile.host}:${profile.port})`}
+        onClick={() => handleConnect(profile)}
+        onDoubleClick={() => handleConnect(profile)}
+        onContextMenu={(e) => handleProfileContextMenu(e, profile)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            handleConnect(profile)
+          }
+        }}
+      >
+        <div className="srv-icon">
+          <Icon size={14} />
+          <span className={`srv-dot ${dotClass}`} aria-hidden="true" />
+        </div>
+        <div className="srv-info">
+          <span className="srv-nm">{profile.name}</span>
+          <span className="srv-meta">{meta}</span>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col h-full">
+      {/* Sidebar title — "服务器管理" is the header of this panel, not a group.
+          It shows the total server count and a global "+" to add a server. */}
+      <div className="sidebar-title">
+        <span className="sidebar-title-left">
+          <span className="sidebar-title-text">服务器管理</span>
+          <span className="grp-cnt">{profiles.length}</span>
+        </span>
+        <button
+          className="grp-add-btn"
+          title="新增服务器"
+          aria-label="新增服务器"
+          onClick={(e) => {
+            e.stopPropagation()
+            handleAddServer()
+          }}
+        >
+          <Plus size={13} />
+        </button>
+      </div>
+
       {/* Server list */}
-      <div className="sidebar-body">
+      <div className="sidebar-body" onContextMenu={handleBlankContextMenu}>
         {loading ? (
           <div className="sidebar-empty">
             <span>Loading…</span>
           </div>
-        ) : profiles.length === 0 ? (
+        ) : profiles.length === 0 && groups.length === 0 ? (
           <div className="sidebar-empty">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
               <circle cx="7" cy="7" r="4.5" />
@@ -135,143 +255,181 @@ export function Sidebar() {
             <span>{searchQuery ? `没有匹配 "${searchQuery}" 的服务器` : '暂无连接'}</span>
           </div>
         ) : (
-          grouped.orderedGroupNames.map((gid) => {
-            const list = grouped.map[gid]
-            if (!list || list.length === 0) return null
-            return (
-              <div className="srv-group" key={gid}>
-                <div className="grp-label">
-                  <span>{groupName(gid)}</span>
-                  <span className="grp-cnt">{list.length}</span>
-                </div>
-                {list.map((profile) => {
-                  const isActive = profile.id === activeProfileId
-                  const tab = tabs.find((t) => t.profileId === profile.id)
-                  const status = tab?.status ?? 'disconnected'
-                  const dotClass =
-                    status === 'connected' ? 'on' : status === 'connecting' ? 'loading' : 'off'
-                  const color = iconColorForId(profile.id)
+          <>
+            {/* Groups (folders) — render first, higher priority than loose servers */}
+            {groups.map((grp) => {
+              const list = serversByGroup[grp.id] ?? []
+              // While searching, hide groups with no matching servers to reduce noise.
+              if (list.length === 0 && searchQuery) return null
+              const isDropTarget = dragOverGroupId === grp.id
+              const GroupIcon = resolveGroupIcon(grp.icon)
 
-                  return (
-                    <div
-                      key={profile.id}
-                      className={`srv ${status === 'disconnected' ? 'offline' : ''} ${isActive ? 'active' : ''}`}
-                      role="button"
-                      tabIndex={0}
-                      aria-label={`Connect to ${profile.name} (${profile.host}:${profile.port})`}
-                      onClick={() => handleConnect(profile)}
-                      onDoubleClick={() => handleConnect(profile)}
-                      onContextMenu={(e) => handleContextMenu(e, profile)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault()
-                          handleConnect(profile)
-                        }
-                      }}
-                    >
-                      {/* Colored terminal icon with status dot overlay */}
-                      <div className="srv-icon" style={{ background: color }}>
-                        {termIcon}
-                        <span className={`srv-dot ${dotClass}`} aria-hidden="true" />
-                      </div>
-                      <div className="srv-info">
-                        <span className="srv-nm">{profile.name}</span>
-                      </div>
-                    </div>
-                  )
-                })}
+              return (
+                <div
+                  className={`srv-group ${isDropTarget ? 'grp-drop-target' : ''}`}
+                  key={grp.id}
+                  onDragOver={(e) => {
+                    e.preventDefault()
+                    e.dataTransfer.dropEffect = 'move'
+                    if (dragOverGroupId !== grp.id) setDragOverGroupId(grp.id)
+                  }}
+                  onDragLeave={(e) => {
+                    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                      setDragOverGroupId(null)
+                    }
+                  }}
+                  onDrop={(e) => handleDropToGroup(e, grp.id)}
+                >
+                  <div
+                    className="grp-label"
+                    onContextMenu={(e) => handleGroupContextMenu(e, grp)}
+                  >
+                    <span className="grp-label-left">
+                      <GroupIcon size={12} className="grp-label-icon" />
+                      <span className="grp-label-text">{grp.name}</span>
+                      <span className="grp-cnt">{list.length}</span>
+                    </span>
+                  </div>
+                  {list.map(renderServerRow)}
+                </div>
+              )
+            })}
+
+            {/* Loose servers (no group) — render last, like files outside folders */}
+            {looseServers.length > 0 && (
+              <div
+                className={`srv-group ${dragOverGroupId === UNGROUPED_ID ? 'grp-drop-target' : ''}`}
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  e.dataTransfer.dropEffect = 'move'
+                  if (dragOverGroupId !== UNGROUPED_ID) setDragOverGroupId(UNGROUPED_ID)
+                }}
+                onDragLeave={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                    setDragOverGroupId(null)
+                  }
+                }}
+                onDrop={(e) => handleDropToGroup(e, UNGROUPED_ID)}
+              >
+                {groups.length > 0 && (
+                  <div className="grp-label">
+                    <span className="grp-label-left">
+                      <span className="grp-label-text grp-label-muted">未分组</span>
+                      <span className="grp-cnt">{looseServers.length}</span>
+                    </span>
+                  </div>
+                )}
+                {looseServers.map(renderServerRow)}
               </div>
-            )
-          })
+            )}
+          </>
         )}
       </div>
 
-      {/* Context menu */}
-      {contextMenu && (
+      {/* Profile context menu */}
+      {profileMenu && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setContextMenu(null)} />
-          <div
-            className="fixed z-50"
-            style={{
-              left: contextMenu.x,
-              top: contextMenu.y,
-              background: 'var(--bg-elevated)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--r-sm)',
-              boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-              padding: '4px',
-              minWidth: 160,
-            }}
-          >
-            <button
-              className="w-full text-left flex items-center gap-2"
-              style={{
-                padding: '6px 10px',
-                fontSize: '12px',
-                color: 'var(--fg-2)',
-                background: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                borderRadius: 'var(--r-xs)',
-                fontFamily: 'var(--sans)',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-              onClick={() => handleConnect(contextMenu.profile)}
-            >
-              <Server size={13} />
+          <div className="fixed inset-0 z-40" onClick={() => setProfileMenu(null)} />
+          <ContextMenuBox x={profileMenu.x} y={profileMenu.y}>
+            <ContextItem icon={<Server size={13} />} onClick={() => { handleConnect(profileMenu.profile); setProfileMenu(null) }}>
               连接
-            </button>
-            <button
-              className="w-full text-left flex items-center gap-2"
-              style={{
-                padding: '6px 10px',
-                fontSize: '12px',
-                color: 'var(--fg-2)',
-                background: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                borderRadius: 'var(--r-xs)',
-                fontFamily: 'var(--sans)',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-              onClick={() => handleEdit(contextMenu.profile)}
-            >
-              <Edit size={13} />
+            </ContextItem>
+            <ContextItem icon={<Edit size={13} />} onClick={() => handleEditProfile(profileMenu.profile)}>
               编辑
-            </button>
-            <div style={{ height: 1, background: 'var(--border-subtle)', margin: '4px 0' }} />
-            <button
-              className="w-full text-left flex items-center gap-2"
-              style={{
-                padding: '6px 10px',
-                fontSize: '12px',
-                color: 'var(--red)',
-                background: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                borderRadius: 'var(--r-xs)',
-                fontFamily: 'var(--sans)',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--red-bg)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-              onClick={() => handleDelete(contextMenu.profile)}
-            >
-              <Trash2 size={13} />
+            </ContextItem>
+            <ContextDivider />
+            <ContextItem icon={<Trash2 size={13} />} danger onClick={() => handleDeleteProfile(profileMenu.profile)}>
               删除
-            </button>
-          </div>
+            </ContextItem>
+          </ContextMenuBox>
+        </>
+      )}
+
+      {/* Group context menu */}
+      {groupMenu && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setGroupMenu(null)} />
+          <ContextMenuBox x={groupMenu.x} y={groupMenu.y}>
+            <ContextItem icon={<FolderPlus size={13} />} onClick={() => handleAddGroup(groupMenu.group.id)}>
+              新建子分组
+            </ContextItem>
+            <ContextItem icon={<FolderEdit size={13} />} onClick={() => handleEditGroup(groupMenu.group)}>
+              编辑分组
+            </ContextItem>
+            <ContextDivider />
+            <ContextItem icon={<Trash2 size={13} />} danger onClick={() => handleDeleteGroup(groupMenu.group)}>
+              删除分组
+            </ContextItem>
+          </ContextMenuBox>
+        </>
+      )}
+
+      {/* Blank-area context menu */}
+      {blankMenu && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setBlankMenu(null)} />
+          <ContextMenuBox x={blankMenu.x} y={blankMenu.y}>
+            <ContextItem icon={<Server size={13} />} onClick={handleAddServer}>
+              新建服务器
+            </ContextItem>
+            <ContextItem icon={<FolderPlus size={13} />} onClick={() => handleAddGroup('')}>
+              新建分组
+            </ContextItem>
+          </ContextMenuBox>
         </>
       )}
 
       {/* Profile form dialog */}
       <ProfileForm
-        key={showForm ? editingProfile?.id || 'new' : 'closed'}
-        open={showForm}
-        onOpenChange={setShowForm}
+        key={showProfileForm ? editingProfile?.id || 'new' : 'closed'}
+        open={showProfileForm}
+        onOpenChange={setShowProfileForm}
         profile={editingProfile}
+      />
+
+      {/* Group form dialog */}
+      <GroupForm
+        key={showGroupForm ? editingGroup?.id || `new-${groupFormParent}` : 'closed'}
+        open={showGroupForm}
+        onOpenChange={setShowGroupForm}
+        group={editingGroup}
+        defaultParentId={groupFormParent}
       />
     </div>
   )
+}
+
+/* --- small context-menu primitives, themed via CSS variables --- */
+function ContextMenuBox({ x, y, children }: { x: number; y: number; children: React.ReactNode }) {
+  return (
+    <div
+      className="fixed z-50 ctx-menu"
+      style={{ left: x, top: y }}
+    >
+      {children}
+    </div>
+  )
+}
+
+function ContextItem({
+  icon,
+  children,
+  onClick,
+  danger,
+}: {
+  icon: React.ReactNode
+  children: React.ReactNode
+  onClick: () => void
+  danger?: boolean
+}) {
+  return (
+    <button className={`ctx-item ${danger ? 'ctx-danger' : ''}`} onClick={onClick}>
+      {icon}
+      {children}
+    </button>
+  )
+}
+
+function ContextDivider() {
+  return <div className="ctx-divider" />
 }

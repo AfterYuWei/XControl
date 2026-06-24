@@ -91,5 +91,35 @@ func migrate(db *sql.DB) error {
 		}
 	}
 
+	// Additive column migrations (idempotent). SQLite has no IF NOT EXISTS
+	// for ADD COLUMN, so guard with a pragma column check.
+	if err := addColumnIfMissing(db, "profiles", "icon", "TEXT DEFAULT ''"); err != nil {
+		return fmt.Errorf("add profiles.icon: %w", err)
+	}
+
 	return nil
+}
+
+// addColumnIfMissing runs `ALTER TABLE t ADD COLUMN col def` only when the
+// column does not already exist, keeping migrations safe to re-run.
+func addColumnIfMissing(db *sql.DB, table, column, def string) error {
+	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == column {
+			return nil // already exists
+		}
+	}
+	_, err = db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, def))
+	return err
 }

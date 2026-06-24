@@ -34,7 +34,7 @@ func NewRouter(db *sql.DB, encryptor *crypto.Encryptor) http.Handler {
 
 	// Initialize handlers
 	profileH := handler.NewProfileHandler(profileStore, vaultStore, encryptor)
-	groupH := handler.NewGroupHandler(groupStore)
+	groupH := handler.NewGroupHandler(groupStore, profileStore)
 	snippetH := handler.NewSnippetHandler(snippetStore)
 	sessionH := handler.NewSessionHandler(profileStore, vaultStore, auditStore, pm)
 	wsH := handler.NewWSHandler(hub, sessionH)

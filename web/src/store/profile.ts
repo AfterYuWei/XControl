@@ -19,6 +19,7 @@ interface ProfileStore {
   updateProfile: (id: string, data: ProfileUpdateRequest) => Promise<Profile>
   deleteProfile: (id: string) => Promise<void>
   createGroup: (data: { name: string; parent_id?: string; icon?: string }) => Promise<Group>
+  updateGroup: (id: string, data: { name?: string; parent_id?: string; icon?: string }) => Promise<Group>
   deleteGroup: (id: string) => Promise<void>
   setSelectedGroup: (id: string | null) => void
   setSearchQuery: (query: string) => void
@@ -74,6 +75,12 @@ export const useProfileStore = create<ProfileStore>((set, get) => ({
 
   createGroup: async (data) => {
     const group = await groupApi.create(data)
+    get().fetchGroups()
+    return group
+  },
+
+  updateGroup: async (id, data) => {
+    const group = await groupApi.update(id, data)
     get().fetchGroups()
     return group
   },

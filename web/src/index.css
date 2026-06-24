@@ -398,6 +398,28 @@
   background: var(--bg-hover);
   color: var(--fg-2);
 }
+.sidebar-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 8px 6px 12px;
+  font: 600 11px / 1 var(--sans);
+  color: var(--fg-2);
+  letter-spacing: 0.02em;
+  user-select: none;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.sidebar-title-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.sidebar-title-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .sidebar-body {
   flex: 1;
   overflow-y: auto;
@@ -405,16 +427,44 @@
 }
 .srv-group {
   margin-bottom: 0;
+  border-radius: var(--r-xs);
+  transition: background 0.12s;
+}
+/* Drop target highlight when dragging a server over a group */
+.srv-group.grp-drop-target {
+  background: rgba(59, 130, 246, 0.1);
+  outline: 1px dashed var(--blue, #3b82f6);
+  outline-offset: -1px;
 }
 .grp-label {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 7px 12px 4px;
+  padding: 7px 8px 4px 12px;
   font: 600 11px / 1 var(--sans);
   color: var(--fg-3);
   letter-spacing: 0.02em;
   user-select: none;
+}
+.grp-label-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+.grp-label-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.grp-label-icon {
+  flex-shrink: 0;
+  color: var(--fg-3);
+}
+.grp-label-muted {
+  color: var(--fg-4);
+  font-weight: 500;
 }
 .grp-cnt {
   font-size: 9px;
@@ -425,6 +475,28 @@
   font-weight: 500;
   min-width: 18px;
   text-align: center;
+  flex-shrink: 0;
+}
+/* Add-server button on the right of each group header */
+.grp-add-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  color: var(--fg-4);
+  border-radius: var(--r-xs);
+  cursor: pointer;
+  opacity: 0.55;
+  transition: background 0.1s, color 0.1s, opacity 0.1s;
+}
+.grp-add-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-2);
+  opacity: 1;
 }
 /* Server list item — single-row, compact, Tabby-style */
 .srv {
@@ -437,6 +509,15 @@
   margin: 0 4px;
   border-radius: var(--r-xs);
 }
+.srv[draggable="true"] {
+  cursor: grab;
+}
+.srv[draggable="true"]:active {
+  cursor: grabbing;
+}
+.srv.dragging {
+  opacity: 0.4;
+}
 .srv:hover {
   background: var(--bg-hover);
 }
@@ -447,24 +528,27 @@
   color: var(--fg);
   font-weight: 500;
 }
-/* Colored terminal icon — rounded rect with server-specific hue */
+/* Line-style server icon — inherits theme color via currentColor */
 .srv-icon {
   width: 16px;
   height: 16px;
-  border-radius: 3px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
+  color: var(--fg-3);
 }
 .srv-icon svg {
-  width: 10px;
-  height: 10px;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  opacity: 0.85;
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.6;
+}
+.srv.active .srv-icon {
+  color: var(--fg);
+}
+.srv.offline .srv-icon {
+  color: var(--fg-4);
 }
 /* Small status dot at bottom-right of icon */
 .srv-dot {
@@ -493,8 +577,9 @@
 }
 .srv-info {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
   min-width: 0;
   flex: 1;
 }
@@ -524,6 +609,43 @@
 }
 .sidebar-empty svg {
   opacity: 0.4;
+}
+/* Context menu (servers & groups) — themed via CSS variables */
+.ctx-menu {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  padding: 4px;
+  min-width: 160px;
+}
+.ctx-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font: 400 12px / 1 var(--sans);
+  color: var(--fg-2);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--r-xs);
+  text-align: left;
+}
+.ctx-item:hover {
+  background: var(--bg-hover);
+}
+.ctx-item.ctx-danger {
+  color: var(--red);
+}
+.ctx-item.ctx-danger:hover {
+  background: var(--red-bg);
+}
+.ctx-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 4px 0;
 }
 .sidebar-ft {
   padding: 8px 12px;
@@ -1269,3 +1391,979 @@ input:focus:not(:focus-visible) {
 
 /* xterm.js styles are imported from @xterm/xterm/css/xterm.css in main.tsx.
    Avoid overriding xterm internals here to prevent canvas/selection misalignment. */
+
+/* ═══════════════════ SFTP FILE MANAGER ═══════════════════ */
+/* Termius-aligned: flat, weak dividers, line icons, low-saturation,
+   clean whitespace, moderate corner radius. All colors via CSS vars so
+   light/dark themes apply automatically. */
+.sftp-root {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  overflow: hidden;
+}
+/* When a SFTP tab is active, .term-wrap.sftp-aware uses the app bg instead of
+   the fixed terminal-dark bg so the SFTP chrome matches the global theme. */
+.term-wrap.sftp-aware {
+  background: var(--bg);
+  border-color: var(--border-subtle);
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+}
+
+/* ===== PANE ACTIONS (breadcrumb-right buttons) ===== */
+.sftp-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex-shrink: 0;
+}
+.sftp-actions-sep {
+  width: 1px;
+  height: 14px;
+  background: var(--border-subtle);
+  margin: 0 3px;
+  flex-shrink: 0;
+}
+.sftp-act-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--fg-3);
+  cursor: pointer;
+  border-radius: var(--r-xs);
+  transition: background 0.1s, color 0.1s;
+}
+.sftp-act-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.sftp-act-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.sftp-act-btn.on {
+  color: var(--accent);
+  background: var(--accent-bg);
+}
+
+/* ===== DUAL PANES ===== */
+.sftp-panes {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+.sftp-divider {
+  width: 1px;
+  background: var(--border-subtle);
+  flex-shrink: 0;
+}
+
+/* ===== PANE ===== */
+.sftp-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+  transition: background 0.15s;
+}
+.sftp-pane.drag-over {
+  background: var(--accent-bg2);
+}
+.sftp-pane.drag-over::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border: 1.5px dashed var(--accent);
+  border-radius: var(--r);
+  pointer-events: none;
+  z-index: 5;
+}
+/* ===== PANE HEADER (multi-tab) ===== */
+.sftp-pane-hdr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 0;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  min-height: 34px;
+}
+.sftp-pane-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: 600 11px / 1 var(--sans);
+  color: var(--fg-2);
+  letter-spacing: 0.01em;
+  flex-shrink: 0;
+  user-select: none;
+}
+.sftp-pane-title svg {
+  color: var(--fg-4);
+}
+/* Tab strip within the pane header — each tab is an open directory. */
+.sftp-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 6px;
+}
+.sftp-tabs::-webkit-scrollbar {
+  display: none;
+}
+.sftp-ptab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 5px 0 7px;
+  border-radius: var(--r-xs);
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+  border: 1px solid transparent;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.sftp-ptab:hover {
+  background: var(--bg-hover);
+}
+.sftp-ptab.active {
+  background: var(--bg-active);
+  border-color: var(--border-subtle);
+}
+.sftp-ptab-icon {
+  color: var(--fg-4);
+  flex-shrink: 0;
+}
+.sftp-ptab.active .sftp-ptab-icon {
+  color: var(--accent);
+}
+.sftp-ptab-name {
+  font: 500 11px / 1 var(--mono);
+  color: var(--fg-3);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sftp-ptab.active .sftp-ptab-name {
+  color: var(--fg);
+}
+.sftp-ptab-x {
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--fg-4);
+  cursor: pointer;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s, color 0.1s;
+  padding: 0;
+  margin-left: 1px;
+}
+.sftp-ptab:hover .sftp-ptab-x,
+.sftp-ptab.active .sftp-ptab-x {
+  opacity: 1;
+}
+.sftp-ptab-x:hover {
+  background: var(--bg-hover);
+  color: var(--fg-2);
+}
+.sftp-ptab-add {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--fg-4);
+  cursor: pointer;
+  border-radius: var(--r-xs);
+  transition: background 0.1s, color 0.1s;
+}
+.sftp-ptab-add:hover {
+  background: var(--bg-hover);
+  color: var(--fg-2);
+}
+
+/* ===== BREADCRUMB ROW (breadcrumb left + actions right) ===== */
+.sftp-crumb-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 6px;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+/* ===== BREADCRUMB ===== */
+.sftp-crumb {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.sftp-crumb::-webkit-scrollbar {
+  display: none;
+}
+.sftp-crumb-home {
+  color: var(--fg-4);
+  flex-shrink: 0;
+  margin-right: 2px;
+}
+.sftp-crumb-seg-wrap {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.sftp-crumb-sep {
+  color: var(--fg-5);
+  margin: 0 1px;
+}
+.sftp-crumb-seg {
+  border: none;
+  background: transparent;
+  color: var(--fg-3);
+  font: 400 11.5px / 1 var(--mono);
+  padding: 3px 5px;
+  border-radius: var(--r-xs);
+  cursor: pointer;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background 0.1s, color 0.1s;
+}
+.sftp-crumb-seg:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.sftp-crumb-seg:last-child {
+  color: var(--fg);
+  font-weight: 500;
+}
+.sftp-crumb-input {
+  flex: 1;
+  height: 24px;
+  background: var(--bg-input);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-xs);
+  color: var(--fg);
+  font: 400 11.5px / 1 var(--mono);
+  padding: 0 6px;
+  outline: none;
+}
+
+/* ===== FILE LIST ===== */
+.sftp-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 6px 6px;
+  position: relative;
+}
+.sftp-list-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 2;
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 2px;
+}
+.sftp-list-head .sftp-cell {
+  font: 500 10px / 1 var(--sans);
+  color: var(--fg-4);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.sftp-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: var(--r-xs);
+  cursor: default;
+  transition: background 0.06s;
+  position: relative;
+  user-select: none;
+}
+.sftp-row:hover {
+  background: var(--bg-hover);
+}
+.sftp-row.sel {
+  background: var(--accent-bg);
+}
+.sftp-row.sel::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 3px;
+  bottom: 3px;
+  width: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+}
+.sftp-row.sel:hover {
+  background: var(--accent-bg);
+}
+.sftp-row.dragging {
+  opacity: 0.4;
+}
+.sftp-row.drop-target {
+  outline: 1px dashed var(--accent);
+  outline-offset: -1px;
+}
+.sftp-row[draggable="true"] {
+  cursor: grab;
+}
+.sftp-row[draggable="true"]:active {
+  cursor: grabbing;
+}
+.sftp-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sftp-cell-icon {
+  width: 16px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-3);
+}
+.sftp-row.is-dir .sftp-cell-icon {
+  color: var(--accent);
+}
+.sftp-cell-name {
+  flex: 1;
+  font: 400 12px / 1.3 var(--sans);
+  color: var(--fg);
+  min-width: 0;
+}
+.sftp-row.is-file .sftp-cell-name {
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.sftp-cell-size {
+  width: 72px;
+  flex-shrink: 0;
+  text-align: right;
+  font: 400 10.5px / 1 var(--mono);
+  color: var(--fg-4);
+  font-variant-numeric: tabular-nums;
+}
+.sftp-cell-date {
+  width: 110px;
+  flex-shrink: 0;
+  text-align: right;
+  font: 400 10.5px / 1 var(--mono);
+  color: var(--fg-4);
+}
+.sftp-list-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 40px 16px;
+  color: var(--fg-5);
+  font: 400 11px / 1.4 var(--sans);
+}
+.sftp-list-empty svg {
+  opacity: 0.5;
+}
+.sftp-drop-hint {
+  position: absolute;
+  inset: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--accent-bg);
+  border: 1.5px dashed var(--accent);
+  border-radius: var(--r);
+  color: var(--accent);
+  font: 500 12px / 1 var(--sans);
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* ===== TREE VIEW ===== */
+.sftp-list-tree {
+  padding-top: 4px;
+}
+.sftp-tree {
+  display: flex;
+  flex-direction: column;
+}
+.sftp-trow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px 0 8px;
+  border-radius: var(--r-xs);
+  cursor: default;
+  transition: background 0.06s;
+  position: relative;
+  user-select: none;
+  white-space: nowrap;
+}
+.sftp-trow:hover {
+  background: var(--bg-hover);
+}
+.sftp-trow.sel {
+  background: var(--accent-bg);
+}
+.sftp-trow.sel::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 3px;
+  bottom: 3px;
+  width: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+}
+.sftp-trow.active-path {
+  color: var(--fg);
+}
+.sftp-trow.active-path .sftp-trow-name {
+  font-weight: 600;
+}
+.sftp-trow[draggable="true"] {
+  cursor: grab;
+}
+.sftp-trow[draggable="true"]:active {
+  cursor: grabbing;
+}
+.sftp-trow-chevron {
+  width: 14px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-4);
+}
+.sftp-trow-chevron svg {
+  transition: transform 0.12s ease;
+  cursor: pointer;
+}
+.sftp-trow-chevron .sftp-chev-open {
+  transform: rotate(90deg);
+}
+.sftp-trow-icon {
+  width: 16px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-3);
+}
+.sftp-trow.is-dir .sftp-trow-icon {
+  color: var(--accent);
+}
+.sftp-trow-name {
+  font: 400 12px / 1 var(--sans);
+  color: var(--fg-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sftp-trow.is-file .sftp-trow-name {
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+/* ===== EMPTY REMOTE (no server) ===== */
+.sftp-pane-empty {
+  align-items: center;
+  justify-content: center;
+}
+.sftp-pane-empty-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 32px 24px;
+  text-align: center;
+}
+.sftp-pane-empty-icon {
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-lg);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--fg-4);
+  margin-bottom: 4px;
+}
+.sftp-pane-empty-title {
+  font: 600 13px / 1.3 var(--sans);
+  color: var(--fg-2);
+}
+.sftp-pane-empty-desc {
+  font: 400 12px / 1.5 var(--sans);
+  color: var(--fg-4);
+  max-width: 240px;
+  margin-bottom: 6px;
+}
+.sftp-pane-empty-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: var(--r);
+  border: 1px solid var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent);
+  font: 500 12px / 1 var(--sans);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.sftp-pane-empty-btn:hover {
+  background: var(--accent);
+  color: var(--bg-panel);
+}
+
+/* ===== CONTEXT MENU ===== */
+.sftp-ctx-menu {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  padding: 4px;
+  min-width: 168px;
+}
+.sftp-ctx-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font: 400 12px / 1 var(--sans);
+  color: var(--fg-2);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--r-xs);
+  text-align: left;
+}
+.sftp-ctx-item:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.sftp-ctx-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.sftp-ctx-item.danger {
+  color: var(--red);
+}
+.sftp-ctx-item.danger:hover {
+  background: var(--red-bg);
+}
+.sftp-ctx-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-4);
+  flex-shrink: 0;
+}
+.sftp-ctx-item.danger .sftp-ctx-icon {
+  color: var(--red);
+}
+.sftp-ctx-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 4px 0;
+}
+
+/* ===== TRANSFER QUEUE ===== */
+.sftp-tx {
+  flex-shrink: 0;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+  max-height: 220px;
+  display: flex;
+  flex-direction: column;
+}
+.sftp-tx.collapsed {
+  max-height: 36px;
+}
+.sftp-tx-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 12px;
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+}
+.sftp-tx-hdr:hover {
+  background: var(--bg-hover);
+}
+.sftp-tx-hdr-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg-3);
+}
+.sftp-tx-title {
+  font: 600 11px / 1 var(--sans);
+  color: var(--fg-2);
+}
+.sftp-tx-count {
+  font: 400 10.5px / 1 var(--mono);
+  color: var(--fg-4);
+}
+.sftp-tx-mini-bar {
+  width: 80px;
+  height: 3px;
+  background: var(--bg-elevated);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.sftp-tx-mini-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+.sftp-tx-hdr-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.sftp-tx-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  color: var(--fg-4);
+  font: 400 10.5px / 1 var(--sans);
+  cursor: pointer;
+  padding: 3px 6px;
+  border-radius: var(--r-xs);
+  transition: background 0.1s, color 0.1s;
+}
+.sftp-tx-clear:hover {
+  background: var(--bg-hover);
+  color: var(--fg-2);
+}
+.sftp-tx-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 12px 8px;
+}
+.sftp-tx-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 4px;
+  border-radius: var(--r-xs);
+}
+.sftp-tx-item:hover {
+  background: var(--bg-hover);
+}
+.sftp-tx-dir {
+  width: 16px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-4);
+}
+.sftp-tx-item .sftp-tx-dir svg {
+  /* upload = up arrow accent, download = down arrow */
+}
+.sftp-tx-name {
+  width: 160px;
+  flex-shrink: 0;
+  font: 400 11.5px / 1.2 var(--mono);
+  color: var(--fg-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sftp-tx-progress {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.sftp-tx-bar {
+  flex: 1;
+  height: 4px;
+  background: var(--bg-elevated);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.sftp-tx-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+.sftp-tx-fill.transferring {
+  background: var(--accent);
+  background-image: linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.15) 25%,
+    transparent 25%,
+    transparent 50%,
+    rgba(255, 255, 255, 0.15) 50%,
+    rgba(255, 255, 255, 0.15) 75%,
+    transparent 75%,
+    transparent
+  );
+  background-size: 12px 12px;
+  animation: sftp-tx-stripes 0.6s linear infinite;
+}
+.sftp-tx-fill.completed {
+  background: var(--green);
+}
+.sftp-tx-fill.failed {
+  background: var(--red);
+}
+.sftp-tx-fill.cancelled {
+  background: var(--fg-5);
+}
+@keyframes sftp-tx-stripes {
+  from { background-position: 0 0; }
+  to { background-position: 12px 0; }
+}
+.sftp-tx-pct {
+  width: 36px;
+  flex-shrink: 0;
+  text-align: right;
+  font: 500 10px / 1 var(--mono);
+  color: var(--fg-3);
+  font-variant-numeric: tabular-nums;
+}
+.sftp-tx-size {
+  width: 130px;
+  flex-shrink: 0;
+  text-align: right;
+  font: 400 10px / 1 var(--mono);
+  color: var(--fg-4);
+  font-variant-numeric: tabular-nums;
+}
+.sftp-tx-status {
+  width: 84px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: 400 10px / 1 var(--mono);
+  color: var(--fg-4);
+}
+.sftp-tx-status.transferring {
+  color: var(--accent);
+}
+.sftp-tx-status.completed {
+  color: var(--green);
+}
+.sftp-tx-status.failed {
+  color: var(--red);
+}
+.sftp-tx-status.cancelled {
+  color: var(--fg-5);
+}
+.sftp-tx-spin {
+  animation: sftp-spin 0.8s linear infinite;
+}
+@keyframes sftp-spin {
+  to { transform: rotate(360deg); }
+}
+.sftp-tx-cancel {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--fg-4);
+  cursor: pointer;
+  border-radius: var(--r-xs);
+  transition: background 0.1s, color 0.1s;
+}
+.sftp-tx-cancel:hover {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+/* ===== SERVER PICKER DIALOG ===== */
+.sftp-picker {
+  width: 440px;
+  max-width: 92vw;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+.sftp-picker-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 6px;
+}
+.sftp-picker-title {
+  font: 600 14px / 1.2 var(--sans);
+  color: var(--fg);
+}
+.sftp-picker-x {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--fg-4);
+  cursor: pointer;
+  border-radius: var(--r-xs);
+}
+.sftp-picker-x:hover {
+  background: var(--bg-hover);
+  color: var(--fg-2);
+}
+.sftp-picker-sub {
+  padding: 0 16px 12px;
+  font: 400 11.5px / 1.5 var(--sans);
+  color: var(--fg-4);
+}
+.sftp-picker-list {
+  padding: 4px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.sftp-server-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r);
+  background: var(--bg);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.12s, background 0.12s, box-shadow 0.12s;
+}
+.sftp-server-card:hover {
+  background: var(--bg-hover);
+  border-color: var(--fg-5);
+}
+/* Highlight the active terminal tab's server */
+.sftp-server-card.recommended {
+  border-color: var(--accent);
+  background: var(--accent-bg2);
+  box-shadow: 0 0 0 1px var(--accent-bg), 0 0 12px var(--accent-bg);
+}
+.sftp-server-card.recommended:hover {
+  background: var(--accent-bg);
+}
+.sftp-server-icon {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--fg-3);
+}
+.sftp-server-card.recommended .sftp-server-icon {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.sftp-server-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.sftp-server-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 600 13px / 1.2 var(--sans);
+  color: var(--fg);
+}
+.sftp-server-tag {
+  font: 500 9.5px / 1 var(--sans);
+  padding: 2px 6px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: var(--bg-panel);
+  letter-spacing: 0.02em;
+}
+.sftp-server-meta {
+  font: 400 11px / 1 var(--mono);
+  color: var(--fg-4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sftp-server-arrow {
+  color: var(--fg-5);
+  flex-shrink: 0;
+}
+.sftp-server-card:hover .sftp-server-arrow {
+  color: var(--accent);
+}
+.sftp-picker-empty {
+  padding: 32px 16px;
+  text-align: center;
+  font: 400 12px / 1.4 var(--sans);
+  color: var(--fg-4);
+}
+
+/* SFTP chip in the status bar */
+.sb-tab.is-sftp .sb-dot-icon {
+  color: var(--accent);
+}
+.sb-tab.is-sftp.active .sb-dot-icon {
+  color: var(--accent-hi);
+}

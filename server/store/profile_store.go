@@ -17,7 +17,7 @@ func NewProfileStore(db *sql.DB) ProfileStore {
 }
 
 func (s *sqliteProfileStore) List(groupID, search string) ([]*model.Profile, error) {
-	query := `SELECT id, name, host, port, username, auth_type, vault_id, group_id, tags, options, note, sort_order, last_used_at, created_at, updated_at FROM profiles WHERE 1=1`
+	query := `SELECT id, name, host, port, username, auth_type, icon, vault_id, group_id, tags, options, note, sort_order, last_used_at, created_at, updated_at FROM profiles WHERE 1=1`
 	args := []any{}
 
 	if groupID != "" {
@@ -43,7 +43,7 @@ func (s *sqliteProfileStore) List(groupID, search string) ([]*model.Profile, err
 		p := &model.Profile{}
 		var tagsJSON string
 		var lastUsed sql.NullTime
-		err := rows.Scan(&p.ID, &p.Name, &p.Host, &p.Port, &p.Username, &p.AuthType, &p.VaultID, &p.GroupID, &tagsJSON, &p.Options, &p.Note, &p.SortOrder, &lastUsed, &p.CreatedAt, &p.UpdatedAt)
+		err := rows.Scan(&p.ID, &p.Name, &p.Host, &p.Port, &p.Username, &p.AuthType, &p.Icon, &p.VaultID, &p.GroupID, &tagsJSON, &p.Options, &p.Note, &p.SortOrder, &lastUsed, &p.CreatedAt, &p.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -63,8 +63,8 @@ func (s *sqliteProfileStore) Get(id string) (*model.Profile, error) {
 	p := &model.Profile{}
 	var tagsJSON string
 	var lastUsed sql.NullTime
-	err := s.db.QueryRow(`SELECT id, name, host, port, username, auth_type, vault_id, group_id, tags, options, note, sort_order, last_used_at, created_at, updated_at FROM profiles WHERE id = ?`, id).
-		Scan(&p.ID, &p.Name, &p.Host, &p.Port, &p.Username, &p.AuthType, &p.VaultID, &p.GroupID, &tagsJSON, &p.Options, &p.Note, &p.SortOrder, &lastUsed, &p.CreatedAt, &p.UpdatedAt)
+	err := s.db.QueryRow(`SELECT id, name, host, port, username, auth_type, icon, vault_id, group_id, tags, options, note, sort_order, last_used_at, created_at, updated_at FROM profiles WHERE id = ?`, id).
+		Scan(&p.ID, &p.Name, &p.Host, &p.Port, &p.Username, &p.AuthType, &p.Icon, &p.VaultID, &p.GroupID, &tagsJSON, &p.Options, &p.Note, &p.SortOrder, &lastUsed, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -80,8 +80,8 @@ func (s *sqliteProfileStore) Get(id string) (*model.Profile, error) {
 
 func (s *sqliteProfileStore) Create(p *model.Profile) error {
 	tagsJSON, _ := json.Marshal(p.Tags)
-	_, err := s.db.Exec(`INSERT INTO profiles (id, name, host, port, username, auth_type, vault_id, group_id, tags, options, note, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.ID, p.Name, p.Host, p.Port, p.Username, p.AuthType, p.VaultID, p.GroupID, string(tagsJSON), p.Options, p.Note, p.SortOrder, p.CreatedAt, p.UpdatedAt)
+	_, err := s.db.Exec(`INSERT INTO profiles (id, name, host, port, username, auth_type, icon, vault_id, group_id, tags, options, note, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.Name, p.Host, p.Port, p.Username, p.AuthType, p.Icon, p.VaultID, p.GroupID, string(tagsJSON), p.Options, p.Note, p.SortOrder, p.CreatedAt, p.UpdatedAt)
 	return err
 }
 
@@ -106,6 +106,9 @@ func (s *sqliteProfileStore) Update(id string, req *model.ProfileUpdateRequest) 
 	if req.AuthType != nil {
 		p.AuthType = *req.AuthType
 	}
+	if req.Icon != nil {
+		p.Icon = *req.Icon
+	}
 	if req.VaultID != nil {
 		p.VaultID = *req.VaultID
 	}
@@ -124,8 +127,8 @@ func (s *sqliteProfileStore) Update(id string, req *model.ProfileUpdateRequest) 
 	p.UpdatedAt = time.Now()
 
 	tagsJSON, _ := json.Marshal(p.Tags)
-	_, err = s.db.Exec(`UPDATE profiles SET name=?, host=?, port=?, username=?, auth_type=?, vault_id=?, group_id=?, tags=?, options=?, note=?, updated_at=? WHERE id=?`,
-		p.Name, p.Host, p.Port, p.Username, p.AuthType, p.VaultID, p.GroupID, string(tagsJSON), p.Options, p.Note, p.UpdatedAt, id)
+	_, err = s.db.Exec(`UPDATE profiles SET name=?, host=?, port=?, username=?, auth_type=?, icon=?, vault_id=?, group_id=?, tags=?, options=?, note=?, updated_at=? WHERE id=?`,
+		p.Name, p.Host, p.Port, p.Username, p.AuthType, p.Icon, p.VaultID, p.GroupID, string(tagsJSON), p.Options, p.Note, p.UpdatedAt, id)
 	return err
 }
 
@@ -137,4 +140,10 @@ func (s *sqliteProfileStore) Delete(id string) error {
 func (s *sqliteProfileStore) UpdateLastUsed(id string) error {
 	_, err := s.db.Exec(`UPDATE profiles SET last_used_at = ? WHERE id = ?`, time.Now(), id)
 	return err
+}
+
+func (s *sqliteProfileStore) CountByGroup(groupID string) (int, error) {
+	var count int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM profiles WHERE group_id = ?`, groupID).Scan(&count)
+	return count, err
 }

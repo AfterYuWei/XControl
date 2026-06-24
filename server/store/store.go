@@ -9,6 +9,7 @@ type ProfileStore interface {
 	Update(id string, p *model.ProfileUpdateRequest) error
 	Delete(id string) error
 	UpdateLastUsed(id string) error
+	CountByGroup(groupID string) (int, error)
 }
 
 type GroupStore interface {

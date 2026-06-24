@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { FolderUp } from 'lucide-react'
 import { useSessionStore } from '@/store/session'
 
 export function StatusBar() {
@@ -57,18 +58,23 @@ export function StatusBar() {
         {tabs.map((tab) => {
           const s = tab.status
           const dc = s === 'connected' ? 'on' : s === 'connecting' ? 'loading' : 'off'
+          const isSftp = tab.kind === 'sftp'
           return (
             <div
               key={tab.id}
-              className={`sb-tab ${tab.id === activeTabId ? 'active' : ''}`}
+              className={`sb-tab ${tab.id === activeTabId ? 'active' : ''} ${isSftp ? 'is-sftp' : ''}`}
               role="tab"
               aria-selected={tab.id === activeTabId}
               tabIndex={tab.id === activeTabId ? 0 : -1}
               onClick={() => setActiveTab(tab.id)}
-              title={`${tab.profileName}${tab.host ? ` — ${tab.username ?? 'root'}@${tab.host}` : ''}`}
+              title={isSftp ? 'SFTP 文件管理' : `${tab.profileName}${tab.host ? ` — ${tab.username ?? 'root'}@${tab.host}` : ''}`}
             >
-              <span className={`sb-dot ${dc}`} aria-hidden="true" />
-              <span className="sb-name">{tab.profileName}</span>
+              {isSftp ? (
+                <FolderUp size={11} className="sb-dot-icon" aria-hidden="true" />
+              ) : (
+                <span className={`sb-dot ${dc}`} aria-hidden="true" />
+              )}
+              <span className="sb-name">{isSftp ? 'SFTP' : tab.profileName}</span>
               <button
                 className="sb-x"
                 aria-label={`关闭会话 ${tab.profileName}`}

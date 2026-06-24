@@ -52,7 +52,7 @@ export function FileRow({
     selected ? 'sel' : '',
     dragging ? 'dragging' : '',
     isDropTarget ? 'drop-target' : '',
-    entry.isDir ? 'is-dir' : 'is-file',
+    entry.is_dir ? 'is-dir' : 'is-file',
   ]
     .filter(Boolean)
     .join(' ')
@@ -73,13 +73,13 @@ export function FileRow({
       }}
     >
       <span className="sftp-cell sftp-cell-icon">
-        {entry.isDir ? <Folder size={14} /> : renderFileIcon(entry.name, 14)}
+        {entry.is_dir ? <Folder size={14} /> : renderFileIcon(entry.name, 14)}
       </span>
       <span className="sftp-cell sftp-cell-name" title={entry.name}>
         {entry.name}
       </span>
-      <span className="sftp-cell sftp-cell-size">{formatSize(entry.size, entry.isDir)}</span>
-      <span className="sftp-cell sftp-cell-date">{formatDate(entry.modTime)}</span>
+      <span className="sftp-cell sftp-cell-size">{formatSize(entry.size, entry.is_dir)}</span>
+      <span className="sftp-cell sftp-cell-date">{formatDate(entry.mod_time)}</span>
     </div>
   )
 }

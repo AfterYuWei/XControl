@@ -9,6 +9,7 @@ import (
 	"github.com/yuweinfo/sshx/gateway/middleware"
 	"github.com/yuweinfo/sshx/protocol"
 	sshdriver "github.com/yuweinfo/sshx/protocol/ssh"
+	sftpdriver "github.com/yuweinfo/sshx/protocol/sftp"
 	"github.com/yuweinfo/sshx/store"
 	"github.com/yuweinfo/sshx/ws"
 )
@@ -28,9 +29,13 @@ func NewRouter(db *sql.DB, encryptor *crypto.Encryptor) http.Handler {
 	pm.Register("ssh", func(opts protocol.DriverOpts) (protocol.Driver, error) {
 		return sshdriver.NewDriver(opts)
 	})
+	pm.Register("sftp", func(opts protocol.DriverOpts) (protocol.Driver, error) {
+		return sftpdriver.NewDriver(opts)
+	})
 
-	// Initialize WebSocket hub
+	// Initialize WebSocket hubs
 	hub := ws.NewHub()
+	sftpHub := ws.NewSftpHub()
 
 	// Initialize handlers
 	profileH := handler.NewProfileHandler(profileStore, vaultStore, encryptor)
@@ -38,6 +43,8 @@ func NewRouter(db *sql.DB, encryptor *crypto.Encryptor) http.Handler {
 	snippetH := handler.NewSnippetHandler(snippetStore)
 	sessionH := handler.NewSessionHandler(profileStore, vaultStore, auditStore, pm)
 	wsH := handler.NewWSHandler(hub, sessionH)
+	transferMgr := handler.NewTransferManager(sftpHub)
+	sftpH := handler.NewSftpHandler(profileStore, vaultStore, auditStore, pm, sftpHub, transferMgr)
 
 	// Profile routes
 	mux.HandleFunc("GET /api/profiles", profileH.List)
@@ -65,6 +72,31 @@ func NewRouter(db *sql.DB, encryptor *crypto.Encryptor) http.Handler {
 
 	// WebSocket
 	mux.HandleFunc("GET /ws", wsH.Handle)
+
+	// SFTP session routes
+	mux.HandleFunc("POST /api/sftp/sessions", sftpH.CreateSession)
+	mux.HandleFunc("GET /api/sftp/sessions", sftpH.ListSessions)
+	mux.HandleFunc("GET /api/sftp/sessions/{id}", sftpH.GetSession)
+	mux.HandleFunc("DELETE /api/sftp/sessions/{id}", sftpH.CloseSession)
+
+	// SFTP file operations
+	mux.HandleFunc("GET /api/sftp/sessions/{id}/list", sftpH.List)
+	mux.HandleFunc("GET /api/sftp/sessions/{id}/stat", sftpH.Stat)
+	mux.HandleFunc("GET /api/sftp/sessions/{id}/tree", sftpH.Tree)
+	mux.HandleFunc("POST /api/sftp/sessions/{id}/mkdir", sftpH.Mkdir)
+	mux.HandleFunc("POST /api/sftp/sessions/{id}/rename", sftpH.Rename)
+	mux.HandleFunc("POST /api/sftp/sessions/{id}/delete", sftpH.Delete)
+
+	// SFTP transfers
+	mux.HandleFunc("POST /api/sftp/sessions/{id}/upload", sftpH.Upload)
+	mux.HandleFunc("POST /api/sftp/sessions/{id}/download", sftpH.Download)
+	mux.HandleFunc("GET /api/sftp/transfers", sftpH.ListTransfers)
+	mux.HandleFunc("DELETE /api/sftp/transfers", sftpH.ClearCompletedTransfers)
+	mux.HandleFunc("DELETE /api/sftp/transfers/{task_id}", sftpH.CancelTransfer)
+	mux.HandleFunc("GET /api/sftp/transfers/{task_id}/file", sftpH.ServeDownloadFile)
+
+	// SFTP WebSocket (independent path for transfer progress)
+	mux.HandleFunc("GET /api/sftp/ws", sftpH.HandleWS)
 
 	// Apply middleware
 	var h http.Handler = mux

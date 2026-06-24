@@ -63,7 +63,7 @@ export function FileTree({
       'sftp-trow',
       isSelected ? 'sel' : '',
       isActive ? 'active-path' : '',
-      e.isDir ? 'is-dir' : 'is-file',
+      e.is_dir ? 'is-dir' : 'is-file',
     ]
       .filter(Boolean)
       .join(' ')
@@ -81,20 +81,20 @@ export function FileTree({
             onSelect(e, ev.metaKey || ev.ctrlKey)
           }}
           onDoubleClick={() => {
-            if (e.isDir) toggle(e.path)
+            if (e.is_dir) toggle(e.path)
             else onActivate(e)
           }}
           onContextMenu={(ev) => onContextMenu(ev, e)}
           onDragStart={(ev) => onDragStart(ev, e)}
           onKeyDown={(ev) => {
             if (ev.key === 'Enter') {
-              if (e.isDir) toggle(e.path)
+              if (e.is_dir) toggle(e.path)
               else onActivate(e)
             }
           }}
         >
           <span className="sftp-trow-chevron">
-            {e.isDir ? (
+            {e.is_dir ? (
               <ChevronRight
                 size={13}
                 className={isExpanded ? 'sftp-chev-open' : ''}
@@ -106,13 +106,13 @@ export function FileTree({
             ) : null}
           </span>
           <span className="sftp-trow-icon">
-            {e.isDir ? <Folder size={14} /> : renderFileIcon(e.name, 14)}
+            {e.is_dir ? <Folder size={14} /> : renderFileIcon(e.name, 14)}
           </span>
           <span className="sftp-trow-name" title={e.name}>
             {e.name}
           </span>
         </div>
-        {e.isDir && isExpanded && node.children.map((child) => renderNode(child, depth + 1))}
+        {e.is_dir && isExpanded && node.children.map((child) => renderNode(child, depth + 1))}
       </div>
     )
   }

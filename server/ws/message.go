@@ -14,6 +14,12 @@ const (
 	MsgPong    MessageType = "pong"
 	MsgAuth    MessageType = "auth"
 	MsgMeta    MessageType = "metadata"
+
+	// SFTP transfer progress messages
+	MsgTransferProgress MessageType = "transfer_progress"
+	MsgTransferComplete MessageType = "transfer_complete"
+	MsgTransferFailed   MessageType = "transfer_failed"
+	MsgSftpSessionStatus MessageType = "sftp_session_status"
 )
 
 type Message struct {
@@ -41,6 +47,33 @@ type MetaPayload struct {
 	Host      string `json:"host"`
 	Username  string `json:"username"`
 	Protocol  string `json:"protocol"`
+}
+
+// --- SFTP transfer payloads ---
+
+type TransferProgressPayload struct {
+	TaskID      string `json:"task_id"`
+	Transferred int64  `json:"transferred"`
+	Size        int64  `json:"size"`
+	Speed       int64  `json:"speed"`
+	Status      string `json:"status"`
+}
+
+type TransferCompletePayload struct {
+	TaskID     string `json:"task_id"`
+	Status     string `json:"status"`
+	FinishedAt int64  `json:"finished_at"`
+}
+
+type TransferFailedPayload struct {
+	TaskID       string `json:"task_id"`
+	Status       string `json:"status"`
+	ErrorMessage string `json:"error_message"`
+}
+
+type SftpSessionStatusPayload struct {
+	SessionID string `json:"session_id"`
+	Status    string `json:"status"`
 }
 
 func ParseMessage(data []byte) (*Message, error) {

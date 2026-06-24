@@ -97,8 +97,8 @@ export function TransferQueue() {
                 <span className="sftp-tx-dir">
                   {task.direction === 'upload' ? <ArrowUp size={13} /> : <ArrowDown size={13} />}
                 </span>
-                <span className="sftp-tx-name" title={task.fileName}>
-                  {task.fileName}
+                <span className="sftp-tx-name" title={task.file_name}>
+                  {task.file_name}
                 </span>
                 <span className="sftp-tx-progress">
                   <div className="sftp-tx-bar">

@@ -381,7 +381,7 @@ export function Sidebar() {
 
       {/* Profile form dialog */}
       <ProfileForm
-        key={showProfileForm ? editingProfile?.id || 'new' : 'closed'}
+        key={showProfileForm ? `profile-${editingProfile?.id || 'new'}` : 'profile-closed'}
         open={showProfileForm}
         onOpenChange={setShowProfileForm}
         profile={editingProfile}
@@ -389,7 +389,7 @@ export function Sidebar() {
 
       {/* Group form dialog */}
       <GroupForm
-        key={showGroupForm ? editingGroup?.id || `new-${groupFormParent}` : 'closed'}
+        key={showGroupForm ? `group-${editingGroup?.id || `new-${groupFormParent}`}` : 'group-closed'}
         open={showGroupForm}
         onOpenChange={setShowGroupForm}
         group={editingGroup}

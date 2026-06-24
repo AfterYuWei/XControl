@@ -65,6 +65,17 @@ export const sftpApi = {
 
   // --- Transfers ---
 
+  /** Cross-session transfer: tries direct server-to-server copy first, falls
+   *  back to backend relay if direct is not possible. */
+  transfer: (sourceSessionId: string, targetSessionId: string, paths: string[], destDir: string, overwrite = false) =>
+    api.post<{ task_id: string; method: string; tasks: TransferTask[] }>('/api/sftp/transfer', {
+      source_session_id: sourceSessionId,
+      target_session_id: targetSessionId,
+      paths,
+      dest_dir: destDir,
+      overwrite,
+    }),
+
   /** Upload files via multipart form. Each file in the array becomes a separate
    *  transfer task on the backend. */
   upload: (sessionId: string, files: File[], destDir: string, overwrite = false) => {

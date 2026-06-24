@@ -29,6 +29,15 @@ type SftpSession struct {
 	Error     string
 	CreatedAt time.Time
 
+	// Connection info retained for direct server-to-server transfer (scp).
+	// Empty for local sessions.
+	Host       string
+	Port       int
+	Username   string
+	Password   string
+	PrivKey    string
+	Passphrase string
+
 	// For cancelling in-flight operations when the session closes.
 	cancel context.CancelFunc
 }
@@ -118,6 +127,14 @@ func (h *SftpHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 				passphrase = cred.Passphrase
 			}
 		}
+
+		// Retain connection info for direct server-to-server transfer
+		session.Host = profile.Host
+		session.Port = profile.Port
+		session.Username = profile.Username
+		session.Password = password
+		session.PrivKey = privKey
+		session.Passphrase = passphrase
 
 		opts := protocol.DriverOpts{
 			Host:       profile.Host,

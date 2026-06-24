@@ -9,9 +9,11 @@ interface TerminalViewProps {
 /** Content router: renders SftpView for sftp-kind tabs, TerminalPane otherwise. */
 export function TerminalView({ panelOpen }: TerminalViewProps) {
   const { tabs, activeTabId } = useSessionStore()
+  const activeTab = tabs.find((t) => t.id === activeTabId)
+  const isSftp = activeTab?.kind === 'sftp'
 
   return (
-    <div className="term-wrap sftp-aware">
+    <div className={`term-wrap ${isSftp ? 'sftp-aware' : ''}`}>
       <div className="flex-1 relative overflow-hidden">
         {tabs.map((tab) => {
           const active = tab.id === activeTabId

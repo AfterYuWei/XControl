@@ -151,7 +151,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   }
 
   return (
-    <div className="h-full w-full relative" style={{ background: 'var(--bg)' }}>
+    <div className="h-full w-full relative" style={{ background: 'var(--term-bg)' }}>
       <div ref={containerRef} className="h-full w-full" />
 
       <ConnectionDialog

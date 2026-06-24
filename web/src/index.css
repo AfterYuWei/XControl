@@ -177,18 +177,41 @@
   overflow: hidden;
 }
 
-/* ===== HEADER (full width) ===== */
+/* ===== HEADER (full width, left/center/right) ===== */
 .sshx-header {
   height: var(--tabbar-h);
   display: flex;
   align-items: center;
-  justify-content: center;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
-  padding: 0 12px;
+  padding: 0 8px;
+  gap: 4px;
   position: relative;
   z-index: 30;
+}
+/* Left & right columns are flex:1 and symmetric so the center search box
+   stays visually centered regardless of how many buttons each side holds. */
+.header-left {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  justify-content: flex-start;
+  min-width: 0;
+}
+.header-center {
+  flex: 0 0 auto;
+  width: 440px;
+  max-width: 40vw;
+}
+.header-right {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  justify-content: flex-end;
+  min-width: 0;
 }
 .header-search {
   position: relative;
@@ -525,34 +548,6 @@
   color: var(--fg-3);
 }
 
-/* Expand btn */
-.expand-wrap {
-  display: none;
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  z-index: 31;
-}
-.sshx-sidebar.collapsed ~ .cnt-wrap .expand-wrap {
-  display: block;
-}
-.expand-btn {
-  width: 30px;
-  height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: var(--r);
-  color: var(--fg-3);
-  cursor: pointer;
-  transition: background 0.12s;
-}
-.expand-btn:hover {
-  background: var(--bg-hover);
-}
-
 /* ===== CONTENT ===== */
 .cnt-wrap {
   flex: 1;
@@ -741,10 +736,10 @@
 .tab-act.on:hover {
   background: var(--accent-bg);
 }
-.tab-act[data-tip] {
+[data-tip] {
   position: relative;
 }
-.tab-act[data-tip]::after {
+[data-tip]::after {
   content: attr(data-tip);
   position: absolute;
   bottom: calc(100% + 6px);
@@ -762,7 +757,7 @@
   transition: opacity 0.12s ease 0.5s;
   z-index: 50;
 }
-.tab-act[data-tip]:hover::after {
+[data-tip]:hover::after {
   opacity: 1;
 }
 

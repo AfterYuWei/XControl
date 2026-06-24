@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react'
 import { Server, Trash2, Edit } from 'lucide-react'
 import { ProfileForm } from '@/components/ProfileForm'
-import { ThemeToggle } from '@/components/ThemeToggle'
 import { useProfileStore } from '@/store/profile'
 import { useSessionStore } from '@/store/session'
 import type { Profile } from '@/types/profile'
@@ -32,11 +31,7 @@ function iconColorForId(id: string): string {
   return ICON_PALETTE[Math.abs(hash) % ICON_PALETTE.length]
 }
 
-interface SidebarProps {
-  onCollapse: () => void
-}
-
-export function Sidebar({ onCollapse }: SidebarProps) {
+export function Sidebar() {
   const {
     profiles: rawProfiles,
     groups: rawGroups,
@@ -125,24 +120,6 @@ export function Sidebar({ onCollapse }: SidebarProps) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Sidebar header — collapse (left) + theme toggle (right) */}
-      <div className="sidebar-hdr">
-        <button
-          className="hdr-icon-btn"
-          title="折叠侧边栏 (⌘B)"
-          aria-label="Collapse sidebar"
-          onClick={onCollapse}
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="2" y="3" width="12" height="10" rx="1.5" />
-            <line x1="6" y1="3" x2="6" y2="13" />
-          </svg>
-        </button>
-        <div className="ml-auto">
-          <ThemeToggle className="hdr-icon-btn" />
-        </div>
-      </div>
-
       {/* Server list */}
       <div className="sidebar-body">
         {loading ? (

@@ -1,12 +1,7 @@
 import { useRef, useEffect } from 'react'
 import { useSessionStore } from '@/store/session'
 
-interface TabBarProps {
-  onTogglePanel: () => void
-  panelOpen: boolean
-}
-
-export function TabBar({ onTogglePanel, panelOpen }: TabBarProps) {
+export function TabBar() {
   const { tabs, activeTabId, setActiveTab, closeTab } = useSessionStore()
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -54,19 +49,6 @@ export function TabBar({ onTogglePanel, panelOpen }: TabBarProps) {
             </div>
           ))}
         </div>
-      </div>
-      <div className="tab-actions">
-        <button
-          className={`tab-act ${panelOpen ? 'on' : ''}`}
-          data-tip="Server Info (⌘.)"
-          onClick={onTogglePanel}
-          aria-label="Toggle server info panel"
-        >
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="1.5" y="1.5" width="13" height="13" rx="2" />
-            <line x1="9.5" y1="1.5" x2="9.5" y2="14.5" />
-          </svg>
-        </button>
       </div>
     </div>
   )

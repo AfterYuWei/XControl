@@ -159,7 +159,7 @@ export function Layout() {
 
 function EmptyState() {
   return (
-    <div className="term-empty-state" style={{ margin: '8px 8px 2px 8px' }}>
+    <div className="term-empty-state" style={{ margin: '0 8px' }}>
       <div className="term-empty-icon">
         <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
           <polyline points="3 5 6.5 8 3 11" />

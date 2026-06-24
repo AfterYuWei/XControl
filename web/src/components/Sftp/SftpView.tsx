@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { FilePane } from './FilePane'
 import { TransferQueue } from './TransferQueue'
 import { ServerPicker } from './ServerPicker'
+import { ConflictDialog } from './ConflictDialog'
 import { SftpStoreContext } from './storeContext'
 import { createSftpStore, type SftpStoreApi, type PaneSide } from '@/store/sftp'
 import { useSftpTransfer } from '@/hooks/useSftpTransfer'
@@ -97,6 +98,8 @@ export function SftpView() {
           pane={pickerPane}
           onClose={() => setPickerPane(null)}
         />
+
+        <ConflictDialog />
       </div>
     </SftpStoreContext.Provider>
   )

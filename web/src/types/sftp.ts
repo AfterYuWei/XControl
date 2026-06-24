@@ -76,3 +76,26 @@ export interface SftpDeleteResponse {
   deleted: number
   failed: number
 }
+
+/** Conflict-resolution strategy for cross-session transfers. Mirrors the
+ *  backend model.ConflictResolution enum. */
+export type ConflictResolution = 'ask' | 'overwrite' | 'rename' | 'skip'
+
+/** A single file collision detected before a transfer. Mirrors backend
+ *  model.SftpConflictInfo. */
+export interface SftpConflictInfo {
+  source_path: string
+  dest_path: string
+  source_size: number
+  dest_size: number
+}
+
+/** Response type for POST /api/sftp/transfer.
+ *  On success: task_id/method/tasks are populated.
+ *  On conflict (HTTP 409): conflicts is populated, task_id is empty. */
+export interface SftpTransferResponse {
+  task_id?: string
+  method?: string
+  tasks?: TransferTask[]
+  conflicts?: SftpConflictInfo[]
+}

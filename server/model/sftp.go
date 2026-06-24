@@ -107,20 +107,48 @@ type SftpCancelTransferResponse struct {
 	Status string `json:"status"`
 }
 
+// ConflictResolution controls how the backend handles destination files
+// that already exist when transferring.
+//   - "ask"       (default): if any conflict exists, return 409 with the list
+//                             and do NOT start a transfer. Frontend prompts the
+//                             user and retries with the chosen strategy.
+//   - "overwrite": replace existing destination files.
+//   - "rename":    auto-rename the incoming file (e.g. "file (1).txt") so it
+//                  does not collide.
+//   - "skip":      skip conflicting files, transfer the rest.
+type ConflictResolution string
+
+const (
+	ConflictAsk       ConflictResolution = "ask"
+	ConflictOverwrite ConflictResolution = "overwrite"
+	ConflictRename    ConflictResolution = "rename"
+	ConflictSkip      ConflictResolution = "skip"
+)
+
 // SftpTransferRequest initiates a cross-session file transfer. The backend
 // first tries a direct server-to-server copy (scp on the source host); if that
 // fails (e.g. network unreachable, scp not installed), it falls back to relay
 // through the backend.
 type SftpTransferRequest struct {
-	SourceSessionID string   `json:"source_session_id"`
-	TargetSessionID string   `json:"target_session_id"`
-	Paths           []string `json:"paths"`        // source paths on source session
-	DestDir         string   `json:"dest_dir"`      // target directory on target session
-	Overwrite       bool     `json:"overwrite"`
+	SourceSessionID     string             `json:"source_session_id"`
+	TargetSessionID     string             `json:"target_session_id"`
+	Paths               []string           `json:"paths"`        // source paths on source session
+	DestDir             string             `json:"dest_dir"`     // target directory on target session
+	Overwrite           bool               `json:"overwrite,omitempty"`           // legacy alias for conflict_resolution=overwrite
+	ConflictResolution ConflictResolution `json:"conflict_resolution,omitempty"` // ask|overwrite|rename|skip
+}
+
+// SftpConflictInfo describes a single file collision detected before transfer.
+type SftpConflictInfo struct {
+	SourcePath string `json:"source_path"` // absolute path on source session
+	DestPath   string `json:"dest_path"`   // absolute path on target session
+	SourceSize int64  `json:"source_size"` // bytes
+	DestSize   int64  `json:"dest_size"`   // bytes
 }
 
 type SftpTransferResponse struct {
-	TaskID  string        `json:"task_id"`
-	Method  string        `json:"method"`  // "direct" | "relay"
-	Tasks   []TransferTask `json:"tasks"`
+	TaskID    string             `json:"task_id,omitempty"`
+	Method    string             `json:"method,omitempty"`    // "direct" | "relay"
+	Tasks     []TransferTask     `json:"tasks,omitempty"`
+	Conflicts []SftpConflictInfo `json:"conflicts,omitempty"` // populated on 409
 }

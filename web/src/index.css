@@ -2,25 +2,25 @@
 
 /* ═══════════════════ DESIGN TOKENS ═══════════════════ */
 @theme inline {
-  --color-background: #0A0A0A;
-  --color-foreground: #E5E5E5;
-  --color-card: #111111;
-  --color-card-foreground: #E5E5E5;
-  --color-popover: #111111;
-  --color-popover-foreground: #E5E5E5;
-  --color-primary: #3B82F6;
-  --color-primary-foreground: #E5E5E5;
-  --color-secondary: #1A1A1A;
-  --color-secondary-foreground: #E5E5E5;
-  --color-muted: #161616;
-  --color-muted-foreground: #737373;
-  --color-accent: #1F1F1F;
-  --color-accent-foreground: #E5E5E5;
-  --color-destructive: #EF4444;
-  --color-destructive-foreground: #E5E5E5;
-  --color-border: #262626;
-  --color-input: #0D0D0D;
-  --color-ring: #3B82F6;
+  --color-background: var(--bg);
+  --color-foreground: var(--fg);
+  --color-card: var(--bg-panel);
+  --color-card-foreground: var(--fg);
+  --color-popover: var(--bg-panel);
+  --color-popover-foreground: var(--fg);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--fg);
+  --color-secondary: var(--bg-hover);
+  --color-secondary-foreground: var(--fg);
+  --color-muted: var(--bg-elevated);
+  --color-muted-foreground: var(--fg-3);
+  --color-accent: var(--bg-active);
+  --color-accent-foreground: var(--fg);
+  --color-destructive: var(--red);
+  --color-destructive-foreground: var(--fg);
+  --color-border: var(--border);
+  --color-input: var(--bg-input);
+  --color-ring: var(--accent);
   --radius-sm: 0.25rem;
   --radius-md: 0.375rem;
   --radius-lg: 0.5rem;
@@ -29,8 +29,55 @@
   --font-sans: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
 }
 
-/* Force dark theme — design is dark-only */
-:root {
+/* ═══════════════════ LIGHT THEME (default) ═══════════════════ */
+:root,
+.light {
+  --bg: #FAFAFA;
+  --bg-panel: #FFFFFF;
+  --bg-elevated: #F4F4F5;
+  --bg-hover: #F0F0F1;
+  --bg-active: #E8E8EA;
+  --bg-input: #FFFFFF;
+  --border: #E0E0E2;
+  --border-subtle: #ECECEE;
+  --fg: #18181B;
+  --fg-2: #3F3F46;
+  --fg-3: #71717A;
+  --fg-4: #A1A1AA;
+  --fg-5: #D4D4D8;
+  --accent: #2563EB;
+  --accent-hi: #3B82F6;
+  --accent-bg: rgba(37, 99, 235, 0.08);
+  --accent-bg2: rgba(37, 99, 235, 0.04);
+  --green: #16A34A;
+  --green-bg: rgba(22, 163, 74, 0.10);
+  --red: #DC2626;
+  --red-bg: rgba(220, 38, 38, 0.08);
+  --yellow: #D97706;
+  --cyan: #0891B2;
+  --magenta: #C026D3;
+  --mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
+  --r: 8px;
+  --r-sm: 6px;
+  --r-xs: 4px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+  --r-pill: 999px;
+  --sidebar-w: 240px;
+  --panel-w: 280px;
+  --tabbar-h: 40px;
+  --statusbar-h: 24px;
+  color-scheme: light;
+
+  /* Terminal container stays dark regardless of theme */
+  --term-bg: #0A0A0A;
+  --term-border: #1C1C1C;
+  --term-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* ═══════════════════ DARK THEME ═══════════════════ */
+.dark {
   --bg: #0A0A0A;
   --bg-panel: #111111;
   --bg-elevated: #161616;
@@ -55,41 +102,11 @@
   --yellow: #F59E0B;
   --cyan: #22D3EE;
   --magenta: #D946EF;
-  --mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
-  --sans: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
-  --r: 8px;
-  --r-sm: 6px;
-  --r-xs: 4px;
-  --r-lg: 12px;
-  --r-xl: 16px;
-  --r-pill: 999px;
-  --sidebar-w: 240px;
-  --panel-w: 280px;
-  --tabbar-h: 40px;
-  --statusbar-h: 24px;
   color-scheme: dark;
-}
 
-.dark {
-  --color-background: #0A0A0A;
-  --color-foreground: #E5E5E5;
-  --color-card: #111111;
-  --color-card-foreground: #E5E5E5;
-  --color-popover: #111111;
-  --color-popover-foreground: #E5E5E5;
-  --color-primary: #3B82F6;
-  --color-primary-foreground: #E5E5E5;
-  --color-secondary: #1A1A1A;
-  --color-secondary-foreground: #E5E5E5;
-  --color-muted: #161616;
-  --color-muted-foreground: #737373;
-  --color-accent: #1F1F1F;
-  --color-accent-foreground: #E5E5E5;
-  --color-destructive: #EF4444;
-  --color-destructive-foreground: #E5E5E5;
-  --color-border: #262626;
-  --color-input: #0D0D0D;
-  --color-ring: #3B82F6;
+  --term-bg: #0A0A0A;
+  --term-border: #1C1C1C;
+  --term-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 @layer base {
@@ -113,7 +130,7 @@
   }
   * {
     scrollbar-width: thin;
-    scrollbar-color: #1f1f1f transparent;
+    scrollbar-color: var(--bg-active) transparent;
   }
   *::-webkit-scrollbar {
     width: 5px;
@@ -123,11 +140,30 @@
     background: transparent;
   }
   *::-webkit-scrollbar-thumb {
-    background: #1f1f1f;
+    background: var(--bg-active);
     border-radius: 3px;
   }
   *::-webkit-scrollbar-thumb:hover {
-    background: #2a2a2a;
+    background: var(--fg-5);
+  }
+  /* Smooth theme transition for all chrome elements — terminal container
+     (.term-wrap and its descendants) is excluded to avoid animating the
+     xterm canvas, which must stay fixed. */
+  .sshx-sidebar,
+  .sshx-sidebar *,
+  .tabbar,
+  .tabbar *,
+  .statusbar,
+  .statusbar *,
+  .sshx-panel,
+  .sshx-panel *,
+  .pal-overlay,
+  .pal-overlay *,
+  .sshx-toast,
+  .expand-btn,
+  body {
+    transition: background-color 0.2s ease, border-color 0.2s ease,
+      color 0.2s ease;
   }
 }
 
@@ -581,21 +617,24 @@
 }
 
 /* ===== TERMINAL ===== */
+/* Terminal container uses fixed dark variables (--term-*) so it stays dark
+   regardless of the global light/dark theme. The xterm instance inside is
+   themed via useTerminal.ts and is also pinned to a dark palette. */
 .term-wrap {
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   position: relative;
-  background: var(--bg);
+  background: var(--term-bg);
   margin: 8px 8px 8px 10px;
   /* Inner padding keeps xterm content clear of the 12px rounded corners so
      text and the scrollbar never overlap the curved border. The padding area
-     shows var(--bg), matching the xterm background seamlessly. */
+     shows var(--term-bg), matching the xterm background seamlessly. */
   padding: 10px;
   border-radius: var(--r-lg);
-  border: 1px solid var(--border-subtle);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--term-border);
+  box-shadow: var(--term-shadow);
   transition: margin-right 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .panel.open ~ .term-wrap {

@@ -198,7 +198,7 @@ export function Sidebar() {
         )}
       </div>
 
-      {/* Footer: kbd hints */}
+      {/* Footer: kbd hints + theme toggle */}
       <div className="sidebar-ft">
         <div className="kbd-hint">
           <kbd>⌘K</kbd>

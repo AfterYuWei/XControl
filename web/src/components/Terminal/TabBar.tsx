@@ -1,5 +1,6 @@
 import { useRef, useEffect } from 'react'
 import { useSessionStore } from '@/store/session'
+import { ThemeToggle } from '@/components/ThemeToggle'
 
 interface TabBarProps {
   onTogglePanel: () => void
@@ -68,6 +69,7 @@ export function TabBar({ onTogglePanel, panelOpen }: TabBarProps) {
         </div>
       </div>
       <div className="tab-actions">
+        <ThemeToggle />
         <button
           className={`tab-act ${panelOpen ? 'on' : ''}`}
           data-tip="Server Info (⌘.)"

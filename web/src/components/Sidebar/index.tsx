@@ -1,11 +1,41 @@
-import { useState, useMemo } from 'react'
-import { Plus, Server, Trash2, Edit } from 'lucide-react'
+import { useState, useMemo, useRef, useEffect } from 'react'
+import { Plus, Server, Trash2, Edit, X } from 'lucide-react'
 import { ProfileForm } from '@/components/ProfileForm'
 import { useProfileStore } from '@/store/profile'
 import { useSessionStore } from '@/store/session'
 import type { Profile } from '@/types/profile'
 
-export function Sidebar() {
+/* Deterministic color palette for server icons — each profile gets a
+   consistent hue derived from its id so the icon is always the same
+   color regardless of render order or grouping. */
+const ICON_PALETTE = [
+  '#F97316', // orange
+  '#EF4444', // red
+  '#3B82F6', // blue
+  '#22C55E', // green
+  '#8B5CF6', // violet
+  '#EC4899', // pink
+  '#14B8A6', // teal
+  '#EAB308', // yellow
+  '#06B6D4', // cyan
+  '#A855F7', // purple
+  '#D97706', // amber
+  '#059669', // emerald
+]
+function iconColorForId(id: string): string {
+  let hash = 0
+  for (let i = 0; i < id.length; i++) {
+    hash = ((hash << 5) - hash) + id.charCodeAt(i)
+    hash |= 0
+  }
+  return ICON_PALETTE[Math.abs(hash) % ICON_PALETTE.length]
+}
+
+interface SidebarProps {
+  onCollapse: () => void
+}
+
+export function Sidebar({ onCollapse }: SidebarProps) {
   const {
     profiles: rawProfiles,
     groups: rawGroups,
@@ -27,6 +57,35 @@ export function Sidebar() {
     y: number
     profile: Profile
   } | null>(null)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
+  // Focus the input when search opens
+  useEffect(() => {
+    if (searchOpen) {
+      const t = setTimeout(() => searchInputRef.current?.focus(), 50)
+      return () => clearTimeout(t)
+    }
+  }, [searchOpen])
+
+  // Close search on Escape, clear query when closed
+  useEffect(() => {
+    if (!searchOpen) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSearchQuery('')
+        setSearchOpen(false)
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [searchOpen, setSearchQuery])
+
+  const openSearch = () => setSearchOpen(true)
+  const closeSearch = () => {
+    setSearchQuery('')
+    setSearchOpen(false)
+  }
 
   // Determine which profile is active (has an open tab that is the active tab)
   const activeProfileId = useMemo(() => {
@@ -85,53 +144,77 @@ export function Sidebar() {
     return g ? `${g.icon || ''} ${g.name}`.trim() : 'Ungrouped'
   }
 
+  /* SVG for the terminal-window icon inside each colored square */
+  const termIcon = (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor">
+      <rect x="2" y="4" width="12" height="10" rx="1.5" />
+      <line x1="5" y1="2" x2="11" y2="2" />
+      <line x1="8" y1="2" x2="8" y2="4" />
+    </svg>
+  )
+
   return (
     <div className="flex flex-col h-full">
-      {/* Header: brand + search */}
+      {/* Unified header */}
       <div className="sidebar-hdr">
-        <div className="sidebar-brand">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="3 5 6.5 8 3 11" />
-            <line x1="8" y1="11" x2="13" y2="11" />
+        <button
+          className="hdr-icon-btn"
+          title="Collapse Sidebar (⌘B)"
+          aria-label="Collapse sidebar"
+          onClick={onCollapse}
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="2" y="3" width="12" height="10" rx="1.5" />
+            <line x1="6" y1="3" x2="6" y2="13" />
           </svg>
-          SSH Terminal
-          <button
-            className="ml-auto"
-            style={{
-              width: 22,
-              height: 22,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              border: 'none',
-              background: 'transparent',
-              color: 'var(--fg-4)',
-              cursor: 'pointer',
-              borderRadius: 'var(--r-xs)',
-            }}
-            onClick={() => {
-              setEditingProfile(null)
-              setShowForm(true)
-            }}
-            title="New connection"
-          >
-            <Plus size={15} />
-          </button>
-        </div>
-        <div className="search-wrap">
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+        </button>
+        <button
+          className={`hdr-icon-btn ${searchOpen ? 'active' : ''}`}
+          title="Search servers (⌘K)"
+          aria-label="Search servers"
+          onClick={searchOpen ? closeSearch : openSearch}
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="7" cy="7" r="4.5" />
             <line x1="10.2" y1="10.2" x2="14" y2="14" />
           </svg>
-          <input
-            type="text"
-            placeholder="Search servers…"
-            autoComplete="off"
-            spellCheck={false}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
+        </button>
+        <button
+          className="hdr-icon-btn ml-auto"
+          title="New connection"
+          aria-label="New connection"
+          onClick={() => {
+            setEditingProfile(null)
+            setShowForm(true)
+          }}
+        >
+          <Plus size={14} />
+        </button>
+      </div>
+
+      {/* Inline search bar — slides down when searchOpen, pushing the list below. */}
+      <div className={`search-wrap ${searchOpen ? 'open' : ''}`}>
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="search-wrap-icon">
+          <circle cx="7" cy="7" r="4.5" />
+          <line x1="10.2" y1="10.2" x2="14" y2="14" />
+        </svg>
+        <input
+          ref={searchInputRef}
+          type="text"
+          placeholder="Search servers..."
+          autoComplete="off"
+          spellCheck={false}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+        <button
+          className="search-wrap-close"
+          title="Close search (Esc)"
+          aria-label="Close search"
+          onClick={closeSearch}
+        >
+          <X size={13} />
+        </button>
       </div>
 
       {/* Server list */}
@@ -160,11 +243,12 @@ export function Sidebar() {
                 </div>
                 {list.map((profile) => {
                   const isActive = profile.id === activeProfileId
-                  // Status: derive from open tabs for this profile
                   const tab = tabs.find((t) => t.profileId === profile.id)
                   const status = tab?.status ?? 'disconnected'
                   const dotClass =
                     status === 'connected' ? 'on' : status === 'connecting' ? 'loading' : 'off'
+                  const color = iconColorForId(profile.id)
+
                   return (
                     <div
                       key={profile.id}
@@ -182,12 +266,13 @@ export function Sidebar() {
                         }
                       }}
                     >
-                      <span className={`dot ${dotClass}`} aria-hidden="true" />
+                      {/* Colored terminal icon with status dot overlay */}
+                      <div className="srv-icon" style={{ background: color }}>
+                        {termIcon}
+                        <span className={`srv-dot ${dotClass}`} aria-hidden="true" />
+                      </div>
                       <div className="srv-info">
                         <span className="srv-nm">{profile.name}</span>
-                        <span className="srv-meta">
-                          {profile.username}@{profile.host}:{profile.port}
-                        </span>
                       </div>
                     </div>
                   )
@@ -198,7 +283,7 @@ export function Sidebar() {
         )}
       </div>
 
-      {/* Footer: kbd hints + theme toggle */}
+      {/* Footer: kbd hints */}
       <div className="sidebar-ft">
         <div className="kbd-hint">
           <kbd>⌘K</kbd>

@@ -12,15 +12,18 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useProfileStore } from '@/store/profile'
+import { SERVER_ICONS } from '@/lib/serverIcons'
 import type { Profile, ProfileCreateRequest } from '@/types/profile'
 
 interface ProfileFormProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   profile?: Profile | null
+  /** Preset group when creating a new profile from a group's "+" button. */
+  presetGroupId?: string
 }
 
-export function ProfileForm({ open, onOpenChange, profile }: ProfileFormProps) {
+export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: ProfileFormProps) {
   const { groups, createProfile, updateProfile } = useProfileStore()
   const isEditing = !!profile
 
@@ -32,6 +35,7 @@ export function ProfileForm({ open, onOpenChange, profile }: ProfileFormProps) {
         port: profile.port,
         username: profile.username,
         auth_type: profile.auth_type as 'password' | 'key',
+        icon: profile.icon || 'server',
         password: '',
         private_key: '',
         group_id: profile.group_id || '',
@@ -45,9 +49,10 @@ export function ProfileForm({ open, onOpenChange, profile }: ProfileFormProps) {
       port: 22,
       username: 'root',
       auth_type: 'password',
+      icon: 'server',
       password: '',
       private_key: '',
-      group_id: '',
+      group_id: presetGroupId || '',
       tags: [],
       note: '',
     }
@@ -104,6 +109,33 @@ export function ProfileForm({ open, onOpenChange, profile }: ProfileFormProps) {
               placeholder="生产服务器"
               required
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label>图标</Label>
+            <div className="flex flex-wrap gap-1.5">
+              {SERVER_ICONS.map((def) => {
+                const Selected = def.Icon
+                const active = (form.icon || 'server') === def.key
+                return (
+                  <button
+                    key={def.key}
+                    type="button"
+                    title={def.label}
+                    onClick={() => setForm({ ...form, icon: def.key })}
+                    className={`flex h-8 w-8 items-center justify-center rounded-md border transition-colors ${
+                      active
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-input text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                    }`}
+                    aria-label={`选择图标 ${def.label}`}
+                    aria-pressed={active}
+                  >
+                    <Selected size={15} />
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
           <div className="grid grid-cols-3 gap-2">

@@ -1,26 +1,39 @@
 import { useSessionStore } from '@/store/session'
 import { TerminalPane } from './TerminalPane'
+import { SftpView } from '@/components/Sftp/SftpView'
 
 interface TerminalViewProps {
   panelOpen: boolean
 }
 
+/** Content router: renders SftpView for sftp-kind tabs, TerminalPane otherwise. */
 export function TerminalView({ panelOpen }: TerminalViewProps) {
   const { tabs, activeTabId } = useSessionStore()
 
   return (
-    <div className="term-wrap">
+    <div className="term-wrap sftp-aware">
       <div className="flex-1 relative overflow-hidden">
-        {tabs.map((tab) => (
-          <div
-            key={tab.id}
-            className={`absolute inset-0 ${
-              tab.id === activeTabId ? 'block' : 'hidden'
-            }`}
-          >
-            <TerminalPane tab={tab} isActive={tab.id === activeTabId} />
-          </div>
-        ))}
+        {tabs.map((tab) => {
+          const active = tab.id === activeTabId
+          if (tab.kind === 'sftp') {
+            return (
+              <div
+                key={tab.id}
+                className={`absolute inset-0 ${active ? 'block' : 'hidden'}`}
+              >
+                <SftpView />
+              </div>
+            )
+          }
+          return (
+            <div
+              key={tab.id}
+              className={`absolute inset-0 ${active ? 'block' : 'hidden'}`}
+            >
+              <TerminalPane tab={tab} isActive={active} />
+            </div>
+          )
+        })}
       </div>
       {/* panelOpen is consumed via CSS sibling selector: when .sshx-panel.open
           is present, .term-wrap gets extra right margin. Kept as prop to allow

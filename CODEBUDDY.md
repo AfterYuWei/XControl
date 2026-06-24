@@ -24,6 +24,7 @@ npm install                     # Install dependencies
 npm run dev                     # Dev server with HMR (proxies /api and /ws to :9090)
 npm run build                   # Type check + production build (tsc -b && vite build)
 npm run lint                    # ESLint
+npm run preview                 # Preview production build
 npx shadcn@latest add <comp>   # Add shadcn/ui components (e.g., button, dialog)
 ```
 
@@ -49,10 +50,10 @@ The backend is organized into layers that mirror the architecture described in `
 - **config/** (`config.go`) loads environment variables and produces the server configuration.
 - **store/** provides SQLite-backed persistence via `modernc.org/sqlite` (pure Go, no CGO). It includes stores for profiles, groups, vault credentials, snippets, and audit logs, plus `sqlite.go` for schema initialization and migrations.
 - **crypto/** (`aes.go`) implements AES-256-GCM encryption. The key is generated automatically on first run at the configured key path (`server/data/key` by default).
-- **model/** defines the core data types: `Profile`, `Group`, `Vault`, `Snippet`, and `AuditLog`.
+- **model/** defines the core data types: `Profile`, `Group`, `Vault`, `Snippet`, and `AuditLog`. Both `Profile` and `Group` carry an `icon` field — a stable string key (e.g. `"server"`, `"folder"`) that the frontend resolves to a Lucide line icon; legacy emoji values fall back to the default.
 - **protocol/** defines the `Driver` and `Shell` interfaces and a `Manager` registry (constructed via `protocol.NewManager()`). This is the main extension point for adding new connection types. Only `protocol/ssh/` is implemented today; the SSH driver also supports jump-host (`ProxyJump`) connections.
 - **ws/** provides the WebSocket hub and connection wrapper (both in `hub.go`) plus message types (`message.go`). It maps a `session_id` to a single WebSocket connection and forwards bidirectional traffic between the browser and the SSH shell. Uses `coder/websocket` (not gorilla or `net/websocket`).
-- **gateway/handler/** holds the business logic — there is **no separate `service/` layer**. Handlers: `profile.go`, `group.go`, `snippet.go`, `session.go`, `ws.go`, plus `common.go` for JSON helpers. `SessionHandler` (`session.go`) manages the lifecycle of active sessions (each holding a `protocol.Driver` and `protocol.Shell`); `WSHandler` bridges the hub to sessions.
+- **gateway/handler/** holds the business logic — there is **no separate `service/` layer**. Handlers: `profile.go`, `group.go`, `snippet.go`, `session.go`, `ws.go`, plus `common.go` for JSON helpers. `SessionHandler` (`session.go`) manages the lifecycle of active sessions (each holding a `protocol.Driver` and `protocol.Shell`); `WSHandler` bridges the hub to sessions. Credential rotation in `ProfileHandler.Update` stores a new vault entry and deletes the old one only when its `RefCount` drops to zero (same orphan-cleanup logic used on delete). `GroupHandler.Delete` refuses to delete a non-empty group (409 `GROUP_NOT_EMPTY`) via `ProfileStore.CountByGroup`, so servers must be moved/removed first.
 - **gateway/** contains the HTTP router (`router.go`) and middleware. Routing uses Go 1.22+ enhanced patterns (`GET /api/profiles`, etc.). Only three middleware exist, applied in order `Recovery → Logger → CORS` — there is no auth middleware yet.
 
 The typical SSH session flow is:
@@ -69,15 +70,16 @@ The frontend is built on React 19, TypeScript, Vite, Tailwind CSS v4, and shadcn
 
 - **api/** wraps `fetch` (`client.ts`) and provides resource-specific modules for profiles, groups, sessions, and snippets.
 - **store/** uses Zustand: `profile.ts` manages connection profiles, group tree, and search/filter; `session.ts` manages terminal tabs and their lifecycle; `settings.ts` persists UI preferences (theme, fonts) to `localStorage`.
-- **hooks/** encapsulates reusable behavior: `useTerminal.ts` manages an xterm.js instance and its lifecycle, `useWebSocket.ts` handles connection, heartbeat, and I/O, and `useSession.ts` coordinates session creation and teardown.
-- **components/** contains business components (Layout, Sidebar, Terminal, ProfileForm, SnippetPanel, CommandPalette, Settings) and `components/ui/` holds shadcn/ui primitives.
+- **hooks/** encapsulates reusable behavior: `useTerminal.ts` manages an xterm.js instance and its lifecycle, and `useWebSocket.ts` handles connection, heartbeat, and I/O. Session creation/teardown is coordinated within `store/session.ts` and the `App`/`Terminal` components.
+- **lib/** holds the icon registries: `groupIcons.tsx` and `serverIcons.tsx` map stable icon-key strings (stored on `Group`/`Profile`) to Lucide components and expose `resolveGroupIcon`/`resolveServerIcon` fallback resolvers (`DEFAULT_GROUP_ICON` = `folder`, `DEFAULT_SERVER_ICON` = `server`). Add new icons here rather than inlining Lucide imports in components.
+- **components/** contains business components organized by feature (Layout, Sidebar with group tree and `GroupForm` for creating/editing groups with icon picker, Terminal with tab bar and panes, ProfileForm, ConnectionDialog with animated connection progress, CommandPalette for ⌘K search, ServerPanel, StatusBar, ThemeToggle, Toast) and `components/ui/` holds shadcn/ui primitives.
 - **types/** mirrors backend models with TypeScript interfaces.
 
 The main UI is a resizable panel group: a collapsible sidebar on the left for connection management and a main terminal area on the right with a tab bar and terminal panes. The Command Palette (`⌘K`) provides quick search across profiles, snippets, and settings.
 
 ### Database
 
-SQLite auto-migrates on startup. Tables include `groups` (nested via `parent_id`), `vault` (encrypted credentials), `profiles` (reference `vault` and `groups`), `snippets`, and `audit_logs`. Credentials are stored in `vault` so that profiles only keep a `vault_id`; orphaned vault entries are cleaned up when profiles are deleted.
+SQLite auto-migrates on startup (`store/sqlite.go`). The connection uses `SetMaxOpenConns(1)` to serialize writes. Migrations are idempotent `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS` statements; new columns are added via the `addColumnIfMissing` helper (PRAGMA-based guard then `ALTER TABLE … ADD COLUMN`), so the migration list is safe to re-run and is the place to add additive schema changes. Tables include `groups` (nested via `parent_id`, with an `icon` column), `vault` (encrypted credentials), `profiles` (reference `vault` and `groups`, with an `icon` column added by migration), `snippets`, and `audit_logs`. Credentials are stored in `vault` so that profiles only keep a `vault_id`; orphaned vault entries are cleaned up when profiles are deleted or when their credentials are rotated on update.
 
 ### WebSocket Message Protocol
 

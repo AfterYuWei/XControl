@@ -1,8 +1,11 @@
 import { create } from 'zustand'
 import { sessionApi } from '@/api/session'
 
+export type TabKind = 'terminal' | 'sftp'
+
 interface TerminalTab {
   id: string
+  kind: TabKind
   profileId: string
   profileName: string
   sessionId: string | null
@@ -19,6 +22,7 @@ interface SessionStore {
 
   // Actions
   openTab: (profileId: string, profileName: string, host?: string, port?: number, username?: string) => Promise<string>
+  openSftpTab: () => string
   closeTab: (tabId: string) => void
   setActiveTab: (tabId: string) => void
   updateTabStatus: (tabId: string, status: TerminalTab['status'], sessionId?: string) => void
@@ -35,6 +39,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
     const newTab: TerminalTab = {
       id: tabId,
+      kind: 'terminal',
       profileId,
       profileName,
       sessionId: null,
@@ -112,5 +117,22 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     } catch (err) {
       console.error('Failed to fetch sessions:', err)
     }
+  },
+
+  openSftpTab: () => {
+    const tabId = `sftp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+    const newTab: TerminalTab = {
+      id: tabId,
+      kind: 'sftp',
+      profileId: '',
+      profileName: 'SFTP',
+      sessionId: null,
+      status: 'disconnected',
+    }
+    set((state) => ({
+      tabs: [...state.tabs, newTab],
+      activeTabId: tabId,
+    }))
+    return tabId
   },
 }))

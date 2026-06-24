@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Search, X } from 'lucide-react'
+import { Search, X, FolderUp } from 'lucide-react'
 import { Sidebar } from '@/components/Sidebar'
 import { TerminalView } from '@/components/Terminal'
 import { StatusBar } from '@/components/StatusBar'
@@ -11,7 +11,7 @@ import { useProfileStore } from '@/store/profile'
 import { useSessionStore } from '@/store/session'
 
 export function Layout() {
-  const { tabs } = useSessionStore()
+  const { tabs, openSftpTab } = useSessionStore()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -67,6 +67,14 @@ export function Layout() {
                 <line x1="6" y1="3" x2="6" y2="13" />
               </svg>
             )}
+          </button>
+          <button
+            className="hdr-icon-btn"
+            title="SFTP 文件管理"
+            aria-label="打开 SFTP 文件管理"
+            onClick={() => openSftpTab()}
+          >
+            <FolderUp size={14} />
           </button>
           <ThemeToggle className="hdr-icon-btn" />
         </div>

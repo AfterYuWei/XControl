@@ -59,6 +59,9 @@ func (h *ProfileHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if req.AuthType == "" {
 		req.AuthType = "password"
 	}
+	if req.Icon == "" {
+		req.Icon = "server"
+	}
 
 	// Store credential in vault
 	var vaultID string
@@ -88,6 +91,7 @@ func (h *ProfileHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Port:      req.Port,
 		Username:  req.Username,
 		AuthType:  req.AuthType,
+		Icon:      req.Icon,
 		VaultID:   vaultID,
 		GroupID:   req.GroupID,
 		Tags:      req.Tags,

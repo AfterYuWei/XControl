@@ -45,20 +45,20 @@ SSHX uses a two-process model: a Go HTTP/WebSocket server that persists state an
 
 The backend is organized into layers that mirror the architecture described in `docs/DEVELOPMENT.md`:
 
-- **Entry point** (`main.go`) wires config, stores, services, and the HTTP gateway, then starts the server.
+- **Entry point** (`main.go`) wires `config.Load()` → slog logger → `store.InitDB` → `crypto.NewEncryptor` → `gateway.NewRouter` → `http.ListenAndServe`. The stores, protocol registry, WebSocket hub, and handlers are all constructed inside `gateway.NewRouter()` (`router.go`), not in `main.go`.
 - **config/** (`config.go`) loads environment variables and produces the server configuration.
 - **store/** provides SQLite-backed persistence via `modernc.org/sqlite` (pure Go, no CGO). It includes stores for profiles, groups, vault credentials, snippets, and audit logs, plus `sqlite.go` for schema initialization and migrations.
 - **crypto/** (`aes.go`) implements AES-256-GCM encryption. The key is generated automatically on first run at the configured key path (`server/data/key` by default).
 - **model/** defines the core data types: `Profile`, `Group`, `Vault`, `Snippet`, and `AuditLog`.
-- **protocol/** defines the `Driver` and `Shell` interfaces and a `ProtocolManager` registry. This is the main extension point for adding new connection types. Only `protocol/ssh/` is implemented today.
-- **ws/** provides the WebSocket hub (`hub.go`), connection wrapper (`conn.go`), and message types (`message.go`). It maps a `session_id` to a single WebSocket connection and forwards bidirectional traffic between the browser and the SSH shell.
-- **service/** contains business logic: `profile_service.go`, `group_service.go`, `snippet_service.go`, `session_service.go`, and `audit_service.go`. `SessionService` manages the lifecycle of active sessions, each holding a `protocol.Driver` and `protocol.Shell`.
-- **gateway/** contains the HTTP router (`router.go`), middleware (CORS, logger, recovery, auth placeholder), and request handlers (`handler/`). Routing uses Go 1.22+ enhanced patterns (`GET /api/profiles`, etc.).
+- **protocol/** defines the `Driver` and `Shell` interfaces and a `Manager` registry (constructed via `protocol.NewManager()`). This is the main extension point for adding new connection types. Only `protocol/ssh/` is implemented today; the SSH driver also supports jump-host (`ProxyJump`) connections.
+- **ws/** provides the WebSocket hub and connection wrapper (both in `hub.go`) plus message types (`message.go`). It maps a `session_id` to a single WebSocket connection and forwards bidirectional traffic between the browser and the SSH shell. Uses `coder/websocket` (not gorilla or `net/websocket`).
+- **gateway/handler/** holds the business logic — there is **no separate `service/` layer**. Handlers: `profile.go`, `group.go`, `snippet.go`, `session.go`, `ws.go`, plus `common.go` for JSON helpers. `SessionHandler` (`session.go`) manages the lifecycle of active sessions (each holding a `protocol.Driver` and `protocol.Shell`); `WSHandler` bridges the hub to sessions.
+- **gateway/** contains the HTTP router (`router.go`) and middleware. Routing uses Go 1.22+ enhanced patterns (`GET /api/profiles`, etc.). Only three middleware exist, applied in order `Recovery → Logger → CORS` — there is no auth middleware yet.
 
 The typical SSH session flow is:
 
 1. Frontend `POST /api/sessions` with `{profile_id, cols, rows}`.
-2. `SessionService` creates a session, opens the profile via `ProtocolManager`, and asks the SSH driver to authenticate and request a PTY shell.
+2. `SessionHandler` creates a session, opens the profile via the protocol `Manager`, and asks the SSH driver to authenticate and request a PTY shell.
 3. Backend returns a `session_id`.
 4. Frontend opens `WebSocket /ws?session_id=...`.
 5. The WebSocket hub bridges the browser and the SSH shell: terminal input flows `WebSocket → Shell.Write`, and output flows `Shell.Read → WebSocket`.

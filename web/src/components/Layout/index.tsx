@@ -1,13 +1,18 @@
 import { useEffect, useState } from 'react'
 import { Sidebar } from '@/components/Sidebar'
 import { TerminalView } from '@/components/Terminal'
+import { StatusBar } from '@/components/StatusBar'
+import { ServerPanel } from '@/components/ServerPanel'
+import { CommandPalette } from '@/components/CommandPalette'
+import { Toast } from '@/components/Toast'
 import { useProfileStore } from '@/store/profile'
 import { useSessionStore } from '@/store/session'
 
 export function Layout() {
   const { tabs } = useSessionStore()
-  const [sidebarWidth, setSidebarWidth] = useState(260)
-  const [isResizing, setIsResizing] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [panelOpen, setPanelOpen] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
 
   const { fetchProfiles, fetchGroups } = useProfileStore()
 
@@ -16,69 +21,91 @@ export function Layout() {
     fetchGroups()
   }, [fetchProfiles, fetchGroups])
 
-  const handleMouseDown = () => {
-    setIsResizing(true)
-  }
-
+  // Global keyboard shortcuts: ⌘K palette, ⌘B sidebar, ⌘. panel
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing) return
-      const newWidth = Math.max(200, Math.min(400, e.clientX))
-      setSidebarWidth(newWidth)
+    const handler = (e: KeyboardEvent) => {
+      const meta = e.metaKey || e.ctrlKey
+      if (meta && e.key === 'k') {
+        e.preventDefault()
+        setPaletteOpen((v) => !v)
+      }
+      if (meta && e.key === 'b') {
+        e.preventDefault()
+        setSidebarCollapsed((v) => !v)
+      }
+      if (meta && e.key === '.') {
+        e.preventDefault()
+        setPanelOpen((v) => !v)
+      }
     }
-
-    const handleMouseUp = () => {
-      setIsResizing(false)
-    }
-
-    if (isResizing) {
-      document.addEventListener('mousemove', handleMouseMove)
-      document.addEventListener('mouseup', handleMouseUp)
-    }
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
-    }
-  }, [isResizing])
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [])
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background text-foreground">
+    <div className="sshx-app" role="application" aria-label="SSH Terminal Dashboard">
       {/* Sidebar */}
-      <div
-        className="flex-shrink-0 border-r border-border overflow-hidden"
-        style={{ width: sidebarWidth }}
+      <aside
+        className={`sshx-sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}
+        role="navigation"
+        aria-label="Server list"
       >
         <Sidebar />
-      </div>
+      </aside>
 
-      {/* Resize handle */}
-      <div
-        className="w-1 cursor-col-resize hover:bg-primary/20 transition-colors flex-shrink-0"
-        onMouseDown={handleMouseDown}
-      />
+      {/* Content */}
+      <div className="cnt-wrap">
+        <div className="expand-wrap">
+          <button
+            className="expand-btn"
+            title="Show Sidebar (⌘B)"
+            onClick={() => setSidebarCollapsed(false)}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <line x1="3" y1="3" x2="3" y2="13" />
+              <polyline points="7 5 11 8 7 11" />
+            </svg>
+          </button>
+        </div>
 
-      {/* Main content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
         {tabs.length === 0 ? (
           <EmptyState />
         ) : (
-          <TerminalView />
+          <TerminalView panelOpen={panelOpen} onTogglePanel={() => setPanelOpen((v) => !v)} />
         )}
+
+        <StatusBar />
+
+        {/* Right Panel */}
+        <ServerPanel open={panelOpen} onClose={() => setPanelOpen(false)} />
       </div>
+
+      {/* Command Palette */}
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onToggleSidebar={() => setSidebarCollapsed((v) => !v)}
+        onTogglePanel={() => setPanelOpen((v) => !v)}
+      />
+
+      {/* Toast */}
+      <Toast />
     </div>
   )
 }
 
 function EmptyState() {
   return (
-    <div className="flex-1 flex items-center justify-center">
-      <div className="text-center text-muted-foreground">
-        <div className="text-6xl mb-4">🖥️</div>
-        <h2 className="text-xl font-semibold mb-2">欢迎使用 SSHX</h2>
-        <p className="text-sm">
-          从左侧选择一个服务器连接，或创建新的连接
-        </p>
+    <div className="term-empty-state" style={{ margin: '24px' }}>
+      <div className="term-empty-icon">
+        <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
+          <polyline points="3 5 6.5 8 3 11" />
+          <line x1="8" y1="11" x2="13" y2="11" />
+        </svg>
+      </div>
+      <div className="term-empty-title">SSH Terminal</div>
+      <div className="term-empty-desc">
+        从左侧选择一个服务器连接，或按 ⌘K 打开命令面板
       </div>
     </div>
   )

@@ -19,9 +19,9 @@ export const useSettingsStore = create<SettingsStore>()(
   persist(
     (set) => ({
       theme: 'dark',
-      fontSize: 14,
-      fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-      sidebarWidth: 260,
+      fontSize: 13,
+      fontFamily: "'JetBrains Mono', 'Fira Code', ui-monospace, monospace",
+      sidebarWidth: 240,
 
       setTheme: (theme) => {
         set({ theme })

@@ -1,0 +1,946 @@
+
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
+<title>Terminal — SSH Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:#0A0A0A;color:#E5E5E5}
+:root{
+  --bg:#0A0A0A;--bg-panel:#111111;--bg-elevated:#161616;--bg-hover:#1A1A1A;--bg-active:#1F1F1F;--bg-input:#0D0D0D;
+  --border:#262626;--border-subtle:#1C1C1C;
+  --fg:#E5E5E5;--fg-2:#A3A3A3;--fg-3:#737373;--fg-4:#525252;--fg-5:#333333;
+  --accent:#3B82F6;--accent-hi:#60A5FA;--accent-bg:rgba(59,130,246,0.1);--accent-bg2:rgba(59,130,246,0.05);
+  --green:#22C55E;--green-bg:rgba(34,197,94,0.12);--red:#EF4444;--red-bg:rgba(239,68,68,0.12);
+  --yellow:#F59E0B;--cyan:#22D3EE;--magenta:#D946EF;
+  --mono:'JetBrains Mono','Fira Code',ui-monospace,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Inter',system-ui,sans-serif;
+  --r:8px;--r-sm:6px;--r-xs:4px;--r-lg:12px;--r-xl:16px;--r-pill:999px;
+  --sidebar-w:240px;--panel-w:280px;--tabbar-h:40px;--statusbar-h:24px;
+}
+*{scrollbar-width:thin;scrollbar-color:#1F1F1F transparent}
+*::-webkit-scrollbar{width:5px;height:5px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{background:#1F1F1F;border-radius:3px}
+*::-webkit-scrollbar-thumb:hover{background:#2A2A2A}
+.app{display:flex;height:100vh;overflow:hidden}
+
+/* ===== SIDEBAR ===== */
+.sidebar{width:var(--sidebar-w);flex-shrink:0;display:flex;flex-direction:column;background:var(--bg-panel);border-right:1px solid var(--border);z-index:30;transition:width .22s cubic-bezier(.4,0,.2,1),opacity .15s ease;border-radius:0 var(--r-lg) var(--r-lg) 0;overflow:hidden}
+.sidebar.collapsed{width:0;opacity:0;border-right:none;overflow:hidden}
+.sidebar-hdr{padding:12px 12px 0}
+.sidebar-brand{display:flex;align-items:center;gap:7px;padding:2px 0 10px;color:var(--fg);font:600 12.5px/1 var(--sans);letter-spacing:-.01em}
+.sidebar-brand svg{color:var(--accent)}
+.search-wrap{position:relative}
+.search-wrap svg{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--fg-4);pointer-events:none}
+.search-wrap input{width:100%;height:32px;padding:0 9px 0 30px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--r);color:var(--fg);font:400 12px/1 var(--sans);outline:none;transition:border-color .15s}
+.search-wrap input::placeholder{color:var(--fg-4)}
+.search-wrap input:focus{border-color:var(--accent)}
+.sidebar-body{flex:1;overflow-y:auto;padding:6px 0 0}
+.srv-group{margin-bottom:2px}
+.grp-label{display:flex;align-items:center;justify-content:space-between;padding:5px 14px 3px;font:600 10px/1 var(--sans);color:var(--fg-4);text-transform:uppercase;letter-spacing:.06em;user-select:none}
+.grp-cnt{font-size:9px;color:var(--fg-4);background:var(--bg-elevated);padding:2px 6px;border-radius:var(--r-pill);font-weight:500;min-width:18px;text-align:center}
+.srv{display:flex;align-items:center;gap:9px;padding:6px 14px;cursor:pointer;border-left:2px solid transparent;transition:background .1s,border-color .15s;margin:0 6px;border-radius:var(--r-sm)}
+.srv:hover{background:var(--bg-hover)}
+.srv.active{background:rgba(59,130,246,0.07);border-left-color:var(--accent)}
+.srv.active .srv-nm{color:var(--fg)}
+.srv.active .srv-meta{color:var(--fg-3)}
+.dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;transition:box-shadow .2s}
+.dot.on{background:var(--green);box-shadow:0 0 0 2px rgba(34,197,94,.15)}
+.dot.off{background:var(--red);box-shadow:0 0 0 2px rgba(239,68,68,.1)}
+.dot.loading{background:var(--yellow);animation:pulse-dot 1s ease infinite}
+@keyframes pulse-dot{0%,100%{box-shadow:0 0 0 2px rgba(245,158,11,.08);opacity:.7}50%{box-shadow:0 0 0 5px rgba(245,158,11,.2);opacity:1}}
+.srv-info{display:flex;flex-direction:column;gap:1px;min-width:0}
+.srv-nm{font:500 12.5px/1.3 var(--mono);color:var(--fg-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.srv-meta{font:400 10.5px/1.2 var(--mono);color:var(--fg-4)}
+.srv.offline .srv-nm{color:var(--fg-4)}
+.sidebar-empty{display:flex;flex-direction:column;align-items:center;gap:6px;padding:28px 16px;color:var(--fg-4);font:400 11px/1.4 var(--sans);text-align:center}
+.sidebar-empty svg{opacity:.4}
+.sidebar-ft{padding:8px 12px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.kbd-hint{font-size:10px;color:var(--fg-4);display:flex;align-items:center;gap:3px}
+.kbd-hint kbd{font:500 9px/1 var(--mono);padding:2px 4px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:3px;color:var(--fg-3)}
+
+/* Expand btn */
+.expand-wrap{display:none;position:absolute;top:6px;left:6px;z-index:31}
+.sidebar.collapsed~.cnt-wrap .expand-wrap{display:block}
+.expand-btn{width:30px;height:30px;display:flex;align-items:center;justify-content:center;background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--r);color:var(--fg-3);cursor:pointer;transition:background .12s}
+.expand-btn:hover{background:var(--bg-hover)}
+
+/* ===== CONTENT ===== */
+.cnt-wrap{flex:1;display:flex;flex-direction:column;position:relative;overflow:hidden;min-width:0;padding-left:2px}
+
+/* ===== TAB BAR ===== */
+.tabbar{height:var(--tabbar-h);display:flex;align-items:center;background:var(--bg-panel);border-bottom:1px solid var(--border);flex-shrink:0;padding:0 6px;gap:2px}
+.tabs-scroll{flex:1;overflow-x:auto;overflow-y:hidden;display:flex;align-items:center;padding:4px 0;position:relative}
+.tabs-scroll::-webkit-scrollbar{height:0}
+.tabs-scroll::after{content:'';position:absolute;top:0;right:0;bottom:0;width:24px;background:linear-gradient(90deg,transparent,var(--bg-panel));pointer-events:none;opacity:0;transition:opacity .15s}
+.tabs-scroll.has-overflow::after{opacity:1}
+.tabs{display:flex;align-items:center;gap:1px;min-width:0;flex-shrink:0}
+.tab{display:flex;align-items:center;gap:5px;height:28px;padding:0 6px 0 9px;border-radius:var(--r-xs);cursor:pointer;transition:background .1s;flex-shrink:0;user-select:none;position:relative}
+.tab:hover{background:var(--bg-hover)}
+.tab.active{background:var(--bg-active);position:relative}
+.tab.active::after{content:'';position:absolute;left:0;right:0;bottom:0;height:1px;background:var(--accent)}
+.tab-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.tab-dot.on{background:var(--green)}
+.tab-dot.off{background:var(--red)}
+.tab-dot.loading{background:var(--yellow)}
+.tab-name{font:400 11.5px/1 var(--mono);color:var(--fg-4);white-space:nowrap;letter-spacing:.01em}
+.tab.active .tab-name{color:var(--fg-2);font-weight:500}
+.tab-x{width:16px;height:16px;display:flex;align-items:center;justify-content:center;border-radius:3px;border:none;background:transparent;color:var(--fg-4);cursor:pointer;font-size:13px;line-height:1;opacity:0;transition:opacity .1s,background .1s,color .1s;padding:0;margin-left:2px}
+.tab:hover .tab-x{opacity:1}
+.tab-x:hover{background:rgba(255,255,255,.06);color:var(--fg-2)}
+.tab-add{width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:var(--r);border:none;background:transparent;color:var(--fg-4);cursor:pointer;font-size:15px;transition:background .1s,color .1s;flex-shrink:0}
+.tab-add:hover{background:var(--bg-hover);color:var(--fg-2)}
+.tab-actions{display:flex;align-items:center;gap:1px;padding:0 4px;flex-shrink:0}
+.tab-act{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:var(--r);border:none;background:transparent;color:var(--fg-4);cursor:pointer;transition:background .1s,color .1s}
+.tab-act:hover{background:var(--bg-hover);color:var(--fg-2)}
+.tab-act:active{background:var(--bg-active)}
+.tab-act.on{color:var(--accent)}
+.tab-act.on:hover{background:var(--accent-bg)}
+.tab-act[data-tip]{position:relative}
+.tab-act[data-tip]::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);padding:4px 8px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--r-xs);font:400 11px/1 var(--sans);color:var(--fg-2);white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .12s ease .5s;z-index:50}
+.tab-act[data-tip]:hover::after{opacity:1}
+
+/* ===== TERMINAL ===== */
+.term-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative;background:var(--bg);margin:8px 8px 8px 10px;border-radius:var(--r-lg);border:1px solid var(--border-subtle);box-shadow:inset 0 1px 2px rgba(0,0,0,.3);transition:margin-right .25s cubic-bezier(.4,0,.2,1)}
+.panel.open~.term-wrap{margin-right:calc(var(--panel-w) + 8px)}
+.term-view{flex:1;overflow-y:auto;overflow-x:hidden;padding:16px 20px;display:none;scroll-behavior:smooth}
+.term-view.active{display:block}
+.term-line{font:400 13px/1.7 var(--mono);color:var(--fg-2);white-space:pre-wrap;word-break:break-all;font-variant-ligatures:none;-webkit-font-smoothing:antialiased}
+.cmd-block{position:relative;margin:0 -20px;padding:6px 20px 6px 18px;border-left:2px solid transparent;transition:border-color .12s}
+.cmd-block:hover{border-left-color:#2A2A2A}
+.cmd-block .prompt{color:var(--fg-3)}
+.cmd-block .cmd-input{color:var(--fg)}
+.cmd-block .output{color:var(--fg-3);padding-left:0}
+.t-g{color:var(--green)}.t-b{color:var(--accent)}.t-c{color:var(--cyan)}.t-y{color:var(--yellow)}.t-r{color:var(--red)}.t-m{color:var(--magenta)}.t-w{color:var(--fg)}.t-d{color:var(--fg-3)}.t-dk{color:var(--fg-4)}.t-bold{font-weight:700}
+.t-prompt{background:rgba(59,130,246,0.06);padding:1px 4px 1px 0;border-radius:3px;margin-left:-4px}
+.term-input-line{display:flex;align-items:baseline;font:400 13px/1.7 var(--mono);color:var(--fg-3);min-height:22px}
+.term-input-line .prompt{flex-shrink:0}
+.term-input-area{flex:1;position:relative}
+.term-input-text{color:var(--fg);outline:none;white-space:pre}
+.cursor{display:inline-block;width:7.8px;height:15px;background:var(--fg);animation:blink-c 1s step-end infinite;vertical-align:text-bottom;margin-left:1px}
+@keyframes blink-c{0%,49%{opacity:1}50%,100%{opacity:0}}
+.term-hint{display:flex;align-items:center;gap:6px;font:400 11px/1.6 var(--mono);color:var(--fg-4);padding:2px 0 8px;opacity:.6;transition:opacity .3s}
+.term-hint.hidden{opacity:0;height:0;padding:0;overflow:hidden}
+.term-hint kbd{font:500 10px/1 var(--mono);padding:2px 5px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:3px;color:var(--fg-3)}
+.term-empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 20px;text-align:center;background:var(--bg-panel);border:1px solid var(--border-subtle);border-radius:var(--r-lg);margin:24px 0}
+.term-empty-icon{color:var(--fg-4);margin-bottom:10px;opacity:.6;width:40px;height:40px;display:flex;align-items:center;justify-content:center;border-radius:var(--r);background:var(--bg-elevated);border:1px solid var(--border-subtle)}
+.term-empty-title{font:500 13px/1.3 var(--sans);color:var(--fg-3);margin-bottom:4px}
+.term-empty-desc{font:400 12px/1.4 var(--sans);color:var(--fg-4);max-width:260px}
+
+/* ===== STATUS BAR ===== */
+.statusbar{height:var(--statusbar-h);display:flex;align-items:center;justify-content:space-between;padding:0 14px;background:var(--bg-panel);border-top:1px solid var(--border);flex-shrink:0;font:400 10.5px/1 var(--mono);color:var(--fg-4);border-radius:0 0 var(--r-sm) var(--r-sm)}
+.status-left,.status-right{display:flex;align-items:center;gap:12px}
+.status-item{display:flex;align-items:center;gap:4px}
+.status-dot-sm{width:5px;height:5px;border-radius:50%}
+.status-dot-sm.on{background:var(--green)}.status-dot-sm.off{background:var(--red)}.status-dot-sm.loading{background:var(--yellow)}
+
+/* ===== RIGHT PANEL ===== */
+.panel{position:absolute;top:0;right:0;bottom:0;width:var(--panel-w);background:var(--bg-panel);border-left:1px solid var(--border);border-radius:var(--r-lg) 0 0 var(--r-lg);overflow:hidden;transform:translateX(100%);transition:transform .25s cubic-bezier(.4,0,.2,1);z-index:20;display:flex;flex-direction:column}
+.panel.open{transform:translateX(0)}
+.panel-hdr{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border);flex-shrink:0}
+.panel-hdr span{font:600 12.5px/1 var(--sans);color:var(--fg)}
+.panel-x{width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:var(--r-sm);border:none;background:transparent;color:var(--fg-4);cursor:pointer;font-size:15px;transition:background .1s}
+.panel-x:hover{background:var(--bg-hover);color:var(--fg-2)}
+.panel-body{flex:1;overflow-y:auto;padding:2px 0}
+.psec{padding:10px 14px;border-bottom:1px solid var(--border-subtle)}
+.psec:last-child{border-bottom:none}
+.psec-title{font:600 10px/1 var(--sans);color:var(--fg-4);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+.metric{margin-bottom:8px}
+.metric:last-child{margin-bottom:0}
+.m-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px}
+.m-label{font:400 11px/1 var(--mono);color:var(--fg-4)}
+.m-val{font:500 11px/1 var(--mono);color:var(--fg);font-variant-numeric:tabular-nums}
+.m-bar{height:4px;background:var(--bg-elevated);border-radius:var(--r-xs);overflow:hidden}
+.m-fill{height:100%;border-radius:var(--r-xs);transition:width .8s cubic-bezier(.4,0,.2,1) .2s}
+.m-fill.cpu{background:var(--accent)}.m-fill.mem{background:var(--cyan)}.m-fill.disk{background:var(--magenta)}.m-fill.net{background:var(--yellow)}
+.m-sub{display:flex;justify-content:space-between;margin-top:2px}
+.m-sub span{font:400 9.5px/1 var(--mono);color:var(--fg-4)}
+.info-row{display:flex;justify-content:space-between;align-items:center;padding:3px 0}
+.info-label{font:400 11px/1 var(--sans);color:var(--fg-4)}
+.info-val{font:500 11px/1 var(--mono);color:var(--fg-2)}
+.act-btns{display:flex;flex-direction:column;gap:5px}
+.act-btn{display:flex;align-items:center;gap:7px;padding:7px 10px;border-radius:var(--r);border:1px solid var(--border);background:transparent;color:var(--fg-2);cursor:pointer;font:400 11.5px/1 var(--sans);transition:background .1s,border-color .1s}
+.act-btn:hover{background:var(--bg-hover);border-color:var(--fg-4)}
+.act-btn svg{color:var(--fg-4);flex-shrink:0}
+
+/* ===== COMMAND PALETTE ===== */
+.pal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(6px);z-index:100;display:none;align-items:flex-start;justify-content:center;padding-top:min(18vh,160px)}
+.pal-overlay.open{display:flex}
+.pal{width:500px;max-height:400px;background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5);display:flex;flex-direction:column}
+.pal-inp-wrap{display:flex;align-items:center;gap:9px;padding:0 14px;border-bottom:1px solid var(--border);flex-shrink:0}
+.pal-inp-wrap svg{color:var(--fg-4);flex-shrink:0}
+.pal-inp{flex:1;height:44px;background:transparent;border:none;color:var(--fg);font:400 14px/1 var(--sans);outline:none}
+.pal-inp::placeholder{color:var(--fg-4)}
+.pal-results{flex:1;overflow-y:auto;padding:4px}
+.pal-group{font:600 10px/1 var(--sans);color:var(--fg-4);text-transform:uppercase;letter-spacing:.06em;padding:8px 10px 4px}
+.pal-item{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:var(--r);cursor:pointer;transition:background .06s}
+.pal-item:hover,.pal-item.sel{background:var(--bg-hover)}
+.pal-item-icon{width:18px;height:18px;display:flex;align-items:center;justify-content:center;color:var(--fg-4);flex-shrink:0}
+.pal-item-label{flex:1;font:400 12.5px/1 var(--sans);color:var(--fg-2)}
+.pal-item.sel .pal-item-label{color:var(--fg)}
+.pal-item-kbd{font:500 10px/1 var(--mono);color:var(--fg-4);padding:2px 5px;background:var(--bg-elevated);border-radius:3px;border:1px solid var(--border)}
+.pal-item .dot{width:5px;height:5px}
+.pal-empty{display:flex;flex-direction:column;align-items:center;gap:6px;padding:24px 16px;text-align:center;font:400 12px/1.4 var(--sans);color:var(--fg-4)}
+.pal-empty svg{opacity:.45}
+
+/* ===== TOAST ===== */
+.toast{position:fixed;bottom:56px;left:50%;transform:translateX(-50%) translateY(12px);background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--r);padding:8px 16px;font:500 11.5px/1 var(--mono);color:var(--fg-2);opacity:0;transition:opacity .18s cubic-bezier(.4,0,.2,1),transform .18s cubic-bezier(.4,0,.2,1);z-index:200;pointer-events:none;white-space:nowrap;backdrop-filter:blur(8px)}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ===== FOCUS ===== */
+*:focus-visible{outline:1px solid var(--accent);outline-offset:1px;border-radius:var(--r-sm)}
+.tab:focus-visible,.srv:focus-visible,.act-btn:focus-visible,.tab-act:focus-visible{outline:1px solid var(--accent);outline-offset:-1px}
+button:focus:not(:focus-visible),input:focus:not(:focus-visible){outline:none}
+</style>
+</head>
+<body>
+<div class="app" role="application" aria-label="SSH Terminal Dashboard">
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar" role="navigation" aria-label="Server list">
+    <div class="sidebar-hdr">
+      <div class="sidebar-brand">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 5 6.5 8 3 11"/><line x1="8" y1="11" x2="13" y2="11"/></svg>
+        SSH Terminal
+      </div>
+      <div class="search-wrap">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><line x1="10.2" y1="10.2" x2="14" y2="14"/></svg>
+        <input type="text" id="srvSearch" placeholder="Search servers…" autocomplete="off" spellcheck="false">
+      </div>
+    </div>
+    <div class="sidebar-body" id="srvList"></div>
+    <div class="sidebar-ft">
+      <div class="kbd-hint"><kbd>⌘K</kbd></div>
+      <div class="kbd-hint"><kbd>⌘B</kbd></div>
+    </div>
+  </aside>
+
+  <div class="cnt-wrap" id="cntWrap">
+    <div class="expand-wrap"><button class="expand-btn" id="expandBtn" title="Show Sidebar (⌘B)"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="3" y1="3" x2="3" y2="13"/><polyline points="7 5 11 8 7 11"/></svg></button></div>
+
+    <div class="tabbar">
+      <div class="tabs-scroll" role="tablist" aria-label="Terminal sessions"><div class="tabs" id="tabsEl"></div></div>
+      <div class="tab-actions">
+        <button class="tab-act" id="panelToggle" data-tip="Server Info (⌘.)">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="1.5" width="13" height="13" rx="2"/><line x1="9.5" y1="1.5" x2="9.5" y2="14.5"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="term-wrap" id="termWrap"></div>
+
+    <div class="statusbar">
+      <div class="status-left">
+        <div class="status-item"><span class="status-dot-sm on" id="sbDot"></span><span id="sbConn">Connected</span></div>
+        <div class="status-item"><span id="sbPath">~</span></div>
+      </div>
+      <div class="status-right">
+        <div class="status-item"><span id="sbEnc">UTF-8</span></div>
+        <div class="status-item"><span id="sbLatency">12ms</span></div>
+        <div class="status-item"><span id="sbTime"></span></div>
+      </div>
+    </div>
+
+    <!-- Right Panel -->
+    <aside class="panel" id="panel">
+      <div class="panel-hdr">
+        <span>Server Info</span>
+        <button class="panel-x" id="panelClose">×</button>
+      </div>
+      <div class="panel-body">
+        <div class="psec">
+          <div class="psec-title">System Metrics</div>
+          <div class="metric"><div class="m-head"><span class="m-label">CPU</span><span class="m-val" id="pmCpu">—</span></div><div class="m-bar"><div class="m-fill cpu" id="pmCpuBar" style="width:0"></div></div></div>
+          <div class="metric"><div class="m-head"><span class="m-label">Memory</span><span class="m-val" id="pmMem">—</span></div><div class="m-bar"><div class="m-fill mem" id="pmMemBar" style="width:0"></div></div><div class="m-sub"><span id="pmMemPct">—</span><span id="pmMemFree">—</span></div></div>
+          <div class="metric"><div class="m-head"><span class="m-label">Disk</span><span class="m-val" id="pmDisk">—</span></div><div class="m-bar"><div class="m-fill disk" id="pmDiskBar" style="width:0"></div></div><div class="m-sub"><span id="pmDiskPct">—</span><span id="pmDiskFree">—</span></div></div>
+          <div class="metric"><div class="m-head"><span class="m-label">Network</span><span class="m-val" id="pmNet">—</span></div><div class="m-bar"><div class="m-fill net" id="pmNetBar" style="width:0"></div></div></div>
+        </div>
+        <div class="psec">
+          <div class="psec-title">Session</div>
+          <div class="info-row"><span class="info-label">User</span><span class="info-val" id="piUser">root</span></div>
+          <div class="info-row"><span class="info-label">Host</span><span class="info-val" id="piHost">—</span></div>
+          <div class="info-row"><span class="info-label">IP</span><span class="info-val" id="piIp">—</span></div>
+          <div class="info-row"><span class="info-label">OS</span><span class="info-val" id="piOs">—</span></div>
+          <div class="info-row"><span class="info-label">Uptime</span><span class="info-val" id="piUptime">—</span></div>
+          <div class="info-row"><span class="info-label">Shell</span><span class="info-val">/bin/bash</span></div>
+        </div>
+        <div class="psec">
+          <div class="psec-title">Quick Actions</div>
+          <div class="act-btns">
+            <button class="act-btn" id="actReconnect"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><polyline points="13 2 13 6 9 6"/><path d="M5 14a7 7 0 01-.5-3c.3-2.5 2-4.5 4.2-5.2"/><polyline points="3 14 3 10 7 10"/><path d="M11 2a7 7 0 01.5 3c-.3 2.5-2 4.5-4.2 5.2"/></svg>Reconnect</button>
+            <button class="act-btn" id="actRestart"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="3" width="10" height="10" rx="1.5"/><line x1="3" y1="6" x2="13" y2="6"/></svg>Restart Session</button>
+            <button class="act-btn" id="actSftp"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5V13a1 1 0 001 1h10a1 1 0 001-1V7a1 1 0 00-1-1H8L6.5 4H3a1 1 0 00-1 1z"/></svg>Open SFTP</button>
+            <button class="act-btn" id="actCopy"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11V3a1.5 1.5 0 011.5-1.5H11"/></svg>Copy SSH Command</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<!-- Command Palette -->
+<div class="pal-overlay" id="palOverlay">
+  <div class="pal">
+    <div class="pal-inp-wrap">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><line x1="10.2" y1="10.2" x2="14" y2="14"/></svg>
+      <input type="text" id="palInput" placeholder="Command or server name…" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="pal-results" id="palResults" role="listbox" aria-label="Command results"></div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+"use strict";
+
+/* ═══════════════════ DATA ═══════════════════ */
+const servers=[
+  {id:'prod-api-01',name:'prod-api-01',ip:'10.0.1.10',status:'online',group:'Production',os:'Ubuntu 22.04.4',uptime:'47d 3h 41m'},
+  {id:'prod-api-02',name:'prod-api-02',ip:'10.0.1.11',status:'online',group:'Production',os:'Ubuntu 22.04.4',uptime:'32d 11h 02m'},
+  {id:'prod-db-master',name:'prod-db-master',ip:'10.0.1.20',status:'online',group:'Production',os:'Debian 12',uptime:'89d 5h 17m'},
+  {id:'prod-redis',name:'prod-redis',ip:'10.0.1.30',status:'online',group:'Production',os:'Alpine 3.19',uptime:'47d 3h 40m'},
+  {id:'staging-web',name:'staging-web',ip:'10.0.2.10',status:'online',group:'Staging',os:'Ubuntu 24.04',uptime:'12d 7h 33m'},
+  {id:'staging-worker',name:'staging-worker',ip:'10.0.2.11',status:'offline',group:'Staging',os:'Ubuntu 24.04',uptime:'—'},
+  {id:'dev-sandbox',name:'dev-sandbox',ip:'10.0.3.10',status:'online',group:'Development',os:'Fedora 40',uptime:'5d 2h 08m'},
+  {id:'dev-build',name:'dev-build',ip:'10.0.3.11',status:'online',group:'Development',os:'Ubuntu 22.04.4',uptime:'21d 14h 55m'},
+];
+const srvMap={};servers.forEach(s=>srvMap[s.id]=s);
+
+const metrics={
+  'prod-api-01':{cpu:[34,27,41,33,38,29],mem:51,memUsed:'8.2',memTotal:'16',disk:28,diskUsed:'142',diskTotal:'500',netUp:'1.2',netDown:'3.4',netPct:34},
+  'prod-api-02':{cpu:[22,19,28,21,25,18],mem:38,memUsed:'6.1',memTotal:'16',disk:20,diskUsed:'98',diskTotal:'500',netUp:'0.8',netDown:'2.1',netPct:21},
+  'prod-db-master':{cpu:[61,55,68,58,63,52],mem:44,memUsed:'14.2',memTotal:'32',disk:31,diskUsed:'312',diskTotal:'1000',netUp:'2.4',netDown:'8.7',netPct:87},
+  'prod-redis':{cpu:[5,4,7,3,6,5],mem:70,memUsed:'2.8',memTotal:'4',disk:12,diskUsed:'12',diskTotal:'100',netUp:'0.4',netDown:'0.9',netPct:9},
+  'staging-web':{cpu:[12,10,15,11,14,9],mem:40,memUsed:'3.2',memTotal:'8',disk:23,diskUsed:'45',diskTotal:'200',netUp:'0.3',netDown:'1.1',netPct:11},
+  'staging-worker':{cpu:[0,0,0,0,0,0],mem:0,memUsed:'0',memTotal:'0',disk:0,diskUsed:'0',diskTotal:'0',netUp:'0',netDown:'0',netPct:0},
+  'dev-sandbox':{cpu:[8,6,12,7,10,5],mem:51,memUsed:'4.1',memTotal:'8',disk:34,diskUsed:'67',diskTotal:'200',netUp:'0.1',netDown:'0.5',netPct:5},
+  'dev-build':{cpu:[45,38,52,42,48,35],mem:46,memUsed:'7.3',memTotal:'16',disk:26,diskUsed:'128',diskTotal:'500',netUp:'1.8',netDown:'4.2',netPct:42},
+};
+
+/* ═══════════════════ TERMINAL CONTENT ═══════════════════ */
+function srv(s){return srvMap[s]}
+
+function termContent(sid){
+  const s=srv(sid);
+  if(!s)return '';
+  if(s.status==='offline'){
+    return `<div class="term-line"><span class="t-d">→ Connecting to <span class="t-b">${s.name}</span> (${s.ip}:22)…</span></div>
+<div class="term-line"><span class="t-r">✗</span> <span class="t-r">Connection refused</span> <span class="t-dk">— Host is down or port unreachable</span></div>
+<div class="term-line"><span class="t-dk">  Last known uptime: ${s.uptime} ago</span></div>
+<div class="term-line"><span class="t-dk">  Try: ssh root@${s.ip}</span></div>
+<div class="term-line"> </div>
+<div class="term-empty-state">
+  <div class="term-empty-icon"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><circle cx="8" cy="8" r="6.5"/><line x1="8" y1="5" x2="8" y2="8.5"/><circle cx="8" cy="10.5" r=".5" fill="currentColor" stroke="none"/></svg></div>
+  <div class="term-empty-title">Connection Unavailable</div>
+  <div class="term-empty-desc">${s.name} is offline. Check the server or try reconnecting.</div>
+</div>`;
+  }
+  if(sid==='prod-api-01')return prodApi01(s);
+  if(sid==='prod-api-02')return prodApi02(s);
+  if(sid==='prod-db-master')return prodDbMaster(s);
+  if(sid==='prod-redis')return prodRedis(s);
+  if(sid==='staging-web')return stagingWeb(s);
+  if(sid==='dev-sandbox')return devSandbox(s);
+  if(sid==='dev-build')return devBuild(s);
+  return genericConnect(s);
+}
+
+function genericConnect(s){
+  return `<div class="term-line"><span class="t-d">→ Connecting to <span class="t-b">${s.name}</span> (${s.ip}:22)…</span></div>
+<div class="term-line"><span class="t-g">✓</span> <span class="t-d">Authenticated. Welcome to ${s.os}</span></div>
+<div class="term-line"><span class="t-dk">  Last login: ${new Date().toDateString()} from 10.0.0.1</span></div>
+<div class="term-line"> </div>`;
+}
+
+function prompt(s){return `<span class="t-prompt"><span class="t-g">root</span><span class="t-d">@</span><span class="t-b">${s.name}</span><span class="t-d">:</span><span class="t-c">~</span><span class="t-d">$</span></span> `}
+
+function cmdBlock(s,cmd,output){
+  return `<div class="cmd-block"><div class="term-line">${prompt(s)}<span class="cmd-input">${cmd}</span></div>${output}</div>`;
+}
+
+function prodApi01(s){
+  return genericConnect(s)+
+  cmdBlock(s,'docker ps --format "table {{.ID}}\\t{{.Image}}\\t{{.Status}}\\t{{.Ports}}\\t{{.Names}}"',
+`<div class="output term-line"><span class="t-bold t-d">CONTAINER ID   IMAGE                  STATUS       PORTS                      NAMES</span></div>
+<div class="output term-line"><span class="t-dk">a3f2e8b1c9d4</span>   <span class="t-c">nginx:1.25-alpine</span>      <span class="t-g">Up 3 days</span>     <span class="t-d">0.0.0.0:80->80/tcp</span>         <span class="t-w">api-gateway</span></div>
+<div class="output term-line"><span class="t-dk">b7d4f1a9e2c3</span>   <span class="t-c">node:20-slim</span>           <span class="t-g">Up 3 days</span>     <span class="t-d">0.0.0.0:3000->3000/tcp</span>     <span class="t-w">api-server</span></div>
+<div class="output term-line"><span class="t-dk">c1e5a3b7d9f2</span>   <span class="t-c">postgres:16-alpine</span>     <span class="t-g">Up 3 days</span>     <span class="t-d">5432/tcp</span>                   <span class="t-w">api-db</span></div>
+<div class="output term-line"><span class="t-dk">d4f8b2c6a1e5</span>   <span class="t-c">redis:7-alpine</span>         <span class="t-g">Up 3 days</span>     <span class="t-d">6379/tcp</span>                   <span class="t-w">api-cache</span></div>
+<div class="output term-line"><span class="t-dk">e9a2c5d8b1f4</span>   <span class="t-c">grafana/grafana:10</span>     <span class="t-g">Up 2 days</span>     <span class="t-d">0.0.0.0:3001->3000/tcp</span>     <span class="t-w">monitoring</span></div>
+<div class="term-line"> </div>`)+
+  cmdBlock(s,'docker stats --no-stream --format "table {{.Name}}\\t{{.CPUPerc}}\\t{{.MemUsage}}\\t{{.NetIO}}"',
+`<div class="output term-line"><span class="t-bold t-d">NAME           CPU %     MEM USAGE            NET I/O</span></div>
+<div class="output term-line"><span class="t-w">api-gateway</span>    <span class="t-g"> 2.34%</span>     <span class="t-d">45.2MiB / 256MiB</span>      <span class="t-d">128MB / 95MB</span></div>
+<div class="output term-line"><span class="t-w">api-server</span>     <span class="t-y">12.67%</span>     <span class="t-d">256MiB / 1GiB</span>         <span class="t-d">1.2GB / 890MB</span></div>
+<div class="output term-line"><span class="t-w">api-db</span>         <span class="t-g"> 8.91%</span>     <span class="t-d">312MiB / 512MiB</span>       <span class="t-d">456MB / 234MB</span></div>
+<div class="output term-line"><span class="t-w">api-cache</span>      <span class="t-g"> 5.12%</span>     <span class="t-d">64MiB / 128MiB</span>        <span class="t-d">23MB / 12MB</span></div>
+<div class="output term-line"><span class="t-w">monitoring</span>     <span class="t-g"> 1.87%</span>     <span class="t-d">98MiB / 256MiB</span>        <span class="t-d">67MB / 34MB</span></div>
+<div class="term-line"> </div>`)+
+  cmdBlock(s,'uptime',
+`<div class="output term-line"><span class="t-d"> 14:23:41 up 47 days,  3:41,  1 user,  load average: 0.34, 0.28, 0.31</span></div>
+<div class="term-line"> </div>`);
+}
+
+function prodApi02(s){
+  return genericConnect(s)+
+  cmdBlock(s,'systemctl status nginx --no-pager',
+`<div class="output term-line"><span class="t-d">●</span> <span class="t-bold">nginx.service</span> <span class="t-d">- A high performance web server</span></div>
+<div class="output term-line"><span class="t-d">     Loaded: loaded (/lib/systemd/system/nginx.service; enabled)</span></div>
+<div class="output term-line"><span class="t-d">     Active: </span><span class="t-g t-bold">active (running)</span><span class="t-d"> since Mon 2025-06-09 08:12:03 UTC; 7 days ago</span></div>
+<div class="output term-line"><span class="t-d">       Docs: man:nginx(8)</span></div>
+<div class="output term-line"><span class="t-d">    Process: 1284 ExecStartPre=/usr/sbin/nginx -t (code=exited, status=0/SUCCESS)</span></div>
+<div class="output term-line"><span class="t-d">   Main PID: 1290 (nginx)</span></div>
+<div class="output term-line"><span class="t-d">      Tasks: 5 (limit: 18432)</span></div>
+<div class="output term-line"><span class="t-d">     Memory: 18.4M</span></div>
+<div class="output term-line"><span class="t-d">        CPU: 1.234s</span></div>
+<div class="output term-line"><span class="t-d">     CGroup: /system.slice/nginx.service</span></div>
+<div class="output term-line"><span class="t-d">             ├─1290 "nginx: master process /usr/sbin/nginx"</span></div>
+<div class="output term-line"><span class="t-d">             ├─1291 "nginx: worker process"</span></div>
+<div class="output term-line"><span class="t-d">             ├─1292 "nginx: worker process"</span></div>
+<div class="output term-line"><span class="t-d">             ├─1293 "nginx: worker process"</span></div>
+<div class="output term-line"><span class="t-d">             └─1294 "nginx: worker process"</span></div>
+<div class="term-line"> </div>`)+
+  cmdBlock(s,'curl -s http://localhost/health',
+`<div class="output term-line"><span class="t-d">{</span></div>
+<div class="output term-line"><span class="t-d">  "</span><span class="t-g">status</span><span class="t-d">": "</span><span class="t-g">healthy</span><span class="t-d">",</span></div>
+<div class="output term-line"><span class="t-d">  "</span><span class="t-w">uptime</span><span class="t-d">": 4087231,</span></div>
+<div class="output term-line"><span class="t-d">  "</span><span class="t-w">version</span><span class="t-d">": "</span><span class="t-c">2.14.3</span><span class="t-d">",</span></div>
+<div class="output term-line"><span class="t-d">  "</span><span class="t-w">connections</span><span class="t-d">": 847</span></div>
+<div class="output term-line"><span class="t-d">}</span></div>
+<div class="term-line"> </div>`);
+}
+
+function prodDbMaster(s){
+  return genericConnect(s)+
+  cmdBlock(s,'sudo -u postgres psql -c "SELECT datname, numbackends, xact_commit FROM pg_stat_database;"',
+`<div class="output term-line"><span class="t-d">  datname   │ numbackends │ xact_commit</span></div>
+<div class="output term-line"><span class="t-d"> ───────────┼─────────────┼────────────</span></div>
+<div class="output term-line"><span class="t-d">  api_prod  │          24 │     8914523</span></div>
+<div class="output term-line"><span class="t-d">  analytics │           8 │     2103847</span></div>
+<div class="output term-line"><span class="t-d">  postgres  │           0 │         231</span></div>
+<div class="output term-line"><span class="t-d">(3 rows)</span></div>
+<div class="term-line"> </div>`)+
+  cmdBlock(s,'pg_isready',
+`<div class="output term-line"><span class="t-d">/var/run/postgresql:5432 - </span><span class="t-g">accepting connections</span></div>
+<div class="term-line"> </div>`)+
+  cmdBlock(s,'df -h /var/lib/postgresql',
+`<div class="output term-line"><span class="t-bold t-d">Filesystem      Size  Used Avail Use% Mounted on</span></div>
+<div class="output term-line"><span class="t-d">/dev/sda1       1000G  312G  688G  31% /var/lib/postgresql</span></div>
+<div class="term-line"> </div>`);
+}
+
+function prodRedis(s){
+  return genericConnect(s)+
+  cmdBlock(s,'redis-cli INFO memory | head -8',
+`<div class="output term-line"><span class="t-d"># Memory</span></div>
+<div class="output term-line"><span class="t-d">used_memory:</span><span class="t-w">2936012800</span></div>
+<div class="output term-line"><span class="t-d">used_memory_human:</span><span class="t-w">2.73G</span></div>
+<div class="output term-line"><span class="t-d">used_memory_rss:</span><span class="t-w">3019898880</span></div>
+<div class="output term-line"><span class="t-d">used_memory_peak:</span><span class="t-w">3221225472</span></div>
+<div class="output term-line"><span class="t-d">used_memory_peak_human:</span><span class="t-w">3.00G</span></div>
+<div class="output term-line"><span class="t-d">mem_fragmentation_ratio:</span><span class="t-w">1.03</span></div>
+<div class="output term-line"><span class="t-d">mem_allocator:</span><span class="t-w">jemalloc-5.3.0</span></div>
+<div class="term-line"> </div>`)+
+  cmdBlock(s,'redis-cli DBSIZE',
+`<div class="output term-line"><span class="t-d">db0:keys=</span><span class="t-w">142,847</span><span class="t-d">,expires=</span><span class="t-w">89,231</span><span class="t-d">,avg_ttl=</span><span class="t-w">3600000</span></div>
+<div class="term-line"> </div>`);
+}
+
+function stagingWeb(s){
+  return genericConnect(s)+
+  cmdBlock(s,'pm2 list',
+`<div class="output term-line"><span class="t-bold t-d">┌────┬──────────────┬─────────┬────────┬──────┬───────────┐</span></div>
+<div class="output term-line"><span class="t-d">│ id │ name         │ mode    │ pid    │ cpu  │ memory    │</span></div>
+<div class="output term-line"><span class="t-d">├────┼──────────────┼─────────┼────────┼──────┼───────────┤</span></div>
+<div class="output term-line"><span class="t-d">│</span><span class="t-g"> 0  </span><span class="t-d">│</span><span class="t-w"> web-app</span><span class="t-d">      │</span><span class="t-d"> cluster │ 18234  │</span><span class="t-g"> 3%  </span><span class="t-d">│</span><span class="t-d"> 124MB     │</span></div>
+<div class="output term-line"><span class="t-d">│</span><span class="t-g"> 1  </span><span class="t-d">│</span><span class="t-w"> api-gateway</span><span class="t-d"> │</span><span class="t-d"> cluster │ 18301  │</span><span class="t-g"> 1%  </span><span class="t-d">│</span><span class="t-d"> 68MB      │</span></div>
+<div class="output term-line"><span class="t-d">└────┴──────────────┴─────────┴────────┴──────┴───────────┘</span></div>
+<div class="term-line"> </div>`)+
+  cmdBlock(s,'git log --oneline -5',
+`<div class="output term-line"><span class="t-y">a4f2c1b</span> <span class="t-d">fix: resolve auth middleware race condition</span></div>
+<div class="output term-line"><span class="t-y">b8e1d0a</span> <span class="t-d">feat: add batch export endpoint</span></div>
+<div class="output term-line"><span class="t-y">c3d9f2e</span> <span class="t-d">refactor: extract validation utils</span></div>
+<div class="output term-line"><span class="t-y">d1a7b8c</span> <span class="t-d">chore: bump deps to latest</span></div>
+<div class="output term-line"><span class="t-y">e5f0c3d</span> <span class="t-d">feat: implement webhook retry logic</span></div>
+<div class="term-line"> </div>`);
+}
+
+function devSandbox(s){
+  return genericConnect(s)+
+  cmdBlock(s,'kubectl get pods -A',
+`<div class="output term-line"><span class="t-bold t-d">NAMESPACE     NAME                          READY   STATUS    RESTARTS   AGE</span></div>
+<div class="output term-line"><span class="t-d">default       </span><span class="t-w">api-deploy-7b4f9d6c8-k2m1n</span>  <span class="t-g">1/1</span>     <span class="t-g">Running</span>  <span class="t-d">0          3d</span></div>
+<div class="output term-line"><span class="t-d">default       </span><span class="t-w">api-deploy-7b4f9d6c8-p8q3r</span>  <span class="t-g">1/1</span>     <span class="t-g">Running</span>  <span class="t-d">0          3d</span></div>
+<div class="output term-line"><span class="t-d">default       </span><span class="t-w">postgres-0</span>                   <span class="t-g">1/1</span>     <span class="t-g">Running</span>  <span class="t-d">0          5d</span></div>
+<div class="output term-line"><span class="t-d">kube-system   </span><span class="t-w">coredns-5d78c9f689-m4x2t</span>     <span class="t-g">1/1</span>     <span class="t-g">Running</span>  <span class="t-d">0          5d</span></div>
+<div class="term-line"> </div>`)+
+  cmdBlock(s,'docker compose ps',
+`<div class="output term-line"><span class="t-bold t-d">NAME              STATUS          PORTS</span></div>
+<div class="output term-line"><span class="t-w">postgres-dev</span>     <span class="t-g">Up (healthy)</span>    <span class="t-d">0.0.0.0:5432->5432/tcp</span></div>
+<div class="output term-line"><span class="t-w">redis-dev</span>        <span class="t-g">Up</span>              <span class="t-d">0.0.0.0:6379->6379/tcp</span></div>
+<div class="output term-line"><span class="t-w">minio-dev</span>        <span class="t-g">Up</span>              <span class="t-d">0.0.0.0:9000->9000/tcp</span></div>
+<div class="output term-line"><span class="t-w">mailhog</span>          <span class="t-g">Up</span>              <span class="t-d">0.0.0.0:1025->1025/tcp</span></div>
+<div class="term-line"> </div>`);
+}
+
+function devBuild(s){
+  return genericConnect(s)+
+  cmdBlock(s,'nproc && free -h | head -2',
+`<div class="output term-line"><span class="t-w">16</span></div>
+<div class="output term-line"><span class="t-bold t-d">               total        used        free      shared  buff/cache   available</span></div>
+<div class="output term-line"><span class="t-d">Mem:</span><span class="t-w">            16Gi</span><span class="t-d">       7.3Gi</span><span class="t-d">       4.1Gi</span><span class="t-d">       256Mi</span><span class="t-d">       4.6Gi</span><span class="t-d">       8.2Gi</span></div>
+<div class="term-line"> </div>`)+
+  cmdBlock(s,'du -sh /var/lib/jenkins/workspace/* | sort -rh | head -5',
+`<div class="output term-line"><span class="t-w">12G</span>    <span class="t-d">/var/lib/jenkins/workspace/api-main</span></div>
+<div class="output term-line"><span class="t-w">4.2G</span>  <span class="t-d">/var/lib/jenkins/workspace/web-app</span></div>
+<div class="output term-line"><span class="t-w">2.1G</span>  <span class="t-d">/var/lib/jenkins/workspace/data-pipeline</span></div>
+<div class="output term-line"><span class="t-w">1.8G</span>  <span class="t-d">/var/lib/jenkins/workspace/ci-runner</span></div>
+<div class="output term-line"><span class="t-w">890M</span> <span class="t-d">/var/lib/jenkins/workspace/docs-site</span></div>
+<div class="term-line"> </div>`)+
+  cmdBlock(s,'df -h / | tail -1',
+`<div class="output term-line"><span class="t-d">/dev/sda1       500G  128G  372G  26% /</span></div>
+<div class="term-line"> </div>`);
+}
+
+/* ═══════════════════ STATE ═══════════════════ */
+let tabs=[{id:'t0',sid:'prod-api-01'},{id:'t1',sid:'prod-db-master'}];
+let activeTab='t0';
+let tabCnt=2;
+let panelOpen=false;
+let palOpen=false;
+let palSelIdx=0;
+let palItems=[];
+
+/* ═══════════════════ DOM ═══════════════════ */
+const $sidebar=document.getElementById('sidebar');
+const $srvSearch=document.getElementById('srvSearch');
+const $srvList=document.getElementById('srvList');
+const $tabsEl=document.getElementById('tabsEl');
+const $termWrap=document.getElementById('termWrap');
+const $panel=document.getElementById('panel');
+const $panelToggle=document.getElementById('panelToggle');
+const $palOverlay=document.getElementById('palOverlay');
+const $palInput=document.getElementById('palInput');
+const $palResults=document.getElementById('palResults');
+const $toast=document.getElementById('toast');
+
+/* ═══════════════════ RENDER: Sidebar ═══════════════════ */
+function renderSidebar(filter){
+  const f=(filter||'').toLowerCase();
+  const groups={};
+  servers.forEach(s=>{
+    if(f && !s.name.includes(f) && !s.ip.includes(f))return;
+    if(!groups[s.group])groups[s.group]=[];
+    groups[s.group].push(s);
+  });
+  let html='';
+  let total=0;
+  ['Production','Staging','Development'].forEach(g=>{
+    const list=groups[g];
+    if(!list||!list.length)return;
+    total+=list.length;
+    html+=`<div class="srv-group"><div class="grp-label"><span>${g}</span><span class="grp-cnt">${list.length}</span></div>`;
+    list.forEach(s=>{
+      const cls=s.id===(getActive()?.sid)?' active':'';
+      const sc=s.status==='online'?'on':s.status==='offline'?'off':'loading';
+      html+=`<div class="srv ${s.status==='offline'?'offline':''}${cls}" data-sid="${s.id}" role="button" tabindex="0" aria-label="Connect to ${s.name} (${s.ip}), ${s.status}"><span class="dot ${sc}" aria-hidden="true"></span><div class="srv-info"><span class="srv-nm">${s.name}</span><span class="srv-meta">${s.ip}</span></div></div>`;
+    });
+    html+=`</div>`;
+  });
+  if(total===0){
+    html=`<div class="sidebar-empty"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><line x1="10.2" y1="10.2" x2="14" y2="14"/></svg><span>No servers match "${filter}"</span></div>`;
+  }
+  $srvList.innerHTML=html;
+}
+
+/* ═══════════════════ RENDER: Tabs ═══════════════════ */
+function checkTabOverflow(){
+  const el=document.querySelector('.tabs-scroll');
+  if(el)el.classList.toggle('has-overflow',el.scrollWidth>el.clientWidth+4);
+}
+function renderTabs(){
+  let html='';
+  tabs.forEach(t=>{
+    const s=srvMap[t.sid];if(!s)return;
+    const cls=t.id===activeTab?' active':'';
+    const dc=s.status==='online'?'on':s.status==='offline'?'off':'loading';
+    html+=`<div class="tab${cls}" data-tid="${t.id}" role="tab" aria-selected="${t.id===activeTab}" tabindex="${t.id===activeTab?'0':'-1'}"><span class="tab-dot ${dc}" aria-hidden="true"></span><span class="tab-name">${s.name}</span><button class="tab-x" data-close="${t.id}" title="Close tab ${s.name}" aria-label="Close tab ${s.name}">×</button></div>`;
+  });
+  html+=`<button class="tab-add" id="tabAddBtn" title="New Tab (⌘T)" aria-label="New terminal tab"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="6" y1="1" x2="6" y2="11"/><line x1="1" y1="6" x2="11" y2="6"/></svg></button>`;
+  $tabsEl.innerHTML=html;
+  setTimeout(checkTabOverflow,0);
+}
+
+/* ═══════════════════ RENDER: Terminal ═══════════════════ */
+function renderTerminal(){
+  const t=getActive();if(!t)return;
+  const s=srvMap[t.sid];if(!s)return;
+  let html=`<div class="term-view active" id="term-${t.id}">`;
+  html+=termContent(t.sid);
+  if(s.status!=='offline'){
+    html+=`<div class="term-hint" id="termHint"><kbd>⌘K</kbd> Command palette · <kbd>⌘T</kbd> New tab · <kbd>⌘B</kbd> Sidebar</div>`;
+    html+=`<div class="term-input-line"><span class="prompt">${prompt(s)}</span><span class="term-input-text" id="inputText"></span><span class="cursor"></span></div>`;
+  }
+  html+=`</div>`;
+  $termWrap.innerHTML=html;
+  scrollTermToBottom();
+  updateStatusBar(s);
+  updatePanel(s);
+}
+
+function scrollTermToBottom(){
+  const v=$termWrap.querySelector('.term-view');
+  if(v)v.scrollTop=v.scrollHeight;
+}
+
+/* ═══════════════════ RENDER: Status Bar ═══════════════════ */
+function updateStatusBar(s){
+  document.getElementById('sbDot').className='status-dot-sm '+(s.status==='online'?'on':s.status==='offline'?'off':'loading');
+  document.getElementById('sbConn').textContent=s.status==='online'?'Connected':s.status==='offline'?'Disconnected':'Connecting…';
+  document.getElementById('sbPath').textContent=s.status==='online'?'root@'+s.name+':~':'—';
+  document.getElementById('sbLatency').textContent=s.status==='online'?'12ms':'—';
+}
+
+function updateTime(){
+  const d=new Date();
+  const el=document.getElementById('sbTime');
+  if(el)el.textContent=d.toLocaleTimeString('en-US',{hour12:false,hour:'2-digit',minute:'2-digit'});
+}
+
+/* ═══════════════════ RENDER: Right Panel ═══════════════════ */
+function updatePanel(s){
+  const m=metrics[s.id];
+  if(!m)return;
+  const isOff=s.status==='offline';
+  document.getElementById('piHost').textContent=s.name;
+  document.getElementById('piIp').textContent=s.ip;
+  document.getElementById('piOs').textContent=isOff?'—':s.os;
+  document.getElementById('piUptime').textContent=s.uptime;
+  document.querySelectorAll('.psec:first-child .metric').forEach(el=>{
+    el.style.opacity=isOff?.4:1;
+  });
+  requestAnimationFrame(()=>{
+    document.getElementById('pmCpu').textContent=m.cpu[0]+'%';
+    document.getElementById('pmCpuBar').style.width=m.cpu[0]+'%';
+    document.getElementById('pmMem').textContent=m.memUsed+' / '+m.memTotal+' GB';
+    document.getElementById('pmMemBar').style.width=m.mem+'%';
+    document.getElementById('pmMemPct').textContent=m.mem+'% used';
+    document.getElementById('pmMemFree').textContent=(parseFloat(m.memTotal)-parseFloat(m.memUsed)).toFixed(1)+' GB free';
+    document.getElementById('pmDisk').textContent=m.diskUsed+' / '+m.diskTotal+' GB';
+    document.getElementById('pmDiskBar').style.width=m.disk+'%';
+    document.getElementById('pmDiskPct').textContent=m.disk+'% used';
+    document.getElementById('pmDiskFree').textContent=(parseFloat(m.diskTotal)-parseFloat(m.diskUsed)).toFixed(0)+' GB free';
+    document.getElementById('pmNet').textContent='↑ '+m.netUp+' ↓ '+m.netDown+' MB/s';
+    document.getElementById('pmNetBar').style.width=m.netPct+'%';
+  });
+}
+
+/* ═══════════════════ HELPERS ═══════════════════ */
+function getActive(){return tabs.find(t=>t.id===activeTab)}
+function toast(msg){
+  $toast.textContent=msg;
+  $toast.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t=setTimeout(()=>$toast.classList.remove('show'),1800);
+}
+
+/* ═══════════════════ TAB ACTIONS ═══════════════════ */
+function switchTab(tid){
+  if(!tabs.find(t=>t.id===tid))return;
+  activeTab=tid;
+  renderTabs();
+  renderTerminal();
+  renderSidebar($srvSearch.value);
+  const sid=tabs.find(t=>t.id===tid)?.sid;
+  if(sid){
+    const el=$srvList.querySelector(`[data-sid="${sid}"] .dot`);
+    if(el){el.classList.remove('on','off');el.classList.add('loading');setTimeout(()=>el.classList.remove('loading'),1200)}
+  }
+}
+
+function newTab(sid){
+  if(!sid){
+    const open=new Set(tabs.map(t=>t.sid));
+    const next=servers.find(s=>s.status==='online'&&!open.has(s.id));
+    sid=next?next.id:'prod-api-01';
+  }
+  const tid='t'+(tabCnt++);
+  tabs.push({id:tid,sid});
+  activeTab=tid;
+  renderTabs();
+  renderTerminal();
+  renderSidebar($srvSearch.value);
+  toast('New tab: '+srvMap[sid].name);
+}
+
+function closeTab(tid){
+  if(tabs.length<=1)return;
+  const idx=tabs.findIndex(t=>t.id===tid);
+  tabs.splice(idx,1);
+  if(activeTab===tid){
+    activeTab=tabs[Math.min(idx,tabs.length-1)].id;
+  }
+  renderTabs();
+  renderTerminal();
+  renderSidebar($srvSearch.value);
+}
+
+/* ═══════════════════ PANEL ═══════════════════ */
+function togglePanel(){
+  panelOpen=!panelOpen;
+  $panel.classList.toggle('open',panelOpen);
+  $panelToggle.classList.toggle('on',panelOpen);
+}
+
+/* ═══════════════════ SIDEBAR ═══════════════════ */
+function toggleSidebar(){
+  $sidebar.classList.toggle('collapsed');
+}
+
+/* ═══════════════════ COMMAND PALETTE ═══════════════════ */
+const palCommands=[
+  {type:'cmd',label:'New Tab',kbd:'⌘T',action:()=>newTab()},
+  {type:'cmd',label:'Close Tab',kbd:'⌘W',action:()=>closeTab(activeTab)},
+  {type:'cmd',label:'Toggle Sidebar',kbd:'⌘B',action:()=>toggleSidebar()},
+  {type:'cmd',label:'Toggle Server Info',kbd:'⌘.',action:()=>togglePanel()},
+  {type:'cmd',label:'Reconnect',action:()=>toast('Reconnecting…')},
+  {type:'cmd',label:'Restart Session',action:()=>toast('Restarting…')},
+  {type:'cmd',label:'Copy SSH Command',action:()=>{const s=getActive();if(s)toast('Copied: ssh root@'+srvMap[s.sid].ip)}},
+  {type:'cmd',label:'Open SFTP',action:()=>toast('SFTP opened')},
+];
+
+function buildPalItems(q){
+  const items=[];
+  const ql=(q||'').toLowerCase();
+  servers.forEach(s=>{
+    if(ql&&!s.name.toLowerCase().includes(ql)&&!s.ip.includes(ql))return;
+    items.push({type:'srv',sid:s.id,label:s.name+' — '+s.ip,status:s.status});
+  });
+  palCommands.forEach(c=>{
+    if(ql&&!c.label.toLowerCase().includes(ql))return;
+    items.push(c);
+  });
+  return items;
+}
+
+function renderPal(){
+  palItems=buildPalItems($palInput.value);
+  if(!palItems.length){
+    $palResults.innerHTML=`<div class="pal-empty"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><line x1="10.2" y1="10.2" x2="14" y2="14"/></svg><span>No commands or servers match "${$palInput.value}"</span></div>`;
+    return;
+  }
+  palSelIdx=Math.min(palSelIdx,palItems.length-1);
+  let html='';
+  let lastType='';
+  palItems.forEach((it,i)=>{
+    if(it.type!==lastType){
+      lastType=it.type;
+      html+=`<div class="pal-group">${it.type==='srv'?'Servers':'Commands'}</div>`;
+    }
+    const sel=i===palSelIdx?' sel':'';
+    if(it.type==='srv'){
+      const dc=it.status==='online'?'on':it.status==='offline'?'off':'loading';
+      html+=`<div class="pal-item${sel}" data-pidx="${i}" role="option" aria-selected="${sel}" aria-label="${it.label}, ${it.status}"><span class="dot ${dc}" aria-hidden="true"></span><span class="pal-item-label">${it.label}</span></div>`;
+    }else{
+      html+=`<div class="pal-item${sel}" data-pidx="${i}" role="option" aria-selected="${sel}"><span class="pal-item-label">${it.label}</span>${it.kbd?`<span class="pal-item-kbd">${it.kbd}</span>`:''}</div>`;
+    }
+  });
+  $palResults.innerHTML=html;
+}
+
+function openPal(){
+  palOpen=true;$palOverlay.classList.add('open');
+  $palInput.value='';palSelIdx=0;
+  renderPal();
+  setTimeout(()=>$palInput.focus(),50);
+}
+function closePal(){
+  palOpen=false;$palOverlay.classList.remove('open');
+}
+function palExec(idx){
+  const it=palItems[idx];
+  if(!it)return;
+  closePal();
+  if(it.type==='srv'){
+    const existing=tabs.find(t=>t.sid===it.sid);
+    if(existing)switchTab(existing.id);
+    else newTab(it.sid);
+  }else if(it.action){
+    it.action();
+  }
+}
+
+/* ═══════════════════ EVENT DELEGATION ═══════════════════ */
+$srvList.addEventListener('click',e=>{
+  const item=e.target.closest('.srv');
+  if(!item)return;
+  const sid=item.dataset.sid;
+  const existing=tabs.find(t=>t.sid===sid);
+  if(existing)switchTab(existing.id);
+  else newTab(sid);
+});
+
+$tabsEl.addEventListener('click',e=>{
+  const closeBtn=e.target.closest('.tab-x');
+  if(closeBtn){closeTab(closeBtn.dataset.close);return}
+  const addBtn=e.target.closest('#tabAddBtn');
+  if(addBtn){newTab();return}
+  const tab=e.target.closest('.tab');
+  if(tab)switchTab(tab.dataset.tid);
+});
+$tabsEl.addEventListener('keydown',e=>{
+  const tab=e.target.closest('.tab');
+  if(!tab)return;
+  const idx=tabs.findIndex(t=>t.id===tab.dataset.tid);
+  if(e.key==='ArrowRight'&&idx<tabs.length-1){e.preventDefault();switchTab(tabs[idx+1].id);$tabsEl.querySelector(`[data-tid="${tabs[idx+1].id}"]`)?.focus()}
+  if(e.key==='ArrowLeft'&&idx>0){e.preventDefault();switchTab(tabs[idx-1].id);$tabsEl.querySelector(`[data-tid="${tabs[idx-1].id}"]`)?.focus()}
+  if(e.key==='Delete'||(e.key==='w'&&(e.metaKey||e.ctrlKey))){e.preventDefault();closeTab(tab.dataset.tid)}
+});
+$srvList.addEventListener('keydown',e=>{
+  if(e.key==='Enter'||e.key===' '){
+    const item=e.target.closest('.srv');
+    if(item){e.preventDefault();item.click()}
+  }
+});
+
+$srvSearch.addEventListener('input',()=>renderSidebar($srvSearch.value));
+$srvSearch.addEventListener('keydown',e=>{if(e.key==='Escape'){if($srvSearch.value){e.stopPropagation();$srvSearch.value='';renderSidebar()}else{$srvSearch.blur()}}});
+
+document.getElementById('expandBtn').addEventListener('click',toggleSidebar);
+document.getElementById('panelClose').addEventListener('click',togglePanel);
+$panelToggle.addEventListener('click',togglePanel);
+
+$palOverlay.addEventListener('click',e=>{if(e.target===$palOverlay)closePal()});
+$palInput.addEventListener('input',renderPal);
+$palResults.addEventListener('click',e=>{
+  const item=e.target.closest('.pal-item');
+  if(item)palExec(+item.dataset.pidx);
+});
+$palInput.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){closePal();return}
+  if(e.key==='ArrowDown'){e.preventDefault();palSelIdx=Math.min(palSelIdx+1,palItems.length-1);renderPal()}
+  if(e.key==='ArrowUp'){e.preventDefault();palSelIdx=Math.max(palSelIdx-1,0);renderPal()}
+  if(e.key==='Enter'){palExec(palSelIdx)}
+});
+
+document.getElementById('actReconnect').addEventListener('click',()=>toast('Reconnecting…'));
+document.getElementById('actRestart').addEventListener('click',()=>toast('Session restarted'));
+document.getElementById('actSftp').addEventListener('click',()=>toast('SFTP browser opened'));
+document.getElementById('actCopy').addEventListener('click',()=>{const s=getActive();if(s)toast('Copied: ssh root@'+srvMap[s.sid].ip)});
+
+/* ═══════════════════ KEYBOARD ═══════════════════ */
+document.addEventListener('keydown',e=>{
+  const meta=e.metaKey||e.ctrlKey;
+  if(meta&&e.key==='k'){e.preventDefault();palOpen?closePal():openPal();return}
+  if(meta&&e.key==='b'){e.preventDefault();toggleSidebar();return}
+  if(meta&&e.key==='.'){e.preventDefault();togglePanel();return}
+  if(meta&&e.key==='t'){e.preventDefault();newTab();return}
+  if(meta&&e.key==='w'){e.preventDefault();closeTab(activeTab);return}
+  if(meta&&e.key>='1'&&e.key<='9'){e.preventDefault();const idx=+e.key-1;if(tabs[idx])switchTab(tabs[idx].id);return}
+  if(e.key==='Escape'){
+    if(palOpen){closePal();return}
+    if(panelOpen){togglePanel();return}
+  }
+  if(!palOpen&&!meta&&e.key.length===1&&!e.ctrlKey&&!e.metaKey){
+    const hint=document.getElementById('termHint');
+    if(hint&&!hint.classList.contains('hidden'))hint.classList.add('hidden');
+    const el=document.getElementById('inputText');
+    if(el){
+      el.textContent+=e.key;
+      scrollTermToBottom();
+    }
+  }
+  if(e.key==='Backspace'){
+    const el=document.getElementById('inputText');
+    if(el&&el.textContent.length>0){
+      el.textContent=el.textContent.slice(0,-1);
+    }
+  }
+  if(e.key==='Enter'){
+    const el=document.getElementById('inputText');
+    if(el){
+      const cmd=el.textContent.trim();
+      handleTermInput(cmd);
+    }
+  }
+});
+
+/* ═══════════════════ TERMINAL INPUT ═══════════════════ */
+const cmdOutputs={
+  'ls':'<div class="output term-line"><span class="t-b">Desktop</span>  <span class="t-b">Documents</span>  <span class="t-b">Downloads</span>  <span class="t-b">.docker</span>  <span class="t-b">.kube</span>  <span class="t-b">.ssh</span></div>',
+  'pwd':'<div class="output term-line"><span class="t-w">/root</span></div>',
+  'whoami':'<div class="output term-line"><span class="t-w">root</span></div>',
+  'date':'<div class="output term-line"><span class="t-w">'+new Date().toString()+'</span></div>',
+  'hostname':function(s){return '<div class="output term-line"><span class="t-w">'+s.name+'</span></div>'},
+  'uname -a':function(s){return '<div class="output term-line"><span class="t-w">Linux '+s.name+' 5.15.0-91-generic #101-Ubuntu SMP x86_64 GNU/Linux</span></div>'},
+  'clear':'__CLEAR__',
+};
+
+function handleTermInput(cmd){
+  const t=getActive();if(!t)return;
+  const s=srvMap[t.sid];
+  const view=document.getElementById('term-'+t.id);
+  if(!view)return;
+
+  const inputLine=view.querySelector('.term-input-line');
+  if(inputLine){
+    const block=document.createElement('div');
+    block.className='cmd-block';
+    block.innerHTML=`<div class="term-line">${prompt(s)}<span class="cmd-input">${cmd}</span></div>`;
+    inputLine.replaceWith(block);
+  }
+
+  const hint=view.querySelector('.term-hint');
+  if(hint)hint.remove();
+
+  if(!cmd)return;
+
+  if(cmd==='clear'){
+    view.innerHTML='';
+  }else{
+    const out=cmdOutputs[cmd];
+    if(out){
+      const html=typeof out==='function'?out(s):out;
+      view.insertAdjacentHTML('beforeend',html);
+    }else{
+      view.insertAdjacentHTML('beforeend',`<div class="cmd-block"><div class="output term-line"><span class="t-d">bash: ${cmd}: command not found</span></div></div>`);
+    }
+  }
+
+  view.insertAdjacentHTML('beforeend',`<div class="term-input-line"><span class="prompt">${prompt(s)}</span><span class="term-input-text" id="inputText"></span><span class="cursor"></span></div>`);
+  scrollTermToBottom();
+}
+
+/* ═══════════════════ INIT ═══════════════════ */
+renderSidebar();
+renderTabs();
+renderTerminal();
+updateTime();
+setInterval(updateTime,30000);
+
+let cpuAnimIdx=0;
+function animateCpu(){
+  const t=getActive();if(!t)return;
+  const m=metrics[t.sid];if(!m)return;
+  cpuAnimIdx=(cpuAnimIdx+1)%m.cpu.length;
+  const val=m.cpu[cpuAnimIdx];
+  const el=document.getElementById('pmCpu');
+  const bar=document.getElementById('pmCpuBar');
+  if(el&&bar){
+    el.textContent=val+'%';
+    bar.style.width=val+'%';
+  }
+}
+setInterval(animateCpu,2500);
+
+})();
+</script>
+</body>
+</html>

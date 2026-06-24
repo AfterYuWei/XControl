@@ -106,3 +106,21 @@ type SftpCancelTransferResponse struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`
 }
+
+// SftpTransferRequest initiates a cross-session file transfer. The backend
+// first tries a direct server-to-server copy (scp on the source host); if that
+// fails (e.g. network unreachable, scp not installed), it falls back to relay
+// through the backend.
+type SftpTransferRequest struct {
+	SourceSessionID string   `json:"source_session_id"`
+	TargetSessionID string   `json:"target_session_id"`
+	Paths           []string `json:"paths"`        // source paths on source session
+	DestDir         string   `json:"dest_dir"`      // target directory on target session
+	Overwrite       bool     `json:"overwrite"`
+}
+
+type SftpTransferResponse struct {
+	TaskID  string        `json:"task_id"`
+	Method  string        `json:"method"`  // "direct" | "relay"
+	Tasks   []TransferTask `json:"tasks"`
+}

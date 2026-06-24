@@ -90,6 +90,7 @@ func NewRouter(db *sql.DB, encryptor *crypto.Encryptor) http.Handler {
 	// SFTP transfers
 	mux.HandleFunc("POST /api/sftp/sessions/{id}/upload", sftpH.Upload)
 	mux.HandleFunc("POST /api/sftp/sessions/{id}/download", sftpH.Download)
+	mux.HandleFunc("POST /api/sftp/transfer", sftpH.CrossSessionTransfer)
 	mux.HandleFunc("GET /api/sftp/transfers", sftpH.ListTransfers)
 	mux.HandleFunc("DELETE /api/sftp/transfers", sftpH.ClearCompletedTransfers)
 	mux.HandleFunc("DELETE /api/sftp/transfers/{task_id}", sftpH.CancelTransfer)

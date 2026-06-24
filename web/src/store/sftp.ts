@@ -310,10 +310,9 @@ export function createSftpStore(): SftpStoreApi {
     },
 
     startTransfer: async (entries, direction, destPane) => {
-      // For cross-pane drag-drop: entries come from the source pane.
-      // We need the source session to download, and the dest session to upload.
-      // direction "upload" = source is left, dest is right
-      // direction "download" = source is right, dest is left
+      // Cross-pane transfer uses the backend /api/sftp/transfer endpoint,
+      // which tries direct server-to-server copy first (scp on source host),
+      // then falls back to backend relay (download→temp→upload).
       const state = get()
       const sourcePane: PaneSide = direction === 'upload' ? 'left' : 'right'
       const targetPane: PaneSide = destPane ?? (direction === 'upload' ? 'right' : 'left')
@@ -326,16 +325,55 @@ export function createSftpStore(): SftpStoreApi {
       if (filePaths.length === 0) return
 
       try {
-        // Download from source session
-        const downloadRes = await sftpApi.download(sourceTab.sessionId, filePaths)
-        // The download creates tasks; we need to track them and when complete,
-        // upload to the target session. For now, add tasks to the store.
-        set((s) => ({ transfers: [...s.transfers, ...downloadRes.tasks] }))
+        const res = await sftpApi.transfer(
+          sourceTab.sessionId,
+          targetTab.sessionId,
+          filePaths,
+          targetTab.path,
+        )
 
-        // For each completed download task, upload to the target
-        // This is handled via the WebSocket progress hook which will call
-        // completeTransfer, and then we trigger the upload.
-        // For simplicity in this phase, we store the download_url for later use.
+        // Add the backend-created task(s) to the store for progress tracking
+        set((s) => ({ transfers: [...s.transfers, ...res.tasks] }))
+
+        // Poll the task status in background until completion
+        const taskId = res.task_id
+        ;(async () => {
+          const deadline = Date.now() + 10 * 60 * 1000 // 10 min timeout
+          while (Date.now() < deadline) {
+            await new Promise((r) => setTimeout(r, 800))
+            try {
+              const tasks = await sftpApi.listTransfers()
+              const t = tasks.find((x) => x.id === taskId)
+              if (!t) continue
+
+              set((s) => ({
+                transfers: s.transfers.map((x) =>
+                  x.id === taskId
+                    ? {
+                        ...x,
+                        transferred: t.transferred,
+                        size: t.size,
+                        speed: t.speed,
+                        status: t.status,
+                        finished_at: t.finished_at,
+                        error_message: t.error_message,
+                      }
+                    : x
+                ),
+              }))
+
+              if (t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled') {
+                // Refresh target pane on completion
+                if (t.status === 'completed') {
+                  get().refresh(targetPane)
+                }
+                return
+              }
+            } catch {
+              // ignore polling errors
+            }
+          }
+        })()
       } catch (err) {
         console.error('transfer failed', err)
       }

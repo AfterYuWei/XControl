@@ -23,8 +23,6 @@ export function TabBar({ onTogglePanel, panelOpen }: TabBarProps) {
     return () => ro.disconnect()
   }, [tabs.length])
 
-  if (tabs.length === 0) return null
-
   const dotClass = (status: string) =>
     status === 'connected' ? 'on' : status === 'connecting' ? 'loading' : 'off'
 

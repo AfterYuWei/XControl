@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Sidebar } from '@/components/Sidebar'
 import { TerminalView } from '@/components/Terminal'
+import { TabBar } from '@/components/Terminal/TabBar'
 import { StatusBar } from '@/components/StatusBar'
 import { ServerPanel } from '@/components/ServerPanel'
 import { CommandPalette } from '@/components/CommandPalette'
@@ -43,14 +44,14 @@ export function Layout() {
   }, [])
 
   return (
-    <div className="sshx-app" role="application" aria-label="SSH Terminal Dashboard">
+    <div className="sshx-app" role="application" aria-label="Terminal">
       {/* Sidebar */}
       <aside
         className={`sshx-sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}
         role="navigation"
         aria-label="Server list"
       >
-        <Sidebar />
+        <Sidebar onCollapse={() => setSidebarCollapsed(true)} />
       </aside>
 
       {/* Content */}
@@ -68,11 +69,11 @@ export function Layout() {
           </button>
         </div>
 
-        {tabs.length === 0 ? (
-          <EmptyState />
-        ) : (
-          <TerminalView panelOpen={panelOpen} onTogglePanel={() => setPanelOpen((v) => !v)} />
-        )}
+        {/* TabBar is always visible so the theme toggle and panel toggle
+            remain accessible even before any server is connected. */}
+        <TabBar panelOpen={panelOpen} onTogglePanel={() => setPanelOpen((v) => !v)} />
+
+        {tabs.length === 0 ? <EmptyState /> : <TerminalView panelOpen={panelOpen} />}
 
         <StatusBar />
 
@@ -96,14 +97,14 @@ export function Layout() {
 
 function EmptyState() {
   return (
-    <div className="term-empty-state" style={{ margin: '24px' }}>
+    <div className="term-empty-state" style={{ margin: '8px 8px 2px 8px' }}>
       <div className="term-empty-icon">
         <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
           <polyline points="3 5 6.5 8 3 11" />
           <line x1="8" y1="11" x2="13" y2="11" />
         </svg>
       </div>
-      <div className="term-empty-title">SSH Terminal</div>
+      <div className="term-empty-title">暂无活跃会话</div>
       <div className="term-empty-desc">
         从左侧选择一个服务器连接，或按 ⌘K 打开命令面板
       </div>

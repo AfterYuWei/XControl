@@ -7,6 +7,7 @@ import { StatusBar } from '@/components/StatusBar'
 import { ServerPanel } from '@/components/ServerPanel'
 import { CommandPalette } from '@/components/CommandPalette'
 import { Toast } from '@/components/Toast'
+import { ThemeToggle } from '@/components/ThemeToggle'
 import { useProfileStore } from '@/store/profile'
 import { useSessionStore } from '@/store/session'
 
@@ -46,28 +47,69 @@ export function Layout() {
 
   return (
     <div className="sshx-app" role="application" aria-label="Terminal">
-      {/* Header — full width, centered search */}
+      {/* Header — full width, left/center/right layout */}
       <header className="sshx-header">
-        <div className="header-search">
-          <Search size={14} className="header-search-icon" />
-          <input
-            type="text"
-            placeholder="搜索服务器…"
-            autoComplete="off"
-            spellCheck={false}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-          {searchQuery && (
-            <button
-              className="header-search-clear"
-              title="清除搜索"
-              aria-label="清除搜索"
-              onClick={() => setSearchQuery('')}
-            >
-              <X size={13} />
-            </button>
-          )}
+        {/* Left: collapse sidebar + theme toggle (migrated from sidebar toolbar) */}
+        <div className="header-left">
+          <button
+            className="hdr-icon-btn"
+            title={sidebarCollapsed ? '展开侧边栏 (⌘B)' : '折叠侧边栏 (⌘B)'}
+            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            onClick={() => setSidebarCollapsed((v) => !v)}
+          >
+            {sidebarCollapsed ? (
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="3" y1="3" x2="3" y2="13" />
+                <polyline points="7 5 11 8 7 11" />
+              </svg>
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="3" width="12" height="10" rx="1.5" />
+                <line x1="6" y1="3" x2="6" y2="13" />
+              </svg>
+            )}
+          </button>
+          <ThemeToggle className="hdr-icon-btn" />
+        </div>
+
+        {/* Center: server search */}
+        <div className="header-center">
+          <div className="header-search">
+            <Search size={14} className="header-search-icon" />
+            <input
+              type="text"
+              placeholder="搜索服务器…"
+              autoComplete="off"
+              spellCheck={false}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button
+                className="header-search-clear"
+                title="清除搜索"
+                aria-label="清除搜索"
+                onClick={() => setSearchQuery('')}
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Right: server info panel toggle (migrated from tabbar toolbar) */}
+        <div className="header-right">
+          <button
+            className={`tab-act ${panelOpen ? 'on' : ''}`}
+            data-tip="Server Info (⌘.)"
+            onClick={() => setPanelOpen((v) => !v)}
+            aria-label="Toggle server info panel"
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="1.5" y="1.5" width="13" height="13" rx="2" />
+              <line x1="9.5" y1="1.5" x2="9.5" y2="14.5" />
+            </svg>
+          </button>
         </div>
       </header>
 
@@ -79,25 +121,12 @@ export function Layout() {
           role="navigation"
           aria-label="Server list"
         >
-          <Sidebar onCollapse={() => setSidebarCollapsed(true)} />
+          <Sidebar />
         </aside>
 
         {/* Content */}
         <div className="cnt-wrap">
-          <div className="expand-wrap">
-            <button
-              className="expand-btn"
-              title="显示侧边栏 (⌘B)"
-              onClick={() => setSidebarCollapsed(false)}
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                <line x1="3" y1="3" x2="3" y2="13" />
-                <polyline points="7 5 11 8 7 11" />
-              </svg>
-            </button>
-          </div>
-
-          <TabBar panelOpen={panelOpen} onTogglePanel={() => setPanelOpen((v) => !v)} />
+          <TabBar />
 
           {tabs.length === 0 ? <EmptyState /> : <TerminalView panelOpen={panelOpen} />}
 

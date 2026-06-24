@@ -3,8 +3,6 @@ package ssh
 import (
 	"context"
 	"fmt"
-	"net"
-	"time"
 
 	gossh "golang.org/x/crypto/ssh"
 
@@ -26,21 +24,9 @@ func NewDriver(opts protocol.DriverOpts) (protocol.Driver, error) {
 }
 
 func (d *Driver) Connect(ctx context.Context) error {
-	config, err := buildSSHConfig(d.opts)
+	client, err := Dial(ctx, d.opts)
 	if err != nil {
-		return fmt.Errorf("build ssh config: %w", err)
-	}
-
-	addr := net.JoinHostPort(d.opts.Host, fmt.Sprintf("%d", d.opts.Port))
-
-	var client *gossh.Client
-	if d.opts.JumpHost != nil {
-		client, err = connectViaJump(ctx, d.opts.JumpHost, addr, config)
-	} else {
-		client, err = gossh.Dial("tcp", addr, config)
-	}
-	if err != nil {
-		return fmt.Errorf("ssh dial: %w", err)
+		return err
 	}
 
 	d.client = client
@@ -118,60 +104,4 @@ func (d *Driver) Close() error {
 
 func (d *Driver) Info() protocol.ConnectionInfo {
 	return d.info
-}
-
-func buildSSHConfig(opts protocol.DriverOpts) (*gossh.ClientConfig, error) {
-	config := &gossh.ClientConfig{
-		User:            opts.Username,
-		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
-		Timeout:         10 * time.Second,
-	}
-
-	if opts.Password != "" {
-		config.Auth = append(config.Auth, gossh.Password(opts.Password))
-	}
-
-	if opts.PrivKey != "" {
-		var signer gossh.Signer
-		var err error
-		if opts.Passphrase != "" {
-			signer, err = gossh.ParsePrivateKeyWithPassphrase([]byte(opts.PrivKey), []byte(opts.Passphrase))
-		} else {
-			signer, err = gossh.ParsePrivateKey([]byte(opts.PrivKey))
-		}
-		if err != nil {
-			return nil, fmt.Errorf("parse private key: %w", err)
-		}
-		config.Auth = append(config.Auth, gossh.PublicKeys(signer))
-	}
-
-	return config, nil
-}
-
-func connectViaJump(ctx context.Context, jumpOpts *protocol.DriverOpts, targetAddr string, targetConfig *gossh.ClientConfig) (*gossh.Client, error) {
-	jumpConfig, err := buildSSHConfig(*jumpOpts)
-	if err != nil {
-		return nil, fmt.Errorf("jump host config: %w", err)
-	}
-
-	jumpAddr := net.JoinHostPort(jumpOpts.Host, fmt.Sprintf("%d", jumpOpts.Port))
-	jumpClient, err := gossh.Dial("tcp", jumpAddr, jumpConfig)
-	if err != nil {
-		return nil, fmt.Errorf("dial jump host: %w", err)
-	}
-
-	conn, err := jumpClient.Dial("tcp", targetAddr)
-	if err != nil {
-		jumpClient.Close()
-		return nil, fmt.Errorf("dial target via jump: %w", err)
-	}
-
-	ncc, chans, reqs, err := gossh.NewClientConn(conn, targetAddr, targetConfig)
-	if err != nil {
-		jumpClient.Close()
-		conn.Close()
-		return nil, fmt.Errorf("ssh handshake with target: %w", err)
-	}
-
-	return gossh.NewClient(ncc, chans, reqs), nil
 }

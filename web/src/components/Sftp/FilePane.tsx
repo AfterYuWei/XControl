@@ -18,9 +18,7 @@ import { PaneActions } from './PaneActions'
 import { SftpContextMenu, type MenuItem } from './SftpContextMenu'
 import { useSftpStore } from './storeContext'
 import {
-  listFor,
   parentPath,
-  treeFor,
   type PaneSide,
 } from '@/store/sftp'
 import type { SftpEntry } from '@/types/sftp'
@@ -62,8 +60,8 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
   const view = activeTab.view
   const selected = activeTab.selected
 
-  const rawEntries = listFor(server, path)
-  const treeRoot = treeFor(server)
+  const rawEntries = activeTab.entries
+  const treeRoot = activeTab.tree
 
   const navigate = (p: string) => store.navigate(pane, p)
   const selectFn = (p: string, opts?: { additive?: boolean }) => store.select(pane, p, opts)
@@ -72,17 +70,17 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
   // List view: folders first then files, alphabetical. Prepend ".." when not
   // at root so users can double-click to go up.
   const sorted = [...rawEntries].sort((a, b) => {
-    if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
+    if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1
     return a.name.localeCompare(b.name, 'zh')
   })
 
   const upEntry: SftpEntry | null =
     path !== '/' && path !== ''
-      ? { name: '..', path: parentPath(path), isDir: true, size: 0, modTime: '' }
+      ? { name: '..', path: parentPath(path), is_dir: true, size: 0, mod_time: '' }
       : null
 
   const openEntry = (entry: SftpEntry) => {
-    if (entry.isDir) navigate(entry.path)
+    if (entry.is_dir) navigate(entry.path)
   }
 
   // --- Drag & drop (cross-pane file transfer). Direction is derived from
@@ -96,7 +94,7 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
       const { entries: dropped, from }: { entries: SftpEntry[]; from: PaneSide } = JSON.parse(raw)
       if (from === pane) return // same pane, no transfer
       const direction: 'upload' | 'download' = from === 'left' ? 'upload' : 'download'
-      const files = dropped.filter((d) => !d.isDir)
+      const files = dropped.filter((d) => !d.is_dir)
       if (files.length) store.startTransfer(files, direction)
     } catch {
       /* ignore malformed drag payload */
@@ -105,7 +103,7 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
 
   // --- Context menu builders ---
   const fileMenuItems = (entry: SftpEntry): MenuItem[] => [
-    { id: 'open', label: entry.isDir ? '打开文件夹' : '打开', icon: <FolderOpen size={13} />, onClick: () => openEntry(entry) },
+    { id: 'open', label: entry.is_dir ? '打开文件夹' : '打开', icon: <FolderOpen size={13} />, onClick: () => openEntry(entry) },
     { id: 'd1', label: '', divider: true },
     { id: 'rename', label: '重命名', icon: <Pencil size={13} />, onClick: () => {} },
     { id: 'copy', label: '复制路径', icon: <Copy size={13} />, onClick: () => navigator.clipboard?.writeText(entry.path) },
@@ -201,27 +199,34 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
           <span>释放以传输到{server.name}</span>
         </div>
       )}
-      <FileTree
-        root={treeRoot}
-        activePath={path}
-        selected={selected}
-        pane={pane}
-        onSelect={(entry, additive) => selectFn(entry.path, { additive })}
-        onActivate={(entry) => openEntry(entry)}
-        onContextMenu={(e, entry) => {
-          e.preventDefault()
-          e.stopPropagation()
-          if (!selected.has(entry.path)) selectFn(entry.path)
-          setCtx({ x: e.clientX, y: e.clientY, entry })
-        }}
-        onDragStart={(e, entry) => {
-          e.dataTransfer.setData(
-            'application/sftp-entry',
-            JSON.stringify({ entries: [entry], from: pane })
-          )
-          e.dataTransfer.effectAllowed = 'copyMove'
-        }}
-      />
+      {treeRoot ? (
+        <FileTree
+          root={treeRoot}
+          activePath={path}
+          selected={selected}
+          pane={pane}
+          onSelect={(entry, additive) => selectFn(entry.path, { additive })}
+          onActivate={(entry) => openEntry(entry)}
+          onContextMenu={(e, entry) => {
+            e.preventDefault()
+            e.stopPropagation()
+            if (!selected.has(entry.path)) selectFn(entry.path)
+            setCtx({ x: e.clientX, y: e.clientY, entry })
+          }}
+          onDragStart={(e, entry) => {
+            e.dataTransfer.setData(
+              'application/sftp-entry',
+              JSON.stringify({ entries: [entry], from: pane })
+            )
+            e.dataTransfer.effectAllowed = 'copyMove'
+          }}
+        />
+      ) : (
+        <div className="sftp-list-empty">
+          <Inbox size={20} />
+          <span>加载中...</span>
+        </div>
+      )}
     </div>
   )
 

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { FolderUp, Server as ServerIcon, X } from 'lucide-react'
 import { Dialog } from '@/components/ui/dialog'
 import { useSessionStore } from '@/store/session'
@@ -19,6 +20,7 @@ export function ServerPicker({ open, pane, onClose }: ServerPickerProps) {
   const { tabs, activeTabId } = useSessionStore()
   const servers = useSftpStore((s) => s.servers)
   const connectServer = useSftpStore((s) => s.connectServer)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
 
   // Resolve the active terminal tab's host as the "recommended" server.
   const activeTab = tabs.find((t) => t.id === activeTabId && t.kind === 'terminal')
@@ -30,13 +32,20 @@ export function ServerPicker({ open, pane, onClose }: ServerPickerProps) {
     return aMatch + bMatch
   })
 
-  const handlePick = (server: SftpServer) => {
+  const handleConnect = (server: SftpServer) => {
     if (pane) connectServer(pane, server)
+    setSelectedId(null)
     onClose()
   }
 
+  // Reset selection when dialog closes
+  const handleOpenChange = (o: boolean) => {
+    if (!o) setSelectedId(null)
+    if (!o) onClose()
+  }
+
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <div className="sftp-picker">
         <div className="sftp-picker-hdr">
           <span className="sftp-picker-title">选择服务器</span>
@@ -45,17 +54,28 @@ export function ServerPicker({ open, pane, onClose }: ServerPickerProps) {
           </button>
         </div>
         <div className="sftp-picker-sub">
-          选择要浏览文件的目标服务器，将以新标签页打开。当前终端会话的服务器已置顶并高亮。
+          单击选中服务器，双击进行连接。当前终端会话的服务器已置顶并高亮。
         </div>
         <div className="sftp-picker-list">
           {ordered.map((s) => {
             const isRecommended = `${s.host}:${s.port}` === recommendedId
+            const isSelected = s.id === selectedId
             const Icon = activeTab?.profileId ? resolveServerIcon('server') : ServerIcon
             return (
-              <button
+              <div
                 key={s.id}
-                className={`sftp-server-card ${isRecommended ? 'recommended' : ''}`}
-                onClick={() => handlePick(s)}
+                role="option"
+                aria-selected={isSelected}
+                tabIndex={0}
+                className={`sftp-server-card ${isRecommended ? 'recommended' : ''} ${isSelected ? 'selected' : ''}`}
+                onClick={() => setSelectedId(s.id)}
+                onDoubleClick={() => handleConnect(s)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    handleConnect(s)
+                  }
+                }}
               >
                 <span className="sftp-server-icon">
                   <Icon size={16} />
@@ -70,7 +90,7 @@ export function ServerPicker({ open, pane, onClose }: ServerPickerProps) {
                   </span>
                 </span>
                 <FolderUp size={14} className="sftp-server-arrow" />
-              </button>
+              </div>
             )
           })}
           {servers.length === 0 && (

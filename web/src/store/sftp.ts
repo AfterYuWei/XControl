@@ -100,6 +100,10 @@ export interface SftpTab {
   tree: TreeNode | null   // cached tree-view root
   loading: boolean
   error: string | null
+  // Monotonic counter to dedupe in-flight list requests: only the latest
+  // request's result is applied, preventing stale responses from overwriting
+  // newer data (e.g. rapid double-click navigation).
+  fetchSeq: number
 }
 
 export interface SftpStore {
@@ -156,6 +160,7 @@ function makeTab(server: SftpServer): SftpTab {
     tree: null,
     loading: false,
     error: null,
+    fetchSeq: 0,
   }
 }
 
@@ -213,6 +218,10 @@ export function createSftpStore(): SftpStoreApi {
     },
 
     navigate: async (pane, path) => {
+      // Skip if already on this path and not in an error state — avoids
+      // duplicate requests on rapid double-click.
+      const tab = activeTabOf(get(), pane)
+      if (tab && tab.path === path && !tab.error) return
       await fetchEntries(get, set, pane, path)
     },
 
@@ -488,15 +497,33 @@ async function connectAndNavigate(
   }
 }
 
-/** Fetch directory listing and update the active tab's entries. */
+/** Fetch directory listing and update the active tab's entries. Uses a
+ *  monotonic sequence counter so that if multiple requests are in flight
+ *  (e.g. user clicks rapidly), only the latest response is applied. */
 async function fetchEntries(get: GetState, set: SetState, pane: PaneSide, path: string) {
   const tab = activeTabOf(get(), pane)
   if (!tab?.sessionId) return
 
-  set(updateActiveTab(get(), pane, (t) => ({ ...t, loading: true, error: null, path, selected: new Set() })))
+  // Bump the sequence and capture this request's seq. Only the response
+  // matching the latest seq is applied.
+  const seq = tab.fetchSeq + 1
+  // Single state update: mark loading, switch path, and clear entries so the
+  // old directory's files don't briefly show in the new location.
+  set(updateActiveTab(get(), pane, (t) => ({
+    ...t,
+    loading: true,
+    error: null,
+    path,
+    selected: new Set(),
+    entries: [],
+    fetchSeq: seq,
+  })))
 
   try {
     const res = await sftpApi.list(tab.sessionId, path)
+    // Only apply if this is still the latest request
+    const current = activeTabOf(get(), pane)
+    if (!current || current.fetchSeq !== seq) return
     set(updateActiveTab(get(), pane, (t) => ({
       ...t,
       entries: res.entries,
@@ -504,6 +531,8 @@ async function fetchEntries(get: GetState, set: SetState, pane: PaneSide, path: 
       path: res.path,
     })))
   } catch (err) {
+    const current = activeTabOf(get(), pane)
+    if (!current || current.fetchSeq !== seq) return
     const msg = err instanceof Error ? err.message : String(err)
     set(updateActiveTab(get(), pane, (t) => ({ ...t, loading: false, error: msg })))
   }

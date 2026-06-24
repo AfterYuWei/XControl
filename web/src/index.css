@@ -2300,6 +2300,12 @@ input:focus:not(:focus-visible) {
 .sftp-server-card.recommended:hover {
   background: var(--accent-bg);
 }
+/* Selected (single-click) state */
+.sftp-server-card.selected {
+  border-color: var(--accent);
+  background: var(--accent-bg2);
+  box-shadow: 0 0 0 1px var(--accent-bg);
+}
 .sftp-server-icon {
   width: 32px;
   height: 32px;

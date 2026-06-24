@@ -2,9 +2,11 @@ import { api } from './client'
 import type {
   SftpEntry,
   TransferTask,
+  ConflictResolution,
   SftpCreateSessionResponse,
   SftpListResponse,
   SftpTreeResponse,
+  SftpTransferResponse,
   SftpUploadResponse,
   SftpDownloadResponse,
   SftpDeleteResponse,
@@ -66,15 +68,35 @@ export const sftpApi = {
   // --- Transfers ---
 
   /** Cross-session transfer: tries direct server-to-server copy first, falls
-   *  back to backend relay if direct is not possible. */
-  transfer: (sourceSessionId: string, targetSessionId: string, paths: string[], destDir: string, overwrite = false) =>
-    api.post<{ task_id: string; method: string; tasks: TransferTask[] }>('/api/sftp/transfer', {
-      source_session_id: sourceSessionId,
-      target_session_id: targetSessionId,
-      paths,
-      dest_dir: destDir,
-      overwrite,
-    }),
+   *  back to backend relay if direct is not possible.
+   *  If conflictResolution is "ask" (default) and the target has existing
+   *  files, resolves with a `conflicts` array instead of starting a transfer.
+   *  Pass "overwrite" | "rename" | "skip" to proceed without prompting. */
+  transfer: async (
+    sourceSessionId: string,
+    targetSessionId: string,
+    paths: string[],
+    destDir: string,
+    conflictResolution: ConflictResolution = 'ask',
+  ): Promise<SftpTransferResponse> => {
+    const res = await fetch('/api/sftp/transfer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source_session_id: sourceSessionId,
+        target_session_id: targetSessionId,
+        paths,
+        dest_dir: destDir,
+        conflict_resolution: conflictResolution,
+      }),
+    })
+    const data = (await res.json().catch(() => ({}))) as SftpTransferResponse
+    if (!res.ok && res.status !== 409) {
+      const err = (data as unknown as { error?: { message?: string } })?.error
+      throw new Error(err?.message || `transfer failed: ${res.statusText}`)
+    }
+    return data
+  },
 
   /** Upload files via multipart form. Each file in the array becomes a separate
    *  transfer task on the backend. */

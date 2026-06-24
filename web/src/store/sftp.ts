@@ -7,6 +7,8 @@ import type {
   SftpTreeNode,
   TransferTask,
   TransferDirection,
+  ConflictResolution,
+  SftpConflictInfo,
 } from '@/types/sftp'
 
 /* ────────────────────────────────────────────────────────────────
@@ -87,6 +89,20 @@ export function ancestorsOf(path: string): string[] {
 export type SftpViewMode = 'list' | 'tree'
 export type PaneSide = 'left' | 'right'
 
+/** Stored when a transfer is blocked by destination conflicts. The UI renders
+ *  a conflict dialog from `conflicts`; the user's choice is fed back via
+ *  resolveConflict(), which retries the transfer with the chosen strategy. */
+export interface PendingConflict {
+  conflicts: SftpConflictInfo[]
+  // Original request context used to retry after resolution
+  sourceSessionId: string
+  targetSessionId: string
+  paths: string[]
+  destDir: string
+  targetPane: PaneSide
+  direction: TransferDirection
+}
+
 /** One open connection (a server) inside a pane. Owns its session, path,
  *  view mode, cached entries, and selection. */
 export interface SftpTab {
@@ -138,6 +154,16 @@ export interface SftpStore {
   cancelTransfer: (id: string) => Promise<void>
   clearCompleted: () => Promise<void>
 
+  /** Pending conflict info (non-null when the conflict dialog should be
+   *  shown). Stores the original request context so resolveConflict can retry
+   *  with the chosen strategy. */
+  pendingConflict: PendingConflict | null
+  /** Dismiss the conflict dialog without resolving (cancels the transfer). */
+  dismissConflict: () => void
+  /** Resolve a pending conflict with the chosen strategy and resume the
+   *  transfer. */
+  resolveConflict: (resolution: ConflictResolution) => Promise<void>
+
   // WebSocket progress callbacks (called by useSftpTransfer hook)
   updateTransferProgress: (taskId: string, transferred: number, size: number, speed: number, status: string) => void
   completeTransfer: (taskId: string, status: string, finishedAt: number) => void
@@ -183,6 +209,7 @@ export function createSftpStore(): SftpStoreApi {
     transfers: [],
     servers: [],
     serversLoading: false,
+    pendingConflict: null,
 
     loadServers: async () => {
       set({ serversLoading: true })
@@ -312,7 +339,9 @@ export function createSftpStore(): SftpStoreApi {
     startTransfer: async (entries, direction, destPane) => {
       // Cross-pane transfer uses the backend /api/sftp/transfer endpoint,
       // which tries direct server-to-server copy first (scp on source host),
-      // then falls back to backend relay (download→temp→upload).
+      // then falls back to backend relay. Conflicts are detected server-side;
+      // when found, the request returns 409 with a conflicts list and we
+      // surface a dialog so the user can choose how to proceed.
       const state = get()
       const sourcePane: PaneSide = direction === 'upload' ? 'left' : 'right'
       const targetPane: PaneSide = destPane ?? (direction === 'upload' ? 'right' : 'left')
@@ -324,59 +353,31 @@ export function createSftpStore(): SftpStoreApi {
       const filePaths = entries.filter((e) => !e.is_dir).map((e) => e.path)
       if (filePaths.length === 0) return
 
-      try {
-        const res = await sftpApi.transfer(
-          sourceTab.sessionId,
-          targetTab.sessionId,
-          filePaths,
-          targetTab.path,
-        )
+      await runTransfer(get, set, {
+        sourceSessionId: sourceTab.sessionId,
+        targetSessionId: targetTab.sessionId,
+        paths: filePaths,
+        destDir: targetTab.path,
+        targetPane,
+        direction,
+      })
+    },
 
-        // Add the backend-created task(s) to the store for progress tracking
-        set((s) => ({ transfers: [...s.transfers, ...res.tasks] }))
+    dismissConflict: () => set({ pendingConflict: null }),
 
-        // Poll the task status in background until completion
-        const taskId = res.task_id
-        ;(async () => {
-          const deadline = Date.now() + 10 * 60 * 1000 // 10 min timeout
-          while (Date.now() < deadline) {
-            await new Promise((r) => setTimeout(r, 800))
-            try {
-              const tasks = await sftpApi.listTransfers()
-              const t = tasks.find((x) => x.id === taskId)
-              if (!t) continue
-
-              set((s) => ({
-                transfers: s.transfers.map((x) =>
-                  x.id === taskId
-                    ? {
-                        ...x,
-                        transferred: t.transferred,
-                        size: t.size,
-                        speed: t.speed,
-                        status: t.status,
-                        finished_at: t.finished_at,
-                        error_message: t.error_message,
-                      }
-                    : x
-                ),
-              }))
-
-              if (t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled') {
-                // Refresh target pane on completion
-                if (t.status === 'completed') {
-                  get().refresh(targetPane)
-                }
-                return
-              }
-            } catch {
-              // ignore polling errors
-            }
-          }
-        })()
-      } catch (err) {
-        console.error('transfer failed', err)
-      }
+    resolveConflict: async (resolution) => {
+      const pending = get().pendingConflict
+      if (!pending) return
+      set({ pendingConflict: null })
+      await runTransfer(get, set, {
+        sourceSessionId: pending.sourceSessionId,
+        targetSessionId: pending.targetSessionId,
+        paths: pending.paths,
+        destDir: pending.destDir,
+        targetPane: pending.targetPane,
+        direction: pending.direction,
+        resolution,
+      })
     },
 
     cancelTransfer: async (id) => {
@@ -533,6 +534,101 @@ async function connectAndNavigate(
     const msg = err instanceof Error ? err.message : String(err)
     set(updateTabById(get(), pane, tabId, (t) => ({ ...t, loading: false, error: msg })))
   }
+}
+
+/** Initiate a cross-session transfer via the backend /api/sftp/transfer
+ *  endpoint. If the backend reports destination conflicts and no explicit
+ *  resolution was provided, stores the conflict info in `pendingConflict` so
+ *  the UI can prompt the user. Otherwise starts polling the task status until
+ *  it reaches a terminal state. */
+async function runTransfer(
+  get: GetState,
+  set: SetState,
+  params: {
+    sourceSessionId: string
+    targetSessionId: string
+    paths: string[]
+    destDir: string
+    targetPane: PaneSide
+    direction: TransferDirection
+    resolution?: ConflictResolution
+  },
+) {
+  const resolution: ConflictResolution = params.resolution ?? 'ask'
+  let res
+  try {
+    res = await sftpApi.transfer(
+      params.sourceSessionId,
+      params.targetSessionId,
+      params.paths,
+      params.destDir,
+      resolution,
+    )
+  } catch (err) {
+    console.error('transfer failed', err)
+    return
+  }
+
+  // 409 path: backend detected conflicts while resolution was "ask".
+  // Surface them to the UI via pendingConflict.
+  if (res.conflicts && res.conflicts.length > 0 && !res.task_id) {
+    set({
+      pendingConflict: {
+        conflicts: res.conflicts,
+        sourceSessionId: params.sourceSessionId,
+        targetSessionId: params.targetSessionId,
+        paths: params.paths,
+        destDir: params.destDir,
+        targetPane: params.targetPane,
+        direction: params.direction,
+      },
+    })
+    return
+  }
+
+  if (!res.task_id || !res.tasks || res.tasks.length === 0) return
+
+  // Add the backend-created task(s) to the store for progress tracking
+  set((s) => ({ transfers: [...s.transfers, ...res.tasks!] }))
+
+  // Poll the task status in background until completion
+  const taskId = res.task_id
+  ;(async () => {
+    const deadline = Date.now() + 10 * 60 * 1000 // 10 min timeout
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 800))
+      try {
+        const tasks = await sftpApi.listTransfers()
+        const t = tasks.find((x) => x.id === taskId)
+        if (!t) continue
+
+        set((s) => ({
+          transfers: s.transfers.map((x) =>
+            x.id === taskId
+              ? {
+                  ...x,
+                  transferred: t.transferred,
+                  size: t.size,
+                  speed: t.speed,
+                  status: t.status,
+                  finished_at: t.finished_at,
+                  error_message: t.error_message,
+                }
+              : x
+          ),
+        }))
+
+        if (t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled') {
+          if (t.status === 'completed') {
+            get().refresh(params.targetPane)
+          }
+          return
+        }
+      } catch {
+        // ignore polling errors
+      }
+    }
+  })()
 }
 
 /** Fetch directory listing and update the active tab's entries. Uses a

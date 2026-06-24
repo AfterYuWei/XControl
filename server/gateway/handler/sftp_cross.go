@@ -55,7 +55,57 @@ func (h *SftpHandler) CrossSessionTransfer(w http.ResponseWriter, r *http.Reques
 	}
 	destDir := fileutil.CleanPath(req.DestDir)
 
-	// Compute total size for progress tracking
+	// Resolve the conflict strategy. The legacy `overwrite` boolean is kept as
+	// an alias for conflict_resolution=overwrite for backward compatibility.
+	resolution := req.ConflictResolution
+	if resolution == "" {
+		if req.Overwrite {
+			resolution = model.ConflictOverwrite
+		} else {
+			resolution = model.ConflictAsk
+		}
+	}
+
+	// --- Pre-transfer conflict detection ---
+	// For every source path, compute the destination path and check whether a
+	// file already exists on the target. Collisions are reported back to the
+	// caller when the strategy is "ask"; otherwise they are handled according
+	// to the chosen strategy below.
+	conflicts := make([]model.SftpConflictInfo, 0)
+	for _, p := range cleanPaths {
+		info, err := srcSession.Backend.Stat(r.Context(), p)
+		if err != nil {
+			// Missing source file: skip; the actual transfer will surface the
+			// error if appropriate.
+			continue
+		}
+		if info.IsDir {
+			// Directory conflict handling is out of scope for the simple
+			// streaming relay; directories are skipped there anyway.
+			continue
+		}
+		destPath := fileutil.JoinPath(destDir, info.Name)
+		if destInfo, err := tgtSession.Backend.Stat(r.Context(), destPath); err == nil && !destInfo.IsDir {
+			conflicts = append(conflicts, model.SftpConflictInfo{
+				SourcePath: p,
+				DestPath:   destPath,
+				SourceSize: info.Size,
+				DestSize:   destInfo.Size,
+			})
+		}
+	}
+
+	// If conflicts exist and the caller asked to be prompted, return 409 with
+	// the conflict list and DO NOT start a transfer.
+	if len(conflicts) > 0 && resolution == model.ConflictAsk {
+		writeJSON(w, http.StatusConflict, model.SftpTransferResponse{
+			Conflicts: conflicts,
+		})
+		return
+	}
+
+	// Compute total size for progress tracking (files that will actually be
+	// transferred; skipped conflicts are excluded).
 	var totalSize int64
 	for _, p := range cleanPaths {
 		info, err := srcSession.Backend.Stat(r.Context(), p)
@@ -88,7 +138,7 @@ func (h *SftpHandler) CrossSessionTransfer(w http.ResponseWriter, r *http.Reques
 	go func() {
 		// Phase 1: Try direct scp on source host (only for remote→remote)
 		if srcSession.ProfileID != "local" && tgtSession.ProfileID != "local" {
-			method := h.tryDirectTransfer(ctx, entry, srcSession, tgtSession, cleanPaths, destDir, req.Overwrite)
+			method := h.tryDirectTransfer(ctx, entry, srcSession, tgtSession, cleanPaths, destDir, resolution)
 			if method == directOK {
 				return
 			}
@@ -102,7 +152,7 @@ func (h *SftpHandler) CrossSessionTransfer(w http.ResponseWriter, r *http.Reques
 			h.transfers.mu.Unlock()
 		}
 		// Phase 2: Stream relay (no temp file, cross-platform)
-		h.doStreamRelay(ctx, entry, srcSession, tgtSession, cleanPaths, destDir, req.Overwrite)
+		h.doStreamRelay(ctx, entry, srcSession, tgtSession, cleanPaths, destDir, resolution)
 	}()
 
 	writeJSON(w, http.StatusAccepted, model.SftpTransferResponse{
@@ -130,7 +180,7 @@ const (
 func (h *SftpHandler) tryDirectTransfer(
 	ctx context.Context, entry *transferEntry,
 	src, tgt *SftpSession,
-	paths []string, destDir string, overwrite bool,
+	paths []string, destDir string, resolution model.ConflictResolution,
 ) directResult {
 	task := entry.task
 
@@ -181,11 +231,42 @@ func (h *SftpHandler) tryDirectTransfer(
 		fileName := fileutil.BaseName(p)
 		destPath := destDir + "/" + fileName
 
-		// Remove existing if overwrite
-		if overwrite {
+		switch resolution {
+		case model.ConflictOverwrite:
 			rmCmd := fmt.Sprintf("%sssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 %s 'rm -f %q'",
 				sshPrefix, remoteTarget, destPath)
 			execDriver.Exec(ctx, rmCmd) // ignore errors
+		case model.ConflictSkip:
+			// Check existence via ssh test; skip if present.
+			testCmd := fmt.Sprintf("%sssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 %s 'test -e %q'",
+				sshPrefix, remoteTarget, destPath)
+			if _, _, exitCode, _ := execDriver.Exec(ctx, testCmd); exitCode == 0 {
+				// File exists → skip this file, count its size as "transferred"
+				// so the progress bar stays sensible.
+				if info, err := src.Backend.Stat(ctx, p); err == nil {
+					h.transfers.mu.Lock()
+					task.Transferred += info.Size
+					h.transfers.mu.Unlock()
+					h.transfers.broadcastProgressToSession(task)
+				}
+				continue
+			}
+		case model.ConflictRename:
+			// Probe for a non-colliding name via ssh test loop.
+			base, ext := fileutil.SplitExt(fileName)
+			for i := 1; ; i++ {
+				candidate := fmt.Sprintf("%s (%d)%s", base, i, ext)
+				candPath := destDir + "/" + candidate
+				testCmd := fmt.Sprintf("%sssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 %s 'test -e %q'",
+					sshPrefix, remoteTarget, candPath)
+				if _, _, exitCode, _ := execDriver.Exec(ctx, testCmd); exitCode != 0 {
+					destPath = candPath
+					break
+				}
+				if i > 9999 {
+					break
+				}
+			}
 		}
 
 		cmd := fmt.Sprintf("%sscp -o StrictHostKeyChecking=no -o ConnectTimeout=10 %q %s:%q",
@@ -223,7 +304,7 @@ func (h *SftpHandler) tryDirectTransfer(
 func (h *SftpHandler) doStreamRelay(
 	ctx context.Context, entry *transferEntry,
 	src, tgt *SftpSession,
-	paths []string, destDir string, overwrite bool,
+	paths []string, destDir string, resolution model.ConflictResolution,
 ) {
 	task := entry.task
 	task.Status = "transferring"
@@ -262,11 +343,38 @@ func (h *SftpHandler) doStreamRelay(
 		}
 		destPath := fileutil.JoinPath(destDir, fileName)
 
-		// Overwrite check
-		if !overwrite {
-			if _, err := tgt.Backend.Stat(ctx, destPath); err == nil {
-				h.transfers.failTask(entry, "file exists: "+destPath)
-				return
+		// Resolve conflicts according to the chosen strategy.
+		_, statErr := tgt.Backend.Stat(ctx, destPath)
+		if statErr == nil {
+			// Destination exists. Apply strategy.
+			switch resolution {
+			case model.ConflictOverwrite:
+				// Remove the existing file before writing.
+				if err := tgt.Backend.Remove(ctx, destPath); err != nil {
+					h.transfers.failTask(entry, "overwrite dest "+destPath+": "+err.Error())
+					return
+				}
+			case model.ConflictRename:
+				renamed, err := fileutil.AutoRename(ctx, tgt.Backend, destPath)
+				if err != nil {
+					h.transfers.failTask(entry, "rename dest "+destPath+": "+err.Error())
+					return
+				}
+				slog.Info("conflict resolved by rename", "original", destPath, "renamed", renamed)
+				destPath = renamed
+			case model.ConflictSkip:
+				slog.Info("conflict resolved by skip", "path", destPath)
+				// Count the skipped file as "transferred" so progress stays sane.
+				totalTransferred += info.Size
+				h.transfers.mu.Lock()
+				task.Transferred = totalTransferred
+				h.transfers.mu.Unlock()
+				h.transfers.broadcastProgressToSession(task)
+				continue
+			default:
+				// "ask" should never reach here (it short-circuits at the
+				// handler level); treat as skip to be safe.
+				continue
 			}
 		}
 

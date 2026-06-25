@@ -1,13 +1,19 @@
 package handler
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -79,12 +85,14 @@ func (h *SftpHandler) CrossSessionTransfer(w http.ResponseWriter, r *http.Reques
 			// error if appropriate.
 			continue
 		}
+		// Compute the destination path: files keep their name, directories
+		// are archived as <dirname>.tar.gz on the target.
+		var destPath string
 		if info.IsDir {
-			// Directory conflict handling is out of scope for the simple
-			// streaming relay; directories are skipped there anyway.
-			continue
+			destPath = fileutil.JoinPath(destDir, dirArchiveName(p))
+		} else {
+			destPath = fileutil.JoinPath(destDir, info.Name)
 		}
-		destPath := fileutil.JoinPath(destDir, info.Name)
 		if destInfo, err := tgtSession.Backend.Stat(r.Context(), destPath); err == nil && !destInfo.IsDir {
 			conflicts = append(conflicts, model.SftpConflictInfo{
 				SourcePath: p,
@@ -104,12 +112,23 @@ func (h *SftpHandler) CrossSessionTransfer(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Compute total size for progress tracking (files that will actually be
-	// transferred; skipped conflicts are excluded).
+	// Compute total size for progress tracking. For directories, walk the
+	// tree to sum all file sizes (uncompressed) so progress is meaningful
+	// during tar.gz archival. Skipped conflicts are excluded at transfer time.
 	var totalSize int64
 	for _, p := range cleanPaths {
 		info, err := srcSession.Backend.Stat(r.Context(), p)
-		if err == nil && !info.IsDir {
+		if err != nil {
+			continue
+		}
+		if info.IsDir {
+			_ = fileutil.Walk(r.Context(), srcSession.Backend, p, func(_ string, wi fileutil.FileInfo) error {
+				if !wi.IsDir {
+					totalSize += wi.Size
+				}
+				return nil
+			})
+		} else {
 			totalSize += info.Size
 		}
 	}
@@ -226,81 +245,140 @@ func (h *SftpHandler) tryDirectTransfer(
 		return directFail
 	}
 
-	// Transfer each file via scp
+	// Transfer each file/dir via scp concurrently (skip-on-error).
+	var totalTransferred atomic.Int64
+	stopReporter := h.transfers.startProgressReporter(ctx, task, &totalTransferred)
+
+	var failuresMu sync.Mutex
+	var failures []string
+	var successCount int
+
+	var wg sync.WaitGroup
 	for _, p := range paths {
-		fileName := fileutil.BaseName(p)
-		destPath := destDir + "/" + fileName
+		wg.Add(1)
+		go func(p string) {
+			defer wg.Done()
+			// Acquire concurrency slot
+			h.transfers.sem <- struct{}{}
+			defer func() { <-h.transfers.sem }()
 
-		switch resolution {
-		case model.ConflictOverwrite:
-			rmCmd := fmt.Sprintf("%sssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 %s 'rm -f %q'",
-				sshPrefix, remoteTarget, destPath)
-			execDriver.Exec(ctx, rmCmd) // ignore errors
-		case model.ConflictSkip:
-			// Check existence via ssh test; skip if present.
-			testCmd := fmt.Sprintf("%sssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 %s 'test -e %q'",
-				sshPrefix, remoteTarget, destPath)
-			if _, _, exitCode, _ := execDriver.Exec(ctx, testCmd); exitCode == 0 {
-				// File exists → skip this file, count its size as "transferred"
-				// so the progress bar stays sensible.
-				if info, err := src.Backend.Stat(ctx, p); err == nil {
-					h.transfers.mu.Lock()
-					task.Transferred += info.Size
-					h.transfers.mu.Unlock()
-					h.transfers.broadcastProgressToSession(task)
-				}
-				continue
+			if err := h.directTransferOne(ctx, execDriver, src, sshPrefix, remoteTarget, p, destDir, resolution, &totalTransferred); err != nil {
+				failuresMu.Lock()
+				failures = append(failures, p+": "+err.Error())
+				failuresMu.Unlock()
+				slog.Warn("direct scp failed (skip-on-error)", "path", p, "error", err)
+				return
 			}
-		case model.ConflictRename:
-			// Probe for a non-colliding name via ssh test loop.
-			base, ext := fileutil.SplitExt(fileName)
-			for i := 1; ; i++ {
-				candidate := fmt.Sprintf("%s (%d)%s", base, i, ext)
-				candPath := destDir + "/" + candidate
-				testCmd := fmt.Sprintf("%sssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 %s 'test -e %q'",
-					sshPrefix, remoteTarget, candPath)
-				if _, _, exitCode, _ := execDriver.Exec(ctx, testCmd); exitCode != 0 {
-					destPath = candPath
-					break
-				}
-				if i > 9999 {
-					break
-				}
-			}
-		}
+			failuresMu.Lock()
+			successCount++
+			failuresMu.Unlock()
+		}(p)
+	}
+	wg.Wait()
 
-		cmd := fmt.Sprintf("%sscp -o StrictHostKeyChecking=no -o ConnectTimeout=10 %q %s:%q",
-			sshPrefix, p, remoteTarget, destPath)
+	stopReporter()
 
-		_, stderr, exitCode, err := execDriver.Exec(ctx, cmd)
-		if err != nil || exitCode != 0 {
-			slog.Warn("direct scp failed",
-				"path", p, "exitCode", exitCode,
-				"stderr", string(stderr), "error", err)
-			return directFail
-		}
+	h.transfers.mu.Lock()
+	task.Transferred = task.Size
+	task.Speed = 0
+	h.transfers.mu.Unlock()
 
-		// Update progress (direct has no granular progress; jump per file)
-		if info, err := src.Backend.Stat(ctx, p); err == nil {
-			h.transfers.mu.Lock()
-			task.Transferred += info.Size
-			h.transfers.mu.Unlock()
-			h.transfers.broadcastProgressToSession(task)
-		}
+	if successCount == 0 {
+		// Every path failed — fall back to stream relay.
+		slog.Info("direct transfer failed for all paths, falling back to relay",
+			"task", task.ID, "failures", len(failures))
+		return directFail
 	}
 
 	task.Status = "completed"
-	task.Transferred = task.Size
 	nowPtr := time.Now().UnixMilli()
 	task.FinishedAt = &nowPtr
 	h.transfers.broadcastComplete(task)
-	slog.Info("direct transfer completed", "task", task.ID)
+
+	if len(failures) > 0 {
+		h.transfers.mu.Lock()
+		task.ErrorMessage = fmt.Sprintf("%d/%d paths failed: %s", len(failures), len(paths), strings.Join(failures, "; "))
+		h.transfers.mu.Unlock()
+	}
+	slog.Info("direct transfer completed", "task", task.ID, "success", successCount, "failures", len(failures))
 	return directOK
 }
 
-// doStreamRelay pipes data directly from source FileBackend to target
-// FileBackend using io.Copy, with NO temp file. This is cross-platform (works
-// for local↔local, local↔remote, remote↔remote) and avoids disk I/O.
+// directTransferOne transfers a single path via scp on the source host.
+// Directories use `scp -r`. Conflict resolution is applied per-path. On
+// success the path's size is added to the shared atomic counter.
+func (h *SftpHandler) directTransferOne(
+	ctx context.Context, execDriver sftpdriver.ExecProvider,
+	src *SftpSession, sshPrefix, remoteTarget, p, destDir string,
+	resolution model.ConflictResolution,
+	totalTransferred *atomic.Int64,
+) error {
+	fileName := fileutil.BaseName(p)
+	destPath := destDir + "/" + fileName
+
+	// Stat source to determine if it's a directory (scp -r needed).
+	srcInfo, srcErr := src.Backend.Stat(ctx, p)
+	isDir := srcErr == nil && srcInfo.IsDir
+
+	scpFlag := ""
+	if isDir {
+		scpFlag = "-r "
+	}
+
+	switch resolution {
+	case model.ConflictOverwrite:
+		rmFlag := "-f"
+		if isDir {
+			rmFlag = "-rf"
+		}
+		rmCmd := fmt.Sprintf("%sssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 %s 'rm %s %q'",
+			sshPrefix, remoteTarget, rmFlag, destPath)
+		execDriver.Exec(ctx, rmCmd) // ignore errors
+	case model.ConflictSkip:
+		testCmd := fmt.Sprintf("%sssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 %s 'test -e %q'",
+			sshPrefix, remoteTarget, destPath)
+		if _, _, exitCode, _ := execDriver.Exec(ctx, testCmd); exitCode == 0 {
+			// Exists → skip; count size as "transferred".
+			totalTransferred.Add(pathSize(ctx, src.Backend, p, srcInfo))
+			return nil
+		}
+	case model.ConflictRename:
+		base, ext := fileutil.SplitExt(fileName)
+		for i := 1; ; i++ {
+			candidate := fmt.Sprintf("%s (%d)%s", base, i, ext)
+			candPath := destDir + "/" + candidate
+			testCmd := fmt.Sprintf("%sssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 %s 'test -e %q'",
+				sshPrefix, remoteTarget, candPath)
+			if _, _, exitCode, _ := execDriver.Exec(ctx, testCmd); exitCode != 0 {
+				destPath = candPath
+				break
+			}
+			if i > 9999 {
+				break
+			}
+		}
+	}
+
+	cmd := fmt.Sprintf("%sscp %s-o StrictHostKeyChecking=no -o ConnectTimeout=10 %q %s:%q",
+		sshPrefix, scpFlag, p, remoteTarget, destPath)
+
+	_, stderr, exitCode, err := execDriver.Exec(ctx, cmd)
+	if err != nil || exitCode != 0 {
+		return fmt.Errorf("scp exit %d: %s", exitCode, string(stderr))
+	}
+
+	totalTransferred.Add(pathSize(ctx, src.Backend, p, srcInfo))
+	return nil
+}
+
+// doStreamRelay pipes data from source FileBackend to target FileBackend.
+// Files are streamed directly (no temp file); directories are archived as
+// .tar.gz (see transferDirAsTarGz). Multiple paths transfer CONCURRENTLY
+// (up to TransferManager.maxConcurrent), and a failure on one path does NOT
+// abort the others (skip-on-error): failed paths are recorded in
+// task.ErrorMessage and the task still completes if at least one path
+// succeeded. A single progress-reporter goroutine broadcasts aggregate
+// progress every 500ms.
 func (h *SftpHandler) doStreamRelay(
 	ctx context.Context, entry *transferEntry,
 	src, tgt *SftpSession,
@@ -315,141 +393,335 @@ func (h *SftpHandler) doStreamRelay(
 		return
 	}
 
-	var totalTransferred int64
-	buf := make([]byte, 64*1024)
+	var totalTransferred atomic.Int64
+	stopReporter := h.transfers.startProgressReporter(ctx, task, &totalTransferred)
 
+	var failuresMu sync.Mutex
+	var failures []string
+
+	var wg sync.WaitGroup
 	for _, p := range paths {
-		select {
-		case <-ctx.Done():
-			h.transfers.failTask(entry, "cancelled")
-			return
+		wg.Add(1)
+		go func(p string) {
+			defer wg.Done()
+			// Acquire concurrency slot
+			h.transfers.sem <- struct{}{}
+			defer func() { <-h.transfers.sem }()
+
+			if err := h.transferOneStreamRelay(ctx, entry, src, tgt, p, destDir, resolution, &totalTransferred); err != nil {
+				failuresMu.Lock()
+				failures = append(failures, p+": "+err.Error())
+				failuresMu.Unlock()
+				slog.Warn("stream relay item failed (skip-on-error)", "path", p, "error", err)
+			}
+		}(p)
+	}
+	wg.Wait()
+
+	stopReporter()
+
+	// Final status
+	h.transfers.mu.Lock()
+	task.Transferred = task.Size
+	task.Speed = 0
+	h.transfers.mu.Unlock()
+
+	if len(failures) > 0 && len(failures) == len(paths) {
+		// Every path failed
+		h.transfers.failTask(entry, fmt.Sprintf("all %d paths failed: %s", len(failures), strings.Join(failures, "; ")))
+		return
+	}
+
+	h.transfers.completeTask(entry)
+	if len(failures) > 0 {
+		// Partial success — record which paths failed but keep "completed".
+		h.transfers.mu.Lock()
+		task.ErrorMessage = fmt.Sprintf("%d/%d paths failed: %s", len(failures), len(paths), strings.Join(failures, "; "))
+		h.transfers.mu.Unlock()
+	}
+	slog.Info("stream relay transfer completed", "task", task.ID, "failures", len(failures), "total", len(paths))
+}
+
+// transferOneStreamRelay transfers a single path (file or directory) from src
+// to tgt. Directories are archived as .tar.gz; files are piped directly with
+// no temp file. Progress bytes are added to the shared atomic counter; the
+// caller's progress reporter handles broadcasting.
+func (h *SftpHandler) transferOneStreamRelay(
+	ctx context.Context, entry *transferEntry,
+	src, tgt *SftpSession,
+	p, destDir string, resolution model.ConflictResolution,
+	totalTransferred *atomic.Int64,
+) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	info, err := src.Backend.Stat(ctx, p)
+	if err != nil {
+		return fmt.Errorf("stat source: %w", err)
+	}
+
+	if info.IsDir {
+		return h.transferDirAsTarGz(ctx, entry, src, tgt, p, destDir, resolution, totalTransferred)
+	}
+
+	fileName := info.Name
+	if fileName == "" {
+		fileName = fileutil.BaseName(p)
+	}
+	destPath := fileutil.JoinPath(destDir, fileName)
+
+	// Resolve conflicts according to the chosen strategy.
+	if _, statErr := tgt.Backend.Stat(ctx, destPath); statErr == nil {
+		switch resolution {
+		case model.ConflictOverwrite:
+			if err := tgt.Backend.Remove(ctx, destPath); err != nil {
+				return fmt.Errorf("overwrite dest %s: %w", destPath, err)
+			}
+		case model.ConflictRename:
+			renamed, err := fileutil.AutoRename(ctx, tgt.Backend, destPath)
+			if err != nil {
+				return fmt.Errorf("rename dest %s: %w", destPath, err)
+			}
+			slog.Info("conflict resolved by rename", "original", destPath, "renamed", renamed)
+			destPath = renamed
+		case model.ConflictSkip:
+			slog.Info("conflict resolved by skip", "path", destPath)
+			totalTransferred.Add(info.Size)
+			return nil
 		default:
-		}
-
-		info, err := src.Backend.Stat(ctx, p)
-		if err != nil {
-			h.transfers.failTask(entry, "stat source "+p+": "+err.Error())
-			return
-		}
-		if info.IsDir {
-			// TODO: recursive directory transfer via fileutil.Walk
-			slog.Warn("skipping directory in stream relay (not yet supported)", "path", p)
-			continue
-		}
-
-		fileName := info.Name
-		if fileName == "" {
-			fileName = fileutil.BaseName(p)
-		}
-		destPath := fileutil.JoinPath(destDir, fileName)
-
-		// Resolve conflicts according to the chosen strategy.
-		_, statErr := tgt.Backend.Stat(ctx, destPath)
-		if statErr == nil {
-			// Destination exists. Apply strategy.
-			switch resolution {
-			case model.ConflictOverwrite:
-				// Remove the existing file before writing.
-				if err := tgt.Backend.Remove(ctx, destPath); err != nil {
-					h.transfers.failTask(entry, "overwrite dest "+destPath+": "+err.Error())
-					return
-				}
-			case model.ConflictRename:
-				renamed, err := fileutil.AutoRename(ctx, tgt.Backend, destPath)
-				if err != nil {
-					h.transfers.failTask(entry, "rename dest "+destPath+": "+err.Error())
-					return
-				}
-				slog.Info("conflict resolved by rename", "original", destPath, "renamed", renamed)
-				destPath = renamed
-			case model.ConflictSkip:
-				slog.Info("conflict resolved by skip", "path", destPath)
-				// Count the skipped file as "transferred" so progress stays sane.
-				totalTransferred += info.Size
-				h.transfers.mu.Lock()
-				task.Transferred = totalTransferred
-				h.transfers.mu.Unlock()
-				h.transfers.broadcastProgressToSession(task)
-				continue
-			default:
-				// "ask" should never reach here (it short-circuits at the
-				// handler level); treat as skip to be safe.
-				continue
-			}
-		}
-
-		// Open source for reading
-		rc, err := src.Backend.OpenRead(ctx, p)
-		if err != nil {
-			h.transfers.failTask(entry, "open source "+p+": "+err.Error())
-			return
-		}
-
-		// Open target for writing
-		wc, err := tgt.Backend.OpenWrite(ctx, destPath)
-		if err != nil {
-			rc.Close()
-			h.transfers.failTask(entry, "open dest "+destPath+": "+err.Error())
-			return
-		}
-
-		// Stream copy with progress. Since it's a direct pipe (no temp file),
-		// progress is real-time: each byte read = byte transferred.
-		lastReport := time.Now()
-		var lastTransferred int64
-
-		for {
-			select {
-			case <-ctx.Done():
-				rc.Close()
-				wc.Close()
-				h.transfers.failTask(entry, "cancelled")
-				return
-			default:
-			}
-
-			n, rerr := rc.Read(buf)
-			if n > 0 {
-				if _, werr := wc.Write(buf[:n]); werr != nil {
-					rc.Close()
-					wc.Close()
-					h.transfers.failTask(entry, "write dest: "+werr.Error())
-					return
-				}
-				totalTransferred += int64(n)
-
-				// Report progress every 500ms
-				if time.Since(lastReport) >= 500*time.Millisecond {
-					elapsed := time.Since(lastReport).Seconds()
-					speed := int64(0)
-					if elapsed > 0 {
-						speed = int64(float64(totalTransferred-lastTransferred) / elapsed)
-					}
-					lastTransferred = totalTransferred
-					lastReport = time.Now()
-
-					h.transfers.mu.Lock()
-					task.Transferred = totalTransferred
-					task.Speed = speed
-					h.transfers.mu.Unlock()
-					h.transfers.broadcastProgressToSession(task)
-				}
-			}
-			if rerr != nil {
-				rc.Close()
-				wc.Close()
-				if rerr == io.EOF {
-					break
-				}
-				h.transfers.failTask(entry, "read source: "+rerr.Error())
-				return
-			}
+			// "ask" short-circuits at the handler level; treat as skip.
+			return nil
 		}
 	}
 
-	task.Transferred = task.Size
-	h.transfers.completeTask(entry)
-	slog.Info("stream relay transfer completed", "task", task.ID)
+	rc, err := src.Backend.OpenRead(ctx, p)
+	if err != nil {
+		return fmt.Errorf("open source: %w", err)
+	}
+
+	wc, err := tgt.Backend.OpenWrite(ctx, destPath)
+	if err != nil {
+		rc.Close()
+		return fmt.Errorf("open dest %s: %w", destPath, err)
+	}
+
+	// Stream copy with progress. Direct pipe (no temp file), so each byte
+	// read = byte transferred.
+	buf := make([]byte, 64*1024)
+	for {
+		select {
+		case <-ctx.Done():
+			rc.Close()
+			wc.Close()
+			return ctx.Err()
+		default:
+		}
+
+		n, rerr := rc.Read(buf)
+		if n > 0 {
+			if _, werr := wc.Write(buf[:n]); werr != nil {
+				rc.Close()
+				wc.Close()
+				return fmt.Errorf("write dest: %w", werr)
+			}
+			totalTransferred.Add(int64(n))
+		}
+		if rerr != nil {
+			rc.Close()
+			wc.Close()
+			if rerr == io.EOF {
+				return nil
+			}
+			return fmt.Errorf("read source: %w", rerr)
+		}
+	}
+}
+
+// dirArchiveName returns the .tar.gz file name for a source directory path.
+// "/var/log/nginx" → "nginx.tar.gz"; "/" → "archive.tar.gz".
+func dirArchiveName(srcDir string) string {
+	name := fileutil.BaseName(srcDir)
+	if name == "" || name == "/" {
+		name = "archive"
+	}
+	return name + ".tar.gz"
+}
+
+// transferDirAsTarGz compresses a source directory into a .tar.gz temp file
+// (phase 1) and then uploads it to the target backend as a single
+// <dirname>.tar.gz file (phase 2). The temp file is cleaned up on exit.
+//
+// Progress is tracked as uncompressed bytes read from the source during
+// archival (phase 1). The upload phase (phase 2) does not add to the
+// transferred count since those bytes were already accounted for; the final
+// task.Transferred is set to task.Size by the caller (doStreamRelay).
+//
+// Temp files use the "sshx-tx-" prefix and are cleaned up by the TransferManager
+// sweep loop (orphan cleanup after 1 hour) if the process dies mid-transfer.
+func (h *SftpHandler) transferDirAsTarGz(
+	ctx context.Context, entry *transferEntry,
+	src, tgt *SftpSession,
+	srcDir, destDir string, resolution model.ConflictResolution,
+	totalTransferred *atomic.Int64,
+) error {
+	task := entry.task
+
+	dirName := fileutil.BaseName(srcDir)
+	if dirName == "" || dirName == "/" {
+		dirName = "archive"
+	}
+	destPath := fileutil.JoinPath(destDir, dirName+".tar.gz")
+
+	// Resolve conflicts (same logic as single-file transfer).
+	if _, err := tgt.Backend.Stat(ctx, destPath); err == nil {
+		switch resolution {
+		case model.ConflictOverwrite:
+			if err := tgt.Backend.Remove(ctx, destPath); err != nil {
+				return fmt.Errorf("overwrite dest %s: %w", destPath, err)
+			}
+		case model.ConflictRename:
+			renamed, err := fileutil.AutoRename(ctx, tgt.Backend, destPath)
+			if err != nil {
+				return fmt.Errorf("rename dest %s: %w", destPath, err)
+			}
+			slog.Info("dir conflict resolved by rename", "original", destPath, "renamed", renamed)
+			destPath = renamed
+		case model.ConflictSkip:
+			slog.Info("dir conflict resolved by skip", "path", destPath)
+			return nil
+		default:
+			return nil
+		}
+	}
+
+	// Ensure dest dir exists.
+	if err := tgt.Backend.MkdirP(ctx, destDir); err != nil {
+		return fmt.Errorf("mkdir dest: %w", err)
+	}
+
+	// --- Phase 1: Create tar.gz temp file from source directory ---
+	tmpFile := filepath.Join(h.transfers.tmpDir, "sshx-tx-"+task.ID+".tar.gz")
+	defer os.Remove(tmpFile) // best-effort cleanup
+
+	f, err := os.Create(tmpFile)
+	if err != nil {
+		return fmt.Errorf("create temp tar.gz: %w", err)
+	}
+	gw := gzip.NewWriter(f)
+	tw := tar.NewWriter(gw)
+
+	walkErr := fileutil.Walk(ctx, src.Backend, srcDir, func(walkPath string, info fileutil.FileInfo) error {
+		// Compute archive-relative path (rooted at dirName).
+		relPath := strings.TrimPrefix(walkPath, srcDir)
+		relPath = strings.TrimPrefix(relPath, "/")
+		archivePath := dirName
+		if relPath != "" {
+			archivePath = dirName + "/" + relPath
+		}
+
+		if info.IsDir {
+			return tw.WriteHeader(&tar.Header{
+				Name:     archivePath + "/",
+				Mode:     0o755,
+				Typeflag: tar.TypeDir,
+				ModTime:  info.ModTime,
+			})
+		}
+
+		if err := tw.WriteHeader(&tar.Header{
+			Name:     archivePath,
+			Mode:     0o644,
+			Size:     info.Size,
+			Typeflag: tar.TypeReg,
+			ModTime:  info.ModTime,
+		}); err != nil {
+			return err
+		}
+
+		rc, err := src.Backend.OpenRead(ctx, walkPath)
+		if err != nil {
+			return err
+		}
+		n, err := io.Copy(tw, rc)
+		rc.Close()
+		if err != nil {
+			return err
+		}
+		totalTransferred.Add(n)
+		return nil
+	})
+
+	if cerr := tw.Close(); cerr != nil && walkErr == nil {
+		walkErr = cerr
+	}
+	if cerr := gw.Close(); cerr != nil && walkErr == nil {
+		walkErr = cerr
+	}
+	if cerr := f.Close(); cerr != nil && walkErr == nil {
+		walkErr = cerr
+	}
+	if walkErr != nil {
+		return fmt.Errorf("create tar.gz: %w", walkErr)
+	}
+
+	// --- Phase 2: Upload tar.gz to target ---
+	f, err = os.Open(tmpFile)
+	if err != nil {
+		return fmt.Errorf("open temp tar.gz: %w", err)
+	}
+	defer f.Close()
+
+	wc, err := tgt.Backend.OpenWrite(ctx, destPath)
+	if err != nil {
+		return fmt.Errorf("open dest %s: %w", destPath, err)
+	}
+
+	uploadBuf := make([]byte, 64*1024)
+	for {
+		select {
+		case <-ctx.Done():
+			wc.Close()
+			return ctx.Err()
+		default:
+		}
+		n, rerr := f.Read(uploadBuf)
+		if n > 0 {
+			if _, werr := wc.Write(uploadBuf[:n]); werr != nil {
+				wc.Close()
+				return fmt.Errorf("write dest: %w", werr)
+			}
+		}
+		if rerr != nil {
+			wc.Close()
+			if rerr == io.EOF {
+				break
+			}
+			return fmt.Errorf("read temp: %w", rerr)
+		}
+	}
+
+	slog.Info("directory transferred as tar.gz",
+		"src", srcDir, "dest", destPath, "transferred", totalTransferred.Load())
+	return nil
+}
+
+// pathSize returns the total uncompressed size of a path. For files this is
+// the file size; for directories it is the recursive sum of all file sizes.
+func pathSize(ctx context.Context, be fileutil.FileBackend, p string, info fileutil.FileInfo) int64 {
+	if !info.IsDir {
+		return info.Size
+	}
+	var total int64
+	_ = fileutil.Walk(ctx, be, p, func(_ string, wi fileutil.FileInfo) error {
+		if !wi.IsDir {
+			total += wi.Size
+		}
+		return nil
+	})
+	return total
 }
 
 // getExecProvider extracts the ExecProvider interface from a session's driver.

@@ -38,8 +38,15 @@ type SftpSession struct {
 	PrivKey    string
 	Passphrase string
 
-	// For cancelling in-flight operations when the session closes.
+	// cancel is the session-level context cancel function, used to cancel
+	// the background connection goroutine created in CreateSession.
 	cancel context.CancelFunc
+
+	// done is closed when the session is closed (via CloseSession), signalling
+	// all in-flight file operations whose contexts are derived in opCtx to
+	// abort immediately. Closed exactly once via doneOnce.
+	done     chan struct{}
+	doneOnce sync.Once
 }
 
 type SftpHandler struct {
@@ -86,6 +93,7 @@ func (h *SftpHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 		Status:    "connecting",
 		CreatedAt: time.Now(),
 		cancel:    cancel,
+		done:      make(chan struct{}),
 	}
 
 	h.mu.Lock()
@@ -229,6 +237,12 @@ func (h *SftpHandler) CloseSession(w http.ResponseWriter, r *http.Request) {
 	}
 	delete(h.sessions, id)
 	h.mu.Unlock()
+
+	// Signal all in-flight file operations (whose contexts are derived in
+	// opCtx) to cancel immediately.
+	session.doneOnce.Do(func() {
+		close(session.done)
+	})
 
 	// Cancel all in-flight transfers for this session
 	h.transfers.CancelBySession(id)
@@ -467,21 +481,24 @@ func (h *SftpHandler) resolveSession(w http.ResponseWriter, r *http.Request) (*S
 	return session, session.Backend, true
 }
 
-// opCtx creates a context tied to the session's lifetime (cancelled when the
-// session closes) with a per-operation timeout. The session context ensures
-// that closing a session cancels any in-flight file operations.
+// opCtx creates a context tied to three cancellation sources:
+//   1. A per-operation timeout (5 min) — ctx.Done()
+//   2. The HTTP request lifecycle — r.Context().Done()
+//   3. The session lifecycle — session.done (closed in CloseSession)
+//
+// Any of these firing cancels the operation context, so closing a session
+// aborts all in-flight file operations immediately.
 func (h *SftpHandler) opCtx(r *http.Request, session *SftpSession) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	// Chain with session-level context if available
-	if session.cancel != nil {
-		go func() {
-			select {
-			case <-ctx.Done():
-			case <-r.Context().Done():
-				cancel()
-			}
-		}()
-	}
+	go func() {
+		select {
+		case <-ctx.Done():
+		case <-r.Context().Done():
+			cancel()
+		case <-session.done:
+			cancel()
+		}
+	}()
 	return ctx, cancel
 }
 

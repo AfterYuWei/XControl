@@ -99,3 +99,38 @@ export interface SftpTransferResponse {
   tasks?: TransferTask[]
   conflicts?: SftpConflictInfo[]
 }
+
+/* ─── Built-in editor types ─── */
+
+export type LineEnding = 'lf' | 'crlf'
+
+/** Response type for GET /api/sftp/sessions/{id}/file?path=...
+ *  Guards: backend rejects files >10MB (413), binary (415), non-UTF-8 (415). */
+export interface SftpFileReadResponse {
+  path: string
+  content: string
+  size: number
+  /** RFC 3339Nano timestamp; used as the optimistic-lock token on save. */
+  mod_time: string
+  /** Monaco language id, e.g. "shell", "json", "nginx", "plaintext". */
+  language: string
+  line_ending: LineEnding
+  /** True when the file's owner-write bit is unset. */
+  read_only: boolean
+}
+
+/** Request body for PUT /api/sftp/sessions/{id}/file?path=... */
+export interface SftpFileWriteRequest {
+  content: string
+  /** Must match the server's current ModTime; mismatch → 409 FILE_MODIFIED. */
+  expected_mod_time: string
+  line_ending?: LineEnding
+}
+
+/** Response type for PUT /api/sftp/sessions/{id}/file. The new mod_time
+ *  becomes the optimistic-lock token for the next save. */
+export interface SftpFileWriteResponse {
+  path: string
+  size: number
+  mod_time: string
+}

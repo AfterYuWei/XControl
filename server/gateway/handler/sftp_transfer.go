@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,6 +24,23 @@ import (
 // TransferManager manages asynchronous file transfer tasks. It tracks task
 // state in memory (no persistence, per design decision) and pushes progress
 // updates via the SFTP WebSocket hub.
+//
+// --- Temp file lifecycle (sshx-tx / sshx-dl) ---
+//
+// Temp files are created under os.TempDir() with one of two prefixes:
+//
+//   - "sshx-dl-<taskID>"     — download staging (single file or .zip)
+//   - "sshx-tx-<taskID>.tar.gz" — cross-session directory archive (tar.gz)
+//
+// Normal flow: temp files are deleted immediately after use (download served,
+// archive uploaded). Abnormal flow (process crash, kill -9): temp files
+// become orphans and are cleaned by sweepLoop.
+//
+// sweepLoop runs every 10 minutes and removes any temp file whose ModTime is
+// older than 1 hour. For large file/directory transfers that are actively
+// in progress, this is safe because each write updates the file's ModTime,
+// keeping it "fresh". The only risk is a completed download temp file that
+// the client never fetches — it lingers for up to 1 hour before cleanup.
 type TransferManager struct {
 	tasks         map[string]*transferEntry
 	mu            sync.RWMutex
@@ -717,6 +735,45 @@ func (tm *TransferManager) broadcastFailed(task *model.TransferTask) {
 	})
 }
 
+// startProgressReporter launches a background goroutine that broadcasts
+// aggregate transfer progress every 500ms using a shared atomic counter. This
+// is used by concurrent cross-session transfers where multiple goroutines
+// update the same counter; the single reporter avoids per-goroutine speed
+// miscalculation and reduces lock contention. The returned stop function must
+// be called when the transfer completes (it closes the done channel).
+func (tm *TransferManager) startProgressReporter(ctx context.Context, task *model.TransferTask, total *atomic.Int64) (stop func()) {
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		var last int64
+		lastReport := time.Now()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				cur := total.Load()
+				elapsed := time.Since(lastReport).Seconds()
+				speed := int64(0)
+				if elapsed > 0 {
+					speed = int64(float64(cur-last) / elapsed)
+				}
+				last = cur
+				lastReport = time.Now()
+				tm.mu.Lock()
+				task.Transferred = cur
+				task.Speed = speed
+				tm.mu.Unlock()
+				tm.broadcastProgressToSession(task)
+			}
+		}
+	}()
+	return func() { close(done) }
+}
+
 // broadcastProgressToSession sends a progress update to the WebSocket
 // connection associated with the task's session.
 func (tm *TransferManager) broadcastProgressToSession(task *model.TransferTask) {
@@ -747,7 +804,7 @@ func (tm *TransferManager) sweepLoop() {
 			continue
 		}
 		for _, e := range entries {
-			if !strings.HasPrefix(e.Name(), "sshx-dl-") {
+			if !strings.HasPrefix(e.Name(), "sshx-dl-") && !strings.HasPrefix(e.Name(), "sshx-tx-") {
 				continue
 			}
 			info, err := e.Info()

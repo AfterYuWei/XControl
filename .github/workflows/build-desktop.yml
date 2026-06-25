@@ -177,30 +177,40 @@ jobs:
             console.log('mac.target arch set to:', process.env.MAC_ARCH);
           "
 
-      # macOS 签名公证：配置 secrets 后自动启用，无则跳过
-      - name: Import macOS signing certificate
-        if: startsWith(matrix.platform, 'mac') && env.MAC_CERT_BASE64 != ''
+      # macOS 签名公证：配置 secrets.MAC_CERT_BASE64 后自动启用，无则禁用签名。
+      # 用 $GITHUB_ENV 动态注入签名变量，避免空 CSC_LINK 被当路径报 "not a file"。
+      - name: Setup macOS signing env
+        if: startsWith(matrix.platform, 'mac')
         env:
           MAC_CERT_BASE64: ${{ secrets.MAC_CERT_BASE64 }}
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
         run: |
-          CERT_FILE=$RUNNER_TEMP/build.p12
-          echo -n "$MAC_CERT_BASE64" | base64 --decode > $CERT_FILE
-          security create-keychain -p "" build.keychain
-          security import $CERT_FILE -k build.keychain -P "${{ secrets.MAC_CERT_PASSWORD }}" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+          if [ -z "$MAC_CERT_BASE64" ]; then
+            # 无证书：禁用代码签名
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> $GITHUB_ENV
+            echo "==> macOS 无签名证书，跳过代码签名"
+          else
+            # 有证书：导入到 keychain 并启用签名公证
+            CERT_FILE=$RUNNER_TEMP/build.p12
+            echo -n "$MAC_CERT_BASE64" | base64 --decode > $CERT_FILE
+            security create-keychain -p "" build.keychain
+            security import $CERT_FILE -k build.keychain -P "$MAC_CERT_PASSWORD" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+            echo "CSC_LINK=$MAC_CERT_BASE64" >> $GITHUB_ENV
+            echo "CSC_KEY_PASSWORD=$MAC_CERT_PASSWORD" >> $GITHUB_ENV
+            echo "==> macOS 已导入签名证书，启用代码签名"
+          fi
 
       - name: Build Electron app
         working-directory: electron
         env:
-          # macOS 签名公证配置（secrets 为空时 electron-builder 自动跳过签名）
-          CSC_LINK: ${{ secrets.MAC_CERT_BASE64 }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           # GitHub Actions 专用：禁用 electron-builder 的自动更新检查，加速构建
           ELECTRON_BUILDER_OFFLINE: 'true'
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS 公证信息（仅配置了 secrets 时有效，否则 electron-builder 忽略）
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm run ${{ matrix.dist_script }}
 
       # 统一产物上传：正式版与 carry 版都先收集到 artifact，再由 release job 发到 Release

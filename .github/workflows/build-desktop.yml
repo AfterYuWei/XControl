@@ -1,0 +1,285 @@
+name: Build Desktop Apps
+
+# 触发条件：
+# - 推送 tag (v*):  正式发布，构建三端安装包并上传到 GitHub Release
+# - 推送 main:      nightly/carry 构建，产物上传到 workflow artifact（30天过期）
+# - 手动触发:       可选择 release / nightly 模式
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: '构建类型'
+        required: true
+        default: 'nightly'
+        type: choice
+        options:
+          - release
+          - nightly
+
+# 同一分支/标签的新构建取消旧的，避免资源浪费
+concurrency:
+  group: build-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+# Release 上传需要写权限
+permissions:
+  contents: write
+
+jobs:
+  # 判断本次构建是正式发布(tag)还是 nightly(main)
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      is_release: ${{ steps.meta.outputs.is_release }}
+      version: ${{ steps.meta.outputs.version }}
+      release_name: ${{ steps.meta.outputs.release_name }}
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - id: meta
+        run: |
+          # tag 触发 或 手动选 release => 正式发布
+          # main 触发 或 手动选 nightly => nightly
+          if [[ "${{ github.ref_type }}" == "tag" ]] || [[ "${{ inputs.release_type }}" == "release" ]]; then
+            echo "is_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_release=false" >> $GITHUB_OUTPUT
+          fi
+
+          # 版本号：tag 用 tag 名(去掉 v 前缀)，nightly 用 0.0.0-dev+日期.短sha
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+            # 去掉开头的 v，得到纯版本号
+            VERSION="${TAG#v}"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "tag=$TAG" >> $GITHUB_OUTPUT
+            echo "release_name=SSHX $VERSION" >> $GITHUB_OUTPUT
+          else
+            SHORT_SHA="${GITHUB_SHA::7}"
+            DATE=$(date -u +%Y%m%d)
+            VERSION="0.0.0-dev.${DATE}.${SHORT_SHA}"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "tag=" >> $GITHUB_OUTPUT
+            echo "release_name=SSHX Nightly ${DATE}" >> $GITHUB_OUTPUT
+          fi
+
+  # 三平台并行构建
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false   # 单平台失败不取消其它平台，便于排查
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+            goos: windows
+            goarch: amd64
+            ext: .exe
+            dist_script: dist:win
+            artifact_glob: "SSHX-Setup-*"
+          # macOS 拆成 arm64(Apple Silicon) 和 x64(Intel) 两个 job，
+          # 各自只打单架构，确保后端二进制与 dmg 架构一致
+          - os: macos-latest
+            platform: mac-arm64
+            goos: darwin
+            goarch: arm64
+            ext: ""
+            dist_script: dist:mac
+            artifact_glob: "SSHX-*.dmg"
+          - os: macos-13
+            platform: mac-x64
+            goos: darwin
+            goarch: amd64
+            ext: ""
+            dist_script: dist:mac
+            artifact_glob: "SSHX-*.dmg"
+          - os: ubuntu-latest
+            platform: linux
+            goos: linux
+            goarch: amd64
+            ext: ""
+            dist_script: dist:linux
+            artifact_glob: "SSHX-*.deb,SSHX-*.rpm"
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Linux: deb 需要 binutils(ar), rpm 需要 rpm 工具。ubuntu-latest 默认无，需安装
+      - name: Install Linux packaging tools
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends binutils rpm
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            web/package-lock.json
+            electron/package.json
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: server/go.sum
+
+      - name: Build frontend
+        working-directory: web
+        run: |
+          npm install
+          npm run build
+
+      - name: Build backend (embed frontend)
+        working-directory: server
+        env:
+          CGO_ENABLED: '0'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build -tags prod -o "sshx-server${{ matrix.ext }}" .
+
+      - name: Install electron dependencies
+        working-directory: electron
+        run: npm install
+
+      - name: Set version in package.json
+        working-directory: electron
+        run: |
+          # 用 npm 设置版本号，让产物文件名带正确版本
+          npm version ${{ needs.prepare.outputs.version }} --no-git-tag-version --allow-same-version
+
+      # macOS：CI 按 job 的 goarch 动态设置 mac.target 架构，确保后端二进制与 dmg 架构一致
+      - name: Pin mac target arch to current job
+        if: startsWith(matrix.platform, 'mac')
+        working-directory: electron
+        env:
+          MAC_ARCH: ${{ matrix.goarch }}
+        run: |
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.build.mac.target = [{ target: 'dmg', arch: process.env.MAC_ARCH }];
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
+            console.log('mac.target arch set to:', process.env.MAC_ARCH);
+          "
+
+      # macOS 签名公证：配置 secrets 后自动启用，无则跳过
+      - name: Import macOS signing certificate
+        if: startsWith(matrix.platform, 'mac') && env.MAC_CERT_BASE64 != ''
+        env:
+          MAC_CERT_BASE64: ${{ secrets.MAC_CERT_BASE64 }}
+        run: |
+          CERT_FILE=$RUNNER_TEMP/build.p12
+          echo -n "$MAC_CERT_BASE64" | base64 --decode > $CERT_FILE
+          security create-keychain -p "" build.keychain
+          security import $CERT_FILE -k build.keychain -P "${{ secrets.MAC_CERT_PASSWORD }}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+
+      - name: Build Electron app
+        working-directory: electron
+        env:
+          # macOS 签名公证配置（secrets 为空时 electron-builder 自动跳过签名）
+          CSC_LINK: ${{ secrets.MAC_CERT_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # GitHub Actions 专用：禁用 electron-builder 的自动更新检查，加速构建
+          ELECTRON_BUILDER_OFFLINE: 'true'
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run ${{ matrix.dist_script }}
+
+      # 统一产物上传：nightly 与 release 都先收集到 artifact
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sshx-${{ matrix.platform }}-${{ needs.prepare.outputs.version }}
+          path: |
+            electron/release/SSHX-Setup-*
+            electron/release/SSHX-*.dmg
+            electron/release/SSHX-*.deb
+            electron/release/SSHX-*.rpm
+          if-no-files-found: error
+          retention-days: ${{ needs.prepare.outputs.is_release == 'true' && 90 || 30 }}
+
+  # 正式发布：创建 GitHub Release 并上传所有平台安装包
+  release:
+    needs: [prepare, build]
+    if: needs.prepare.outputs.is_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: |
+          echo "=== 准备发布的安装包 ==="
+          find artifacts -type f | sort
+          echo "=== 总大小 ==="
+          du -sh artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: ${{ needs.prepare.outputs.release_name }}
+          body: |
+            ## SSHX ${{ needs.prepare.outputs.version }}
+
+            ### 安装包
+
+            | 平台 | 文件 | 说明 |
+            |------|------|------|
+            | Windows | `SSHX-Setup-*-x64.exe` | NSIS 安装程序 |
+            | macOS (Apple Silicon) | `SSHX-*-arm64.dmg` | DMG 镜像 |
+            | macOS (Intel) | `SSHX-*-x64.dmg` | DMG 镜像 |
+            | Linux (Debian/Ubuntu) | `SSHX-*-x64.deb` | deb 安装包 |
+            | Linux (Fedora/RHEL) | `SSHX-*-x64.rpm` | rpm 安装包 |
+
+            ### 安装说明
+
+            - **Windows**: 双击 `.exe` 安装，支持自定义安装路径
+            - **macOS**: 打开 `.dmg`，拖拽 SSHX 到 Applications 文件夹
+            - **Linux**: `sudo dpkg -i SSHX-*.deb` 或 `sudo rpm -i SSHX-*.rpm`
+          files: |
+            artifacts/SSHX-Setup-*
+            artifacts/SSHX-*.dmg
+            artifacts/SSHX-*.deb
+            artifacts/SSHX-*.rpm
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+
+  # nightly 构建汇总：在 workflow summary 页面列出所有产物下载链接
+  nightly-summary:
+    needs: [prepare, build]
+    if: needs.prepare.outputs.is_release == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summary
+        run: |
+          echo "## 🌙 SSHX Nightly 构建" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**版本**: \`${{ needs.prepare.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**构建时间**: $(date -u '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 下载产物" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "产物已上传为 workflow artifacts（保留 30 天），在页面下方 Artifacts 区下载：" >> $GITHUB_STEP_SUMMARY
+          echo "- \`sshx-win-${{ needs.prepare.outputs.version }}\` — Windows NSIS 安装包" >> $GITHUB_STEP_SUMMARY
+          echo "- \`sshx-mac-arm64-${{ needs.prepare.outputs.version }}\` — macOS DMG (Apple Silicon)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`sshx-mac-x64-${{ needs.prepare.outputs.version }}\` — macOS DMG (Intel)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`sshx-linux-${{ needs.prepare.outputs.version }}\` — Linux deb/rpm 安装包" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> 正式发布请打 tag：\`git tag v1.0.0 && git push origin v1.0.0\`" >> $GITHUB_STEP_SUMMARY

@@ -15,12 +15,12 @@ TARGET="${1:-current}"
 case "$TARGET" in
   win)    GOOS=windows GOARCH=amd64; EXT=.exe;       DIST="dist:win";   PLATFORM_DESC="Windows NSIS" ;;
   mac)    GOOS=darwin  GOARCH=amd64; EXT="";         DIST="dist:mac";   PLATFORM_DESC="macOS DMG" ;;
-  linux)  GOOS=linux   GOARCH=amd64; EXT="";         DIST="dist:linux"; PLATFORM_DESC="Linux AppImage+deb" ;;
+  linux)  GOOS=linux   GOARCH=amd64; EXT="";         DIST="dist:linux"; PLATFORM_DESC="Linux deb+rpm" ;;
   current|"")
     case "$(uname -s)" in
       Darwin)          GOOS=darwin  GOARCH=amd64; EXT="";         DIST="dist:mac";   PLATFORM_DESC="macOS DMG" ;;
       MINGW*|MSYS*|CYGWIN*) GOOS=windows GOARCH=amd64; EXT=.exe;   DIST="dist:win";   PLATFORM_DESC="Windows NSIS" ;;
-      Linux*)          GOOS=linux   GOARCH=amd64; EXT="";         DIST="dist:linux"; PLATFORM_DESC="Linux AppImage+deb" ;;
+      Linux*)          GOOS=linux   GOARCH=amd64; EXT="";         DIST="dist:linux"; PLATFORM_DESC="Linux deb+rpm" ;;
       *) echo "未知系统: $(uname -s)"; exit 1 ;;
     esac
     ;;

@@ -1100,13 +1100,46 @@
   flex: 1;
   display: flex;
   align-items: center;
+  gap: 0;
+  min-width: 0;
+}
+.status-tabs {
+  flex: 1;
+  display: flex;
+  align-items: center;
   gap: 2px;
   overflow-x: auto;
   overflow-y: hidden;
   min-width: 0;
 }
-.status-left::-webkit-scrollbar {
+.status-tabs::-webkit-scrollbar {
   height: 0;
+}
+/* Scroll arrow buttons */
+.sb-arrow {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--fg-4);
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background 0.1s, color 0.1s;
+  padding: 0;
+}
+.sb-arrow:hover {
+  background: var(--bg-hover);
+  color: var(--fg-2);
+}
+.sb-arrow-left {
+  margin-right: 1px;
+}
+.sb-arrow-right {
+  margin-left: 1px;
 }
 .status-right {
   display: flex;

@@ -1,11 +1,14 @@
-import { useEffect, useState } from 'react'
-import { FolderUp } from 'lucide-react'
+import { useEffect, useState, useRef, useCallback } from 'react'
+import { FolderUp, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useSessionStore } from '@/store/session'
 
 export function StatusBar() {
   const { tabs, activeTabId, setActiveTab, closeTab } = useSessionStore()
   const [time, setTime] = useState('')
   const [latency, setLatency] = useState<number | null>(null)
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   const activeTab = tabs.find((t) => t.id === activeTabId)
   const connected = activeTab?.status === 'connected'
@@ -51,11 +54,59 @@ export function StatusBar() {
           ? 'loading'
           : 'off'
 
+  // Check scroll overflow and update arrow visibility
+  const updateScrollState = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    setCanScrollLeft(el.scrollLeft > 0)
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1)
+  }, [])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    updateScrollState()
+    const ro = new ResizeObserver(updateScrollState)
+    ro.observe(el)
+    el.addEventListener('scroll', updateScrollState, { passive: true })
+    return () => {
+      ro.disconnect()
+      el.removeEventListener('scroll', updateScrollState)
+    }
+  }, [tabs, updateScrollState])
+
+  // Scroll active tab into view when activeTabId changes
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const activeEl = el.querySelector('.sb-tab.active') as HTMLElement | null
+    if (activeEl) {
+      activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+    }
+  }, [activeTabId])
+
+  const scrollBy = (direction: 'left' | 'right') => {
+    const el = scrollRef.current
+    if (!el) return
+    const amount = el.clientWidth * 0.6
+    el.scrollBy({ left: direction === 'left' ? -amount : amount, behavior: 'smooth' })
+  }
+
   return (
     <div className="statusbar">
       {/* Left: session switching */}
       <div className="status-left">
-        {tabs.map((tab) => {
+        {canScrollLeft && (
+          <button
+            className="sb-arrow sb-arrow-left"
+            aria-label="向左滚动标签"
+            onClick={() => scrollBy('left')}
+          >
+            <ChevronLeft size={12} />
+          </button>
+        )}
+        <div className="status-tabs" ref={scrollRef}>
+          {tabs.map((tab) => {
           const s = tab.status
           const dc = s === 'connected' ? 'on' : s === 'connecting' ? 'loading' : 'off'
           const isSftp = tab.kind === 'sftp'
@@ -88,6 +139,16 @@ export function StatusBar() {
             </div>
           )
         })}
+        </div>
+        {canScrollRight && (
+          <button
+            className="sb-arrow sb-arrow-right"
+            aria-label="向右滚动标签"
+            onClick={() => scrollBy('right')}
+          >
+            <ChevronRight size={12} />
+          </button>
+        )}
       </div>
 
       {/* Right: status dot (latency-driven) + latency + encoding + time */}

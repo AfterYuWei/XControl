@@ -1294,6 +1294,188 @@
   color: var(--fg-2);
 }
 
+/* ===== PROFILE FORM (add/edit connection dialog) ===== */
+/* Vercel-style: vertical label-above-input layout, compact grid card,
+   monospace inputs, sharp focus rings. No horizontal label columns. */
+.pf-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+/* Vertical field — label on top, control below. */
+.pf-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+/* Label — small, muted, medium weight (Vercel aesthetic). */
+.pf-label {
+  font: 500 11px / 1 var(--sans) !important;
+  color: var(--fg-3) !important;
+  letter-spacing: 0.01em;
+}
+/* 2-column grid row for host:port / username:auth pairs. */
+.pf-grid-2 {
+  display: grid;
+  grid-template-columns: 3fr 1fr;
+  gap: 12px;
+}
+.pf-grid-2.pf-grid-equal {
+  grid-template-columns: 1fr 1fr;
+}
+/* Monospace inputs — IP / port / username / host use mono font. */
+.pf-input-mono,
+.pf-input-mono::placeholder {
+  font-family: var(--mono) !important;
+  font-size: 12.5px !important;
+}
+/* Name input group with icon prefix. */
+.pf-input-group {
+  display: flex;
+  align-items: stretch;
+  position: relative;
+}
+.pf-input-group > input {
+  padding-left: 38px;
+}
+/* Icon prefix button inside the name input. */
+.pf-icon-prefix-wrap {
+  position: relative;
+}
+.pf-icon-prefix {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--fg-3);
+  cursor: pointer;
+  z-index: 2;
+  transition: color 0.12s;
+}
+.pf-icon-prefix:hover {
+  color: var(--fg);
+}
+/* Icon popover — floating card anchored below the prefix button. */
+.pf-icon-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 60;
+  width: 220px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-floating);
+  padding: 10px;
+  animation: pf-popover-in 0.12s ease;
+}
+@keyframes pf-popover-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.pf-icon-popover-title {
+  font: 500 10px / 1 var(--sans);
+  color: var(--fg-4);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+.pf-icon-popover-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+}
+.pf-icon-popover-cell {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--fg-3);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.pf-icon-popover-cell:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.pf-icon-popover-cell.active {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+/* Private-key textarea. */
+.pf-key-textarea {
+  font-family: var(--mono) !important;
+  font-size: 11.5px !important;
+  resize: vertical;
+}
+/* Sharp focus ring — crisp black (light) / white (dark) border on focus.
+   Dark-mode inputs also get an elevated background + brighter border so they
+   stay readable against the dark dialog panel. */
+/* Dark mode default input state — visible background + border. */
+:root.dark .pf-field input,
+:root.dark .pf-field textarea,
+:root.dark .pf-field select {
+  background: var(--bg-input) !important;
+  border-color: var(--border) !important;
+  color: var(--fg) !important;
+}
+:root.dark .pf-field input::placeholder,
+:root.dark .pf-field textarea::placeholder {
+  color: var(--fg-4) !important;
+}
+:root.dark .pf-input-mono,
+:root.dark .pf-input-group > input,
+:root.dark .pf-field > input,
+:root.dark .pf-field > textarea,
+:root.dark .pf-field > div > select {
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+:root.light .pf-field input:focus-visible,
+:root.light .pf-field textarea:focus-visible,
+:root.light .pf-field select:focus-visible {
+  border-color: #000 !important;
+  box-shadow: 0 0 0 1px #000 !important;
+  outline: none !important;
+}
+:root.dark .pf-field input:focus-visible,
+:root.dark .pf-field textarea:focus-visible,
+:root.dark .pf-field select:focus-visible {
+  border-color: #fff !important;
+  box-shadow: 0 0 0 1px #fff !important;
+  outline: none !important;
+}
+/* Error message. */
+.pf-error {
+  font: 400 12px / 1.4 var(--sans);
+  color: var(--red);
+}
+/* Footer — cancel left, submit right, main button slightly wider. */
+.pf-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+.pf-btn-cancel {
+  min-width: 76px;
+}
+.pf-btn-submit {
+  min-width: 96px;
+}
+
 /* ===== SERVER DETAIL (sidebar secondary page) ===== */
 /* Stack of per-tab detail panes — all mounted, toggled via display:none so
    switching tabs never remounts DOM or re-requests data. */

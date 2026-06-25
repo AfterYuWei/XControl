@@ -11,6 +11,8 @@ export interface WindowControlAPI {
 
 export interface SshxDesktop {
   desktop: true
+  // 平台标识：darwin=macOS, win32=Windows, linux=Linux
+  platform: NodeJS.Platform
   versions: {
     electron: string
     chrome: string

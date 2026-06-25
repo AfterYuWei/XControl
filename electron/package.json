@@ -7,7 +7,9 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux",
     "dist:dir": "electron-builder --win --dir",
     "postinstall": "electron-builder install-app-deps"
   },
@@ -27,13 +29,14 @@
       "preload.js",
       "package.json"
     ],
-    "extraResources": [
-      {
-        "from": "../server/sshx-server.exe",
-        "to": "sshx-server/sshx-server.exe"
-      }
-    ],
+    "extraResources": [],
     "win": {
+      "extraResources": [
+        {
+          "from": "../server/sshx-server.exe",
+          "to": "sshx-server/sshx-server.exe"
+        }
+      ],
       "target": [
         {
           "target": "nsis",
@@ -50,6 +53,34 @@
       "createStartMenuShortcut": true,
       "shortcutName": "SSHX",
       "deleteAppDataOnUninstall": false
+    },
+    "mac": {
+      "extraResources": [
+        {
+          "from": "../server/sshx-server",
+          "to": "sshx-server/sshx-server"
+        }
+      ],
+      "target": [
+        { "target": "dmg", "arch": ["x64", "arm64"] }
+      ],
+      "category": "public.app-category.developer-tools",
+      "artifactName": "SSHX-${version}-${arch}.${ext}"
+    },
+    "linux": {
+      "maintainer": "yuweinfo <dev@yuweinfo.com>",
+      "extraResources": [
+        {
+          "from": "../server/sshx-server",
+          "to": "sshx-server/sshx-server"
+        }
+      ],
+      "target": [
+        { "target": "AppImage", "arch": ["x64"] },
+        { "target": "deb", "arch": ["x64"] }
+      ],
+      "category": "Development",
+      "artifactName": "SSHX-${version}-${arch}.${ext}"
     }
   }
 }

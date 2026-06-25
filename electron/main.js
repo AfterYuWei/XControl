@@ -9,15 +9,15 @@ let backendProcess = null
 let mainWindow = null
 let backendPort = 0
 
-// 后端可执行文件路径：打包后在 resources 目录，开发时取 server 目录
+// 后端可执行文件路径：打包后在 resources 目录，开发时取 server 目录。
+// 跨平台后端文件名：Windows 为 sshx-server.exe，macOS/Linux 为 sshx-server（无后缀）。
 function getBackendExecutable() {
+  const ext = process.platform === 'win32' ? '.exe' : ''
+  const name = `sshx-server${ext}`
   if (app.isPackaged) {
-    return path.join(process.resourcesPath, 'sshx-server', 'sshx-server.exe')
+    return path.join(process.resourcesPath, 'sshx-server', name)
   }
-  return (
-    process.env.SSHX_SERVER_PATH ||
-    path.join(__dirname, '..', 'server', 'sshx-server.exe')
-  )
+  return process.env.SSHX_SERVER_PATH || path.join(__dirname, '..', 'server', name)
 }
 
 // 申请一个空闲端口，避免与其它占用 9090 的服务冲突
@@ -111,7 +111,13 @@ async function createWindow() {
     console.error(e.message)
   }
 
-  mainWindow = new BrowserWindow({
+  // 跨平台窗口配置：
+  // - macOS: titleBarStyle 'hiddenInset' 保留原生交通灯（左侧红黄绿圆形按钮），
+  //   隐藏标题栏文字，内容左移给交通灯留空间。交互完全原生（hover 符号、双击最大化等）。
+  // - Windows/Linux: frame:false 移除系统标题栏，由前端自绘右侧控制按钮。
+  //   frame:false 在 Windows 上仍保留边缘拖拽缩放能力。
+  const isMac = process.platform === 'darwin'
+  const windowOptions = {
     width: 1280,
     height: 800,
     minWidth: 900,
@@ -119,17 +125,22 @@ async function createWindow() {
     title: 'SSHX',
     backgroundColor: '#0A0A0A',
     show: false,
-    // 无边框：移除系统标题栏，由前端自定义标题栏接管。
-    // frame:false 在 Windows 上仍保留边缘拖拽缩放能力（系统提供隐形缩放边）。
-    frame: false,
-    // 隐藏标题栏文字与按钮，但保留窗口圆角与原生窗口阴影。
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
-  })
+  }
+  if (isMac) {
+    windowOptions.titleBarStyle = 'hiddenInset'
+    // trafficLightPosition 可选：将交通灯下移与自定义标题栏对齐
+    windowOptions.trafficLightPosition = { x: 12, y: 13 }
+  } else {
+    windowOptions.frame = false
+  }
+
+  mainWindow = new BrowserWindow(windowOptions)
 
   mainWindow.once('ready-to-show', () => mainWindow.show())
   mainWindow.loadURL(`http://127.0.0.1:${backendPort}/`)

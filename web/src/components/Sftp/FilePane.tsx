@@ -9,6 +9,7 @@ import {
   Pencil,
   Trash2,
   Copy,
+  FileEdit,
 } from 'lucide-react'
 import { Breadcrumb } from './Breadcrumb'
 import { FileRow } from './FileRow'
@@ -94,8 +95,8 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
       const { entries: dropped, from }: { entries: SftpEntry[]; from: PaneSide } = JSON.parse(raw)
       if (from === pane) return // same pane, no transfer
       const direction: 'upload' | 'download' = from === 'left' ? 'upload' : 'download'
-      const files = dropped.filter((d) => !d.is_dir)
-      if (files.length) store.startTransfer(files, direction)
+      // Include directories — the backend archives them as .tar.gz.
+      if (dropped.length) store.startTransfer(dropped, direction)
     } catch {
       /* ignore malformed drag payload */
     }
@@ -104,6 +105,17 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
   // --- Context menu builders ---
   const fileMenuItems = (entry: SftpEntry): MenuItem[] => [
     { id: 'open', label: entry.is_dir ? '打开文件夹' : '打开', icon: <FolderOpen size={13} />, onClick: () => openEntry(entry) },
+    // Only show "编辑" for files (not directories).
+    ...(!entry.is_dir
+      ? [
+          {
+            id: 'edit',
+            label: '编辑',
+            icon: <FileEdit size={13} />,
+            onClick: () => store.openEditor(pane, entry.path),
+          },
+        ]
+      : []),
     { id: 'd1', label: '', divider: true },
     { id: 'rename', label: '重命名', icon: <Pencil size={13} />, onClick: () => {} },
     { id: 'copy', label: '复制路径', icon: <Copy size={13} />, onClick: () => navigator.clipboard?.writeText(entry.path) },

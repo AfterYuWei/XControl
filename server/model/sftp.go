@@ -152,3 +152,51 @@ type SftpTransferResponse struct {
 	Tasks     []TransferTask     `json:"tasks,omitempty"`
 	Conflicts []SftpConflictInfo `json:"conflicts,omitempty"` // populated on 409
 }
+
+// --- SFTP built-in editor DTOs ---
+
+const (
+	// MaxEditableFileSize is the hard upper bound for files opened in the
+	// built-in editor. Files larger than this must be downloaded and edited
+	// locally. 10 MiB keeps Monaco responsive while covering config/script
+	// files comfortably.
+	MaxEditableFileSize int64 = 10 * 1024 * 1024
+
+	// BinarySniffSize is how many leading bytes are inspected to detect a
+	// binary file (via NUL bytes) before decoding as text.
+	BinarySniffSize int = 8 * 1024
+)
+
+// LineEnding reports the dominant line ending detected in a file.
+type LineEnding string
+
+const (
+	LineEndingLF   LineEnding = "lf"   // \n
+	LineEndingCRLF LineEnding = "crlf" // \r\n
+)
+
+// SftpFileReadResponse is returned by GET /api/sftp/sessions/{id}/file.
+type SftpFileReadResponse struct {
+	Path       string      `json:"path"`
+	Content    string      `json:"content"`
+	Size       int64       `json:"size"`
+	ModTime    string      `json:"mod_time"`     // RFC 3339; used as optimistic-lock token on write
+	Language   string      `json:"language"`     // Monaco language id, e.g. "shell", "json", "nginx"
+	LineEnding LineEnding  `json:"line_ending"`  // "lf" | "crlf"
+	ReadOnly   bool        `json:"read_only"`    // true when the file is not writable on the remote
+}
+
+// SftpFileWriteRequest is the body of PUT /api/sftp/sessions/{id}/file.
+type SftpFileWriteRequest struct {
+	Content         string     `json:"content"`
+	ExpectedModTime string     `json:"expected_mod_time"`         // RFC 3339; must match current Stat.ModTime
+	LineEnding      LineEnding `json:"line_ending,omitempty"`     // preserve original; default "lf"
+}
+
+// SftpFileWriteResponse is returned by PUT /api/sftp/sessions/{id}/file on
+// success. The new ModTime becomes the optimistic-lock token for the next save.
+type SftpFileWriteResponse struct {
+	Path    string `json:"path"`
+	Size    int64  `json:"size"`
+	ModTime string `json:"mod_time"` // RFC 3339
+}

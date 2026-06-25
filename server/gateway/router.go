@@ -89,6 +89,11 @@ func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS) http.Handle
 	mux.HandleFunc("POST /api/sftp/sessions/{id}/rename", sftpH.Rename)
 	mux.HandleFunc("POST /api/sftp/sessions/{id}/delete", sftpH.Delete)
 
+	// SFTP built-in editor (text file read/write with size, binary, and
+	// encoding guards + optimistic-lock via mod_time).
+	mux.HandleFunc("GET /api/sftp/sessions/{id}/file", sftpH.ReadFile)
+	mux.HandleFunc("PUT /api/sftp/sessions/{id}/file", sftpH.WriteFile)
+
 	// SFTP transfers
 	mux.HandleFunc("POST /api/sftp/sessions/{id}/upload", sftpH.Upload)
 	mux.HandleFunc("POST /api/sftp/sessions/{id}/download", sftpH.Download)

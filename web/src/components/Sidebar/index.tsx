@@ -1,9 +1,11 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { Plus, Edit, Trash2, Server, FolderPlus, FolderEdit } from 'lucide-react'
 import { ProfileForm } from '@/components/ProfileForm'
 import { GroupForm } from '@/components/Sidebar/GroupForm'
+import { ServerDetail } from '@/components/ServerDetail'
 import { useProfileStore } from '@/store/profile'
 import { useSessionStore } from '@/store/session'
+import { useSidebarDetailStore, GLOBAL_PAGE_KEY } from '@/store/sidebarDetail'
 import { toast } from '@/store/toast'
 import { resolveServerIcon } from '@/lib/serverIcons'
 import { resolveGroupIcon } from '@/lib/groupIcons'
@@ -44,6 +46,63 @@ export function Sidebar() {
 
   // Drag-and-drop
   const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null)
+
+  // Click-to-select on the server list (single click selects, double connects).
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null)
+
+  // Per-tab page selector + per-tab detail cache (shared across the app).
+  const { getPage, setPage, lastTerminalTabId, setLastTerminalTab, clearTab, pageByTab } =
+    useSidebarDetailStore()
+
+  // Effective terminal tab for the sidebar: the active terminal tab, or — when
+  // an SFTP tab is active — the last terminal tab (sidebar stays unchanged).
+  const activeTab = tabs.find((t) => t.id === activeTabId)
+  const effectiveTabId = activeTab?.kind === 'terminal'
+    ? activeTabId
+    : lastTerminalTabId
+
+  // Current page for the effective tab (independent per tab).
+  const currentPage = effectiveTabId ? getPage(effectiveTabId) : getPage(GLOBAL_PAGE_KEY)
+
+  // Track the last terminal tab so SFTP tabs freeze the sidebar.
+  useEffect(() => {
+    if (activeTab?.kind === 'terminal' && activeTabId) {
+      setLastTerminalTab(activeTabId)
+    }
+  }, [activeTab, activeTabId, setLastTerminalTab])
+
+  // Auto-switch to the detail (page 2) when a terminal tab transitions to
+  // "connected". Each tab's page is stored independently so other tabs are
+  // unaffected.
+  const prevStatusRef = useRef<Record<string, string>>({})
+  useEffect(() => {
+    const prev = prevStatusRef.current
+    tabs.forEach((tab) => {
+      if (tab.kind !== 'terminal') return
+      if (tab.status === 'connected' && prev[tab.id] !== 'connected') {
+        setPage(tab.id, 1)
+      }
+      prev[tab.id] = tab.status
+    })
+    // prune stale ids
+    const currentIds = new Set(tabs.map((t) => t.id))
+    Object.keys(prev).forEach((id) => {
+      if (!currentIds.has(id)) delete prev[id]
+    })
+  }, [tabs, setPage])
+
+  // Clean up per-tab cache for closed terminal tabs (release memory).
+  const knownTabIdsRef = useRef<Set<string>>(new Set(tabs.map((t) => t.id)))
+  useEffect(() => {
+    const currentIds = new Set(tabs.map((t) => t.id))
+    knownTabIdsRef.current.forEach((id) => {
+      if (!currentIds.has(id)) clearTab(id)
+    })
+    knownTabIdsRef.current = currentIds
+  }, [tabs, clearTab])
+
+  // Terminal tabs only — SFTP tabs never get a detail pane.
+  const terminalTabs = useMemo(() => tabs.filter((t) => t.kind === 'terminal'), [tabs])
 
   const activeProfileId = useMemo(() => {
     const tab = tabs.find((t) => t.id === activeTabId)
@@ -173,6 +232,7 @@ export function Sidebar() {
   )
 
   const renderServerRow = (profile: Profile) => {
+    const isSelected = profile.id === selectedProfileId
     const isActive = profile.id === activeProfileId
     const tab = tabs.find((t) => t.profileId === profile.id)
     const status = tab?.status ?? 'disconnected'
@@ -187,7 +247,7 @@ export function Sidebar() {
     return (
       <div
         key={profile.id}
-        className={`srv ${status === 'disconnected' ? 'offline' : ''} ${isActive ? 'active' : ''}`}
+        className={`srv ${status === 'disconnected' ? 'offline' : ''} ${isSelected || isActive ? 'active' : ''}`}
         role="button"
         tabIndex={0}
         draggable
@@ -195,14 +255,18 @@ export function Sidebar() {
           e.dataTransfer.setData('text/profile-id', profile.id)
           e.dataTransfer.effectAllowed = 'move'
         }}
-        aria-label={`连接到 ${profile.name} (${profile.host}:${profile.port})`}
-        onClick={() => handleConnect(profile)}
+        aria-label={`选择 ${profile.name} (${profile.host}:${profile.port})，双击连接`}
+        onClick={() => setSelectedProfileId(profile.id)}
         onDoubleClick={() => handleConnect(profile)}
         onContextMenu={(e) => handleProfileContextMenu(e, profile)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
+          if (e.key === 'Enter') {
             e.preventDefault()
             handleConnect(profile)
+          }
+          if (e.key === ' ') {
+            e.preventDefault()
+            setSelectedProfileId(profile.id)
           }
         }}
       >
@@ -220,111 +284,142 @@ export function Sidebar() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Sidebar title — "服务器管理" is the header of this panel, not a group.
-          It shows the total server count and a global "+" to add a server. */}
-      <div className="sidebar-title">
-        <span className="sidebar-title-left">
-          <span className="sidebar-title-text">服务器管理</span>
-          <span className="grp-cnt">{profiles.length}</span>
-        </span>
-        <button
-          className="grp-add-btn"
-          title="新增服务器"
-          aria-label="新增服务器"
-          onClick={(e) => {
-            e.stopPropagation()
-            handleAddServer()
-          }}
-        >
-          <Plus size={13} />
-        </button>
-      </div>
-
-      {/* Server list */}
-      <div className="sidebar-body" onContextMenu={handleBlankContextMenu}>
-        {loading ? (
-          <div className="sidebar-empty">
-            <span>Loading…</span>
+      {currentPage === 0 ? (
+        <>
+          {/* Page 1 — global server list (shared across all tabs) */}
+          <div className="sidebar-title">
+            <span className="sidebar-title-left">
+              <span className="sidebar-title-text">服务器管理</span>
+              <span className="grp-cnt">{profiles.length}</span>
+            </span>
+            <button
+              className="grp-add-btn"
+              title="新增服务器"
+              aria-label="新增服务器"
+              onClick={(e) => {
+                e.stopPropagation()
+                handleAddServer()
+              }}
+            >
+              <Plus size={13} />
+            </button>
           </div>
-        ) : profiles.length === 0 && groups.length === 0 ? (
-          <div className="sidebar-empty">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
-              <circle cx="7" cy="7" r="4.5" />
-              <line x1="10.2" y1="10.2" x2="14" y2="14" />
-            </svg>
-            <span>{searchQuery ? `没有匹配 "${searchQuery}" 的服务器` : '暂无连接'}</span>
-          </div>
-        ) : (
-          <>
-            {/* Groups (folders) — render first, higher priority than loose servers */}
-            {groups.map((grp) => {
-              const list = serversByGroup[grp.id] ?? []
-              // While searching, hide groups with no matching servers to reduce noise.
-              if (list.length === 0 && searchQuery) return null
-              const isDropTarget = dragOverGroupId === grp.id
-              const GroupIcon = resolveGroupIcon(grp.icon)
 
-              return (
-                <div
-                  className={`srv-group ${isDropTarget ? 'grp-drop-target' : ''}`}
-                  key={grp.id}
-                  onDragOver={(e) => {
-                    e.preventDefault()
-                    e.dataTransfer.dropEffect = 'move'
-                    if (dragOverGroupId !== grp.id) setDragOverGroupId(grp.id)
-                  }}
-                  onDragLeave={(e) => {
-                    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                      setDragOverGroupId(null)
-                    }
-                  }}
-                  onDrop={(e) => handleDropToGroup(e, grp.id)}
-                >
+          <div className="sidebar-body" onContextMenu={handleBlankContextMenu}>
+            {loading ? (
+              <div className="sidebar-empty">
+                <span>Loading…</span>
+              </div>
+            ) : profiles.length === 0 && groups.length === 0 ? (
+              <div className="sidebar-empty">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
+                  <circle cx="7" cy="7" r="4.5" />
+                  <line x1="10.2" y1="10.2" x2="14" y2="14" />
+                </svg>
+                <span>{searchQuery ? `没有匹配 "${searchQuery}" 的服务器` : '暂无连接'}</span>
+              </div>
+            ) : (
+              <>
+                {/* Groups (folders) — render first, higher priority than loose servers */}
+                {groups.map((grp) => {
+                  const list = serversByGroup[grp.id] ?? []
+                  if (list.length === 0 && searchQuery) return null
+                  const isDropTarget = dragOverGroupId === grp.id
+                  const GroupIcon = resolveGroupIcon(grp.icon)
+
+                  return (
+                    <div
+                      className={`srv-group ${isDropTarget ? 'grp-drop-target' : ''}`}
+                      key={grp.id}
+                      onDragOver={(e) => {
+                        e.preventDefault()
+                        e.dataTransfer.dropEffect = 'move'
+                        if (dragOverGroupId !== grp.id) setDragOverGroupId(grp.id)
+                      }}
+                      onDragLeave={(e) => {
+                        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                          setDragOverGroupId(null)
+                        }
+                      }}
+                      onDrop={(e) => handleDropToGroup(e, grp.id)}
+                    >
+                      <div
+                        className="grp-label"
+                        onContextMenu={(e) => handleGroupContextMenu(e, grp)}
+                      >
+                        <span className="grp-label-left">
+                          <GroupIcon size={12} className="grp-label-icon" />
+                          <span className="grp-label-text">{grp.name}</span>
+                          <span className="grp-cnt">{list.length}</span>
+                        </span>
+                      </div>
+                      {list.map(renderServerRow)}
+                    </div>
+                  )
+                })}
+
+                {/* Loose servers (no group) — render last, like files outside folders */}
+                {looseServers.length > 0 && (
                   <div
-                    className="grp-label"
-                    onContextMenu={(e) => handleGroupContextMenu(e, grp)}
+                    className={`srv-group ${dragOverGroupId === UNGROUPED_ID ? 'grp-drop-target' : ''}`}
+                    onDragOver={(e) => {
+                      e.preventDefault()
+                      e.dataTransfer.dropEffect = 'move'
+                      if (dragOverGroupId !== UNGROUPED_ID) setDragOverGroupId(UNGROUPED_ID)
+                    }}
+                    onDragLeave={(e) => {
+                      if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                        setDragOverGroupId(null)
+                      }
+                    }}
+                    onDrop={(e) => handleDropToGroup(e, UNGROUPED_ID)}
                   >
-                    <span className="grp-label-left">
-                      <GroupIcon size={12} className="grp-label-icon" />
-                      <span className="grp-label-text">{grp.name}</span>
-                      <span className="grp-cnt">{list.length}</span>
-                    </span>
-                  </div>
-                  {list.map(renderServerRow)}
-                </div>
-              )
-            })}
-
-            {/* Loose servers (no group) — render last, like files outside folders */}
-            {looseServers.length > 0 && (
-              <div
-                className={`srv-group ${dragOverGroupId === UNGROUPED_ID ? 'grp-drop-target' : ''}`}
-                onDragOver={(e) => {
-                  e.preventDefault()
-                  e.dataTransfer.dropEffect = 'move'
-                  if (dragOverGroupId !== UNGROUPED_ID) setDragOverGroupId(UNGROUPED_ID)
-                }}
-                onDragLeave={(e) => {
-                  if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                    setDragOverGroupId(null)
-                  }
-                }}
-                onDrop={(e) => handleDropToGroup(e, UNGROUPED_ID)}
-              >
-                {groups.length > 0 && (
-                  <div className="grp-label">
-                    <span className="grp-label-left">
-                      <span className="grp-label-text grp-label-muted">未分组</span>
-                      <span className="grp-cnt">{looseServers.length}</span>
-                    </span>
+                    {groups.length > 0 && (
+                      <div className="grp-label">
+                        <span className="grp-label-left">
+                          <span className="grp-label-text grp-label-muted">未分组</span>
+                          <span className="grp-cnt">{looseServers.length}</span>
+                        </span>
+                      </div>
+                    )}
+                    {looseServers.map(renderServerRow)}
                   </div>
                 )}
-                {looseServers.map(renderServerRow)}
-              </div>
+              </>
             )}
-          </>
-        )}
-      </div>
+          </div>
+        </>
+      ) : (
+        /* Page 2 — per-tab detail panes. All terminal-tab panes stay mounted
+           (toggled via display:none) so switching tabs never remounts DOM or
+           re-requests data. SFTP tabs never receive a pane; when an SFTP tab
+           is active the sidebar freezes on the last terminal tab's pane. */
+        <div className="sdetail-stack">
+          {terminalTabs.length === 0 ? (
+            <div className="sidebar-empty">
+              <span>暂无服务器会话</span>
+            </div>
+          ) : (
+            terminalTabs.map((tab) => (
+              <div
+                key={tab.id}
+                className="sdetail-slot"
+                style={{ display: tab.id === effectiveTabId ? 'flex' : 'none' }}
+              >
+                <ServerDetail
+                  tabId={tab.id}
+                  profileId={tab.profileId}
+                  profileName={tab.profileName}
+                  host={tab.host || '未知'}
+                  port={tab.port || 22}
+                  username={tab.username || 'root'}
+                  active={tab.id === effectiveTabId}
+                />
+              </div>
+            ))
+          )}
+        </div>
+      )}
 
       {/* Profile context menu */}
       {profileMenu && (
@@ -334,6 +429,7 @@ export function Sidebar() {
             <ContextItem icon={<Server size={13} />} onClick={() => { handleConnect(profileMenu.profile); setProfileMenu(null) }}>
               连接
             </ContextItem>
+            <ContextDivider />
             <ContextItem icon={<Edit size={13} />} onClick={() => handleEditProfile(profileMenu.profile)}>
               编辑
             </ContextItem>
@@ -378,6 +474,21 @@ export function Sidebar() {
           </ContextMenuBox>
         </>
       )}
+
+      {/* Segmented page indicator — page 1 = global list, page 2 = per-tab detail.
+          Each tab remembers its own page independently. */}
+      <div className="sidebar-pager">
+        <button
+          className={`pager-seg ${currentPage === 0 ? 'active' : ''}`}
+          aria-label="第 1 页"
+          onClick={() => setPage(effectiveTabId || GLOBAL_PAGE_KEY, 0)}
+        />
+        <button
+          className={`pager-seg ${currentPage === 1 ? 'active' : ''}`}
+          aria-label="第 2 页"
+          onClick={() => setPage(effectiveTabId || GLOBAL_PAGE_KEY, 1)}
+        />
+      </div>
 
       {/* Profile form dialog */}
       <ProfileForm

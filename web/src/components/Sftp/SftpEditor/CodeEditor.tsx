@@ -70,6 +70,7 @@ export function CodeEditor() {
 
   const theme = useSettingsStore((s) => s.theme)
   const systemRevision = useSettingsStore((s) => s.systemRevision)
+  void systemRevision // 仅用于建立订阅依赖，system 模式下跟随系统主题变化
   const resolvedTheme: 'light' | 'dark' =
     theme === 'system'
       ? window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'

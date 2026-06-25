@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/yuweinfo/sshx/connpool"
 	"github.com/yuweinfo/sshx/fileutil"
 	"github.com/yuweinfo/sshx/model"
 	"github.com/yuweinfo/sshx/protocol"
@@ -24,8 +25,9 @@ type SftpSession struct {
 	ID        string
 	ProfileID string
 	Backend   fileutil.FileBackend
-	Driver    protocol.Driver // nil for local sessions
-	Status    string          // connecting | connected | disconnected
+	Driver    protocol.Driver  // nil for local sessions and pooled sessions
+	Entry     *connpool.Entry  // non-nil for pooled remote sessions
+	Status    string           // connecting | connected | disconnected
 	Error     string
 	CreatedAt time.Time
 
@@ -56,17 +58,19 @@ type SftpHandler struct {
 	vault     store.VaultStore
 	audit     store.AuditStore
 	pm        *protocol.Manager
+	pool      *connpool.Pool
 	transfers *TransferManager
 	hub       *ws.SftpHub
 }
 
-func NewSftpHandler(ps store.ProfileStore, vs store.VaultStore, as store.AuditStore, pm *protocol.Manager, hub *ws.SftpHub, transfers *TransferManager) *SftpHandler {
+func NewSftpHandler(ps store.ProfileStore, vs store.VaultStore, as store.AuditStore, pm *protocol.Manager, hub *ws.SftpHub, transfers *TransferManager, pool *connpool.Pool) *SftpHandler {
 	return &SftpHandler{
 		sessions:  make(map[string]*SftpSession),
 		profiles:  ps,
 		vault:     vs,
 		audit:     as,
 		pm:        pm,
+		pool:      pool,
 		transfers: transfers,
 		hub:       hub,
 	}
@@ -153,26 +157,18 @@ func (h *SftpHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 			Passphrase: passphrase,
 		}
 
-		driver, err := h.pm.Create("sftp", opts)
+		// Use connection pool: acquire SFTP ref (SSH ref not needed for pure SFTP)
+		entry, err := h.pool.AcquireSFTP(ctx, opts)
 		if err != nil {
 			session.Status = "disconnected"
-			session.Error = "创建驱动失败: " + err.Error()
-			h.broadcastSessionStatus(sessionID, "disconnected")
-			return
-		}
-
-		if err := driver.Connect(ctx); err != nil {
-			session.Status = "disconnected"
-			session.Error = "SFTP连接失败: " + err.Error()
+			session.Error = "连接失败: " + err.Error()
 			slog.Error("sftp connect failed", "error", err)
 			h.broadcastSessionStatus(sessionID, "disconnected")
 			return
 		}
 
-		if provider, ok := driver.(fileutil.BackendProvider); ok {
-			session.Backend = provider.FileBackend()
-		}
-		session.Driver = driver
+		session.Entry = entry
+		session.Backend = entry.Backend
 		session.Status = "connected"
 		h.profiles.UpdateLastUsed(req.ProfileID)
 		h.broadcastSessionStatus(sessionID, "connected")
@@ -247,15 +243,16 @@ func (h *SftpHandler) CloseSession(w http.ResponseWriter, r *http.Request) {
 	// Cancel all in-flight transfers for this session
 	h.transfers.CancelBySession(id)
 
-	// Cancel context and close backend/driver
+	// Cancel context and release pooled connection
 	if session.cancel != nil {
 		session.cancel()
 	}
-	if session.Backend != nil {
+	if session.Entry != nil {
+		session.Entry.ReleaseSFTP()
+		session.Entry = nil
+	} else if session.Backend != nil {
+		// Local session — close directly
 		session.Backend.Close()
-	}
-	if session.Driver != nil {
-		session.Driver.Close()
 	}
 
 	h.audit.Log(&model.AuditLog{

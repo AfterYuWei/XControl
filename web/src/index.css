@@ -1659,6 +1659,29 @@
   display: flex;
   flex-direction: column;
 }
+.sdetail-file-loading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font: 400 11px/1 var(--sans);
+  color: var(--fg-4);
+}
+.sdetail-file-loading .animate-spin {
+  animation: spin 1s linear infinite;
+}
+.sdetail-file-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font: 400 11px/1 var(--sans);
+  color: var(--err, #ef4444);
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 
 /* ===== SHARED SECTIONS (used by ServerDetail) ===== */
 .psec {
@@ -1733,17 +1756,31 @@
 }
 .info-row {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   padding: 3px 0;
+  gap: 8px;
 }
 .info-label {
   font: 400 11px / 1 var(--sans);
   color: var(--fg-4);
+  flex-shrink: 0;
+  width: 56px;
+  text-align: justify;
+  text-align-last: justify;
 }
 .info-val {
-  font: 500 11px / 1 var(--mono);
+  font: 500 11px / 1.4 var(--mono);
   color: var(--fg-2);
+  text-align: right;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+}
+.info-val[title]:not([title=""]):hover {
+  position: relative;
 }
 /* ===== COMMAND PALETTE ===== */
 .pal-overlay {

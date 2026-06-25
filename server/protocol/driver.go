@@ -33,3 +33,11 @@ type ConnectionInfo struct {
 	Username   string
 	RemoteAddr string
 }
+
+// CommandExecutor is an optional interface for drivers that can execute
+// remote commands on the connected host. Used for server detail (metrics,
+// server info). Drivers implement this alongside protocol.Driver; callers
+// type-assert to discover support.
+type CommandExecutor interface {
+	Exec(cmd string) (stdout []byte, stderr []byte, exitCode int, err error)
+}

@@ -105,3 +105,35 @@ func (d *Driver) Close() error {
 func (d *Driver) Info() protocol.ConnectionInfo {
 	return d.info
 }
+
+// Exec runs a command on the remote host via a temporary SSH session.
+// Implements protocol.CommandExecutor.
+func (d *Driver) Exec(cmd string) (stdout []byte, stderr []byte, exitCode int, err error) {
+	if d.client == nil {
+		return nil, nil, -1, fmt.Errorf("not connected")
+	}
+	sess, err := d.client.NewSession()
+	if err != nil {
+		return nil, nil, -1, fmt.Errorf("new session: %w", err)
+	}
+	defer sess.Close()
+
+stdout, err = sess.CombinedOutput(cmd)
+	if err != nil {
+		if exitErr, ok := err.(*gossh.ExitError); ok {
+			return stdout, nil, exitErr.ExitStatus(), err
+		}
+		return stdout, nil, -1, err
+	}
+	return stdout, nil, 0, nil
+}
+
+// SSHClient returns the underlying SSH client for opening subsystem channels
+// (e.g. SFTP). Used by the connection pool to share one SSH connection for
+// both command execution and file operations.
+func (d *Driver) SSHClient() *gossh.Client {
+	return d.client
+}
+
+// compile-time assertion that Driver implements CommandExecutor
+var _ protocol.CommandExecutor = (*Driver)(nil)

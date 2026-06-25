@@ -283,20 +283,10 @@ func (h *ServerDetailHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Start metrics collection loop
+	// Note: collectMetrics includes a 1s sleep for network sampling, so the
+	// effective interval is ticker + ~1s.
 	metricsTicker := time.NewTicker(5 * time.Second)
 	defer metricsTicker.Stop()
-
-	// Track previous net stats for rate calculation
-	var prevNetRx, prevNetTx int64
-	var prevNetTime time.Time
-
-	// Collect initial net baseline
-	if entry.Exec != nil {
-		rx, tx := h.collectNetStats(entry)
-		prevNetRx = rx
-		prevNetTx = tx
-		prevNetTime = time.Now()
-	}
 
 	// Read loop (handles ping/pong and close)
 	readDone := make(chan struct{})
@@ -328,30 +318,7 @@ func (h *ServerDetailHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			metrics := h.collectMetrics(entry)
-
-			// Calculate net rate from raw byte counters
-			now := time.Now()
-			if !prevNetTime.IsZero() {
-				elapsed := now.Sub(prevNetTime).Seconds()
-				if elapsed > 0 {
-					metrics.NetRx = int64(float64(metrics.NetRx-prevNetRx) / elapsed)
-					metrics.NetTx = int64(float64(metrics.NetTx-prevNetTx) / elapsed)
-					if metrics.NetRx < 0 {
-						metrics.NetRx = 0
-					}
-					if metrics.NetTx < 0 {
-						metrics.NetTx = 0
-					}
-				}
-			}
-			prevNetTime = now
-
-			// Re-read raw net for next delta
-			rx, tx := h.collectNetStats(entry)
-			prevNetRx = rx
-			prevNetTx = tx
-
-			metrics.Timestamp = now.UnixMilli()
+			metrics.Timestamp = time.Now().UnixMilli()
 
 			if err := writeWSJSON(ctx, wsConn, map[string]any{
 				"type": model.MsgServerMetrics,
@@ -421,101 +388,136 @@ func (h *ServerDetailHandler) collectServerInfo(entry *connpool.Entry) model.Ser
 	return parseServerInfo(string(stdout))
 }
 
-// collectMetrics runs commands to gather dynamic system metrics.
-// Uses /proc-based commands where possible for reliability (no external tools
-// like top/free that may hang or have locale-dependent output).
+// collectMetrics gathers CPU (total + per-core), memory, disk, top processes,
+// and per-interface network speed via a single SSH session.
+//
+// Timing: one 1s sleep is shared between CPU and network delta sampling.
+// Static reads (memory/disk/ps) happen concurrently during the sleep.
+//
+// Output protocol — one metric per line:
+//
+//	CPU: 12.3
+//	CORE0: 8.1
+//	CORE1: 15.2
+//	MEM_USED: 1234567890
+//	MEM_TOTAL: 4000000000
+//	MEM_PROC: nginx 12.5 524288
+//	DISK_USED: 5000000000
+//	DISK_TOTAL: 20000000000
+//	IFACE:eth0: 12345 67890
 func (h *ServerDetailHandler) collectMetrics(entry *connpool.Entry) model.ServerMetrics {
 	metrics := model.ServerMetrics{}
 	if entry.Exec == nil {
 		return metrics
 	}
 
-	// Single compound command — one SSH session.
-	// CPU: two /proc/stat samples 1s apart for live percentage.
-	// Memory: /proc/meminfo (MemTotal - MemFree - Buffers - Cached).
-	// Disk: df -B1 / (POSIX standard).
-	//
-	// Output format (4 lines):
-	//   Line 0: cpu_idle% (from two-sample delta, 0-100)
-	//   Line 1: mem_used_bytes mem_total_bytes
-	//   Line 2: disk_used_bytes disk_total_bytes
-	cmd := `sh -c '` +
-		`read_cpu(){ awk "/^cpu /{print \$4, \$2+\$3+\$4+\$5+\$6+\$7+\$8}" /proc/stat; }; ` +
-		`read1=$(read_cpu); sleep 1; read2=$(read_cpu); ` +
-		`idle1=$(echo "$read1" | awk "{print \$1}"); total1=$(echo "$read1" | awk "{print \$2}"); ` +
-		`idle2=$(echo "$read2" | awk "{print \$1}"); total2=$(echo "$read2" | awk "{print \$2}"); ` +
-		`dt=$((total2 - total1)); di=$((idle2 - idle1)); ` +
-		`if [ "$dt" -gt 0 ]; then echo $(( (dt - di) * 100 / dt )); else echo 0; fi; ` +
-		`awk "/^MemTotal:/{t=\$2} /^MemFree:/{f=\$2} /^Buffers:/{b=\$2} /^Cached:/{c=\$2} END{print (t-f-b-c)*1024, t*1024}" /proc/meminfo; ` +
-		`df -B1 / | awk "NR==2{print \$3, \$2}"` + `'`
+	// Split into 3 independent SSH commands to avoid nested-quote issues.
+	// Commands 1 and 3 each take ~1s (sleep for delta); command 2 is instant.
+	// Run all 3 in parallel — total wall time ≈ 1s.
 
-	stdout, _, _, err := entry.Exec.Exec(cmd)
-	if err != nil {
-		slog.Warn("server detail: collectMetrics failed", "error", err)
-		return metrics
-	}
+	// Command 1: CPU (total + per-core) — two /proc/stat samples 1s apart
+	cpuCmd := `awk '/^cpu /{print "T",$2+$3+$4,$5}/^cpu[0-9]/{gsub(/cpu/,"",$1);print "C"$1,$2+$3+$4,$5}' /proc/stat; sleep 1; awk '/^cpu /{print "T",$2+$3+$4,$5}/^cpu[0-9]/{gsub(/cpu/,"",$1);print "C"$1,$2+$3+$4,$5}' /proc/stat`
 
-	lines := strings.Split(strings.TrimSpace(string(stdout)), "\n")
+	// Command 2: Memory + Disk + Top processes (instant)
+	staticCmd := `free -b | awk 'NR==2{print "MU",$3;print "MT",$2}'; df -B1 / | awk 'NR==2{print "DU",$3;print "DT",$2}'; ps -eo comm=,%mem=,rss= --sort=-%mem | head -6 | awk '{print "MP",$1,$2,$3*1024}'`
 
-	// Line 0: CPU percentage (0-100, integer from shell arithmetic)
-	if len(lines) >= 1 {
-		cpuStr := strings.TrimSpace(lines[0])
-		if v, err := strconv.ParseFloat(cpuStr, 64); err == nil {
-			metrics.CPU = v
-		}
-	}
+	// Command 3: Network per-interface — two /proc/net/dev samples 1s apart
+	netCmd := `awk 'NR>2 && $1~/^(eth|ens|enp|eno|wlan|wl|tailscale|netbird|wg)/{gsub(/:/," ");print $1,$2,$10}' /proc/net/dev; sleep 1; awk 'NR>2 && $1~/^(eth|ens|enp|eno|wlan|wl|tailscale|netbird|wg)/{gsub(/:/," ");print $1,$2,$10}' /proc/net/dev`
 
-	// Line 1: Memory — "used_bytes total_bytes"
-	if len(lines) >= 2 {
-		memParts := strings.Fields(lines[1])
-		if len(memParts) >= 2 {
-			if used, err := strconv.ParseInt(memParts[0], 10, 64); err == nil {
-				metrics.MemUsed = used
-			}
-			if total, err := strconv.ParseInt(memParts[1], 10, 64); err == nil {
-				metrics.MemTotal = total
-			}
-			if metrics.MemTotal > 0 {
-				metrics.MemPercent = float64(metrics.MemUsed) / float64(metrics.MemTotal) * 100
+	var wg sync.WaitGroup
+	var cpuOut, staticOut, netOut []byte
+
+	wg.Add(3)
+	go func() { defer wg.Done(); cpuOut, _, _, _ = entry.Exec.Exec(cpuCmd) }()
+	go func() { defer wg.Done(); staticOut, _, _, _ = entry.Exec.Exec(staticCmd) }()
+	go func() { defer wg.Done(); netOut, _, _, _ = entry.Exec.Exec(netCmd) }()
+	wg.Wait()
+
+	// Parse CPU: two blocks of "T active idle" / "Cn active idle" lines
+	cpuLines := strings.Split(strings.TrimSpace(string(cpuOut)), "\n")
+	half := len(cpuLines) / 2
+	if half > 0 {
+		for i := 0; i < half; i++ {
+			p1 := strings.Fields(cpuLines[i])
+			p2 := strings.Fields(cpuLines[i+half])
+			if len(p1) >= 3 && len(p2) >= 3 && p1[0] == p2[0] {
+				a1, _ := strconv.ParseFloat(p1[1], 64)
+				i1, _ := strconv.ParseFloat(p1[2], 64)
+				a2, _ := strconv.ParseFloat(p2[1], 64)
+				i2, _ := strconv.ParseFloat(p2[2], 64)
+				da := a2 - a1
+				di := i2 - i1
+				dt := da + di
+				if dt > 0 {
+					pct := da / dt * 100
+					if p1[0] == "T" {
+						metrics.CPU = pct
+					} else {
+						metrics.CPUDetail = append(metrics.CPUDetail, pct)
+					}
+				}
 			}
 		}
 	}
 
-	// Line 2: Disk — "used_bytes total_bytes"
-	if len(lines) >= 3 {
-		diskParts := strings.Fields(lines[2])
-		if len(diskParts) >= 2 {
-			if used, err := strconv.ParseInt(diskParts[0], 10, 64); err == nil {
-				metrics.DiskUsed = used
-			}
-			if total, err := strconv.ParseInt(diskParts[1], 10, 64); err == nil {
-				metrics.DiskTotal = total
-			}
-			if metrics.DiskTotal > 0 {
-				metrics.DiskPercent = float64(metrics.DiskUsed) / float64(metrics.DiskTotal) * 100
+	// Parse static: MU/MT/DU/DT/MP lines
+	for _, line := range strings.Split(strings.TrimSpace(string(staticOut)), "\n") {
+		parts := strings.Fields(strings.TrimSpace(line))
+		if len(parts) < 2 {
+			continue
+		}
+		switch parts[0] {
+		case "MU":
+			metrics.MemUsed, _ = strconv.ParseInt(parts[1], 10, 64)
+		case "MT":
+			metrics.MemTotal, _ = strconv.ParseInt(parts[1], 10, 64)
+		case "DU":
+			metrics.DiskUsed, _ = strconv.ParseInt(parts[1], 10, 64)
+		case "DT":
+			metrics.DiskTotal, _ = strconv.ParseInt(parts[1], 10, 64)
+		case "MP":
+			if len(parts) >= 4 {
+				proc := model.ProcMem{Name: parts[1]}
+				proc.Percent, _ = strconv.ParseFloat(parts[2], 64)
+				proc.RSS, _ = strconv.ParseInt(parts[3], 10, 64)
+				metrics.MemDetail = append(metrics.MemDetail, proc)
 			}
 		}
 	}
 
+	// Parse network: two blocks of "iface rx tx" lines
+	netLines := strings.Split(strings.TrimSpace(string(netOut)), "\n")
+	netHalf := len(netLines) / 2
+	if netHalf > 0 {
+		for i := 0; i < netHalf; i++ {
+			p1 := strings.Fields(netLines[i])
+			p2 := strings.Fields(netLines[i+netHalf])
+			if len(p1) >= 3 && len(p2) >= 3 && p1[0] == p2[0] {
+				rx1, _ := strconv.ParseInt(p1[1], 10, 64)
+				tx1, _ := strconv.ParseInt(p1[2], 10, 64)
+				rx2, _ := strconv.ParseInt(p2[1], 10, 64)
+				tx2, _ := strconv.ParseInt(p2[2], 10, 64)
+				rx := rx2 - rx1
+				tx := tx2 - tx1
+				if rx < 0 { rx = 0 }
+				if tx < 0 { tx = 0 }
+				metrics.NetDetail = append(metrics.NetDetail, model.NetIfStat{
+					Name: p1[0], Rx: rx, Tx: tx,
+				})
+				metrics.NetRx += rx
+				metrics.NetTx += tx
+			}
+		}
+	}
+
+
+	if metrics.MemTotal > 0 {
+		metrics.MemPercent = float64(metrics.MemUsed) / float64(metrics.MemTotal) * 100
+	}
+	if metrics.DiskTotal > 0 {
+		metrics.DiskPercent = float64(metrics.DiskUsed) / float64(metrics.DiskTotal) * 100
+	}
 	return metrics
-}
-
-// collectNetStats reads raw network byte counters from /proc/net/dev.
-func (h *ServerDetailHandler) collectNetStats(entry *connpool.Entry) (rx int64, tx int64) {
-	if entry.Exec == nil {
-		return 0, 0
-	}
-	cmd := `cat /proc/net/dev | awk 'NR>2 && $1!~/lo/{gsub(/:/, " "); split($0, f); rx+=f[2]; tx+=f[10]} END{print rx, tx}'`
-	out, _, _, err := entry.Exec.Exec(cmd)
-	if err != nil {
-		return 0, 0
-	}
-	parts := strings.Fields(strings.TrimSpace(string(out)))
-	if len(parts) >= 2 {
-		rx, _ = strconv.ParseInt(parts[0], 10, 64)
-		tx, _ = strconv.ParseInt(parts[1], 10, 64)
-	}
-	return rx, tx
 }
 
 // parseServerInfo parses the compound command output into a ServerInfo struct.

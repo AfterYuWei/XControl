@@ -23,6 +23,10 @@ export default defineConfig({
     host: '0.0.0.0',
     allowedHosts: ['.cnb.run'],
     proxy: {
+      '/api/server/ws': {
+        target: 'ws://localhost:9090',
+        ws: true,
+      },
       '/api': 'http://localhost:9090',
       '/ws': {
         target: 'ws://localhost:9090',

@@ -13,7 +13,8 @@ export const GLOBAL_PAGE_KEY = '__global__'
 export interface DetailState {
   scrollTop: number
   expandedPaths: string[]
-  /** Collapsed section flags for the bottom panels. */
+  /** Collapsed section flags. */
+  filesCollapsed: boolean
   metricsCollapsed: boolean
   infoCollapsed: boolean
 }
@@ -32,13 +33,14 @@ interface SidebarDetailStore {
   getDetail: (tabId: string) => DetailState
   saveDetail: (tabId: string, patch: Partial<DetailState>) => void
   togglePath: (tabId: string, path: string) => void
+  toggleFiles: (tabId: string) => void
   toggleMetrics: (tabId: string) => void
   toggleInfo: (tabId: string) => void
   clearTab: (tabId: string) => void
   setLastTerminalTab: (id: string | null) => void
 }
 
-const defaultDetail = (): DetailState => ({ scrollTop: 0, expandedPaths: [], metricsCollapsed: false, infoCollapsed: false })
+const defaultDetail = (): DetailState => ({ scrollTop: 0, expandedPaths: [], filesCollapsed: false, metricsCollapsed: false, infoCollapsed: false })
 
 export const useSidebarDetailStore = create<SidebarDetailStore>((set, get) => ({
   pageByTab: { [GLOBAL_PAGE_KEY]: 0 },
@@ -68,6 +70,14 @@ export const useSidebarDetailStore = create<SidebarDetailStore>((set, get) => ({
         : [...cur.expandedPaths, path]
       return {
         detailCache: { ...s.detailCache, [tabId]: { ...cur, expandedPaths } },
+      }
+    }),
+
+  toggleFiles: (tabId) =>
+    set((s) => {
+      const cur = s.detailCache[tabId] ?? defaultDetail()
+      return {
+        detailCache: { ...s.detailCache, [tabId]: { ...cur, filesCollapsed: !cur.filesCollapsed } },
       }
     }),
 

@@ -7,13 +7,17 @@ import type { ServerInfo, ServerMetrics } from '@/api/serverDetail'
  * Connects when the management session is connected, disconnects on unmount.
  */
 export function useServerMetrics(profileId: string) {
-  const { getStatus, updateMetrics, updateInfo, setWsConnected } = useServerDetailStore()
-  const detail = getStatus(profileId)
+  const sessionId = useServerDetailStore((s) => s.details[profileId]?.sessionId ?? null)
+  const status = useServerDetailStore((s) => s.details[profileId]?.status ?? 'idle')
+  const updateMetrics = useServerDetailStore((s) => s.updateMetrics)
+  const updateInfo = useServerDetailStore((s) => s.updateInfo)
+  const setWsConnected = useServerDetailStore((s) => s.setWsConnected)
+
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    if (!detail.sessionId || detail.status !== 'connected') {
+    if (!sessionId || status !== 'connected') {
       return
     }
 
@@ -23,14 +27,13 @@ export function useServerMetrics(profileId: string) {
       if (disposed) return
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const wsUrl = `${protocol}//${window.location.host}/api/server/ws?session_id=${detail.sessionId}`
+      const wsUrl = `${protocol}//${window.location.host}/api/server/ws?session_id=${sessionId}`
       const ws = new WebSocket(wsUrl)
       wsRef.current = ws
 
       ws.onopen = () => {
         if (disposed) return
         setWsConnected(profileId, true)
-        // Subscribe to metrics
         ws.send(JSON.stringify({ type: 'subscribe_metrics' }))
       }
 
@@ -59,20 +62,18 @@ export function useServerMetrics(profileId: string) {
         if (disposed) return
         setWsConnected(profileId, false)
         wsRef.current = null
-        // Reconnect after 3 seconds if still connected
-        if (!disposed && detail.status === 'connected') {
+        if (!disposed && status === 'connected') {
           reconnectTimer.current = setTimeout(connect, 3000)
         }
       }
 
       ws.onerror = () => {
-        // onclose will handle reconnection
+        // onclose handles reconnection
       }
     }
 
     connect()
 
-    // Heartbeat ping every 30 seconds
     const pingInterval = setInterval(() => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: 'ping' }))
@@ -90,5 +91,5 @@ export function useServerMetrics(profileId: string) {
         wsRef.current = null
       }
     }
-  }, [detail.sessionId, detail.status, profileId, updateMetrics, updateInfo, setWsConnected])
+  }, [sessionId, status, profileId, updateMetrics, updateInfo, setWsConnected])
 }

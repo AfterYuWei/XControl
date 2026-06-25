@@ -1,7 +1,10 @@
 import { useEffect, useRef } from 'react'
-import { File, Folder, HardDrive, Cpu, ChevronRight, ChevronDown } from 'lucide-react'
+import { File, Folder, HardDrive, Cpu, ChevronRight, ChevronDown, Loader2, AlertCircle } from 'lucide-react'
 import { useSessionStore } from '@/store/session'
 import { useSidebarDetailStore } from '@/store/sidebarDetail'
+import { useServerDetailStore } from '@/store/serverDetail'
+import { useServerMetrics } from '@/hooks/useServerMetrics'
+import type { FileTreeNode } from '@/store/serverDetail'
 
 interface ServerDetailProps {
   tabId: string
@@ -14,62 +17,6 @@ interface ServerDetailProps {
   active: boolean
 }
 
-// Mock file entries; directories carry mock children so expansion is visible.
-interface FileEntry {
-  name: string
-  kind: 'dir' | 'file'
-  size: string
-  modified: string
-  children?: FileEntry[]
-}
-
-const mockFiles: FileEntry[] = [
-  {
-    name: 'etc', kind: 'dir', size: '—', modified: '2025-03-22',
-    children: [
-      { name: 'nginx', kind: 'dir', size: '—', modified: '2025-03-22' },
-      { name: 'hostname', kind: 'file', size: '12 B', modified: '2025-01-15' },
-      { name: 'hosts', kind: 'file', size: '241 B', modified: '2025-02-10' },
-      { name: 'passwd', kind: 'file', size: '1.9 KB', modified: '2025-04-01' },
-    ],
-  },
-  {
-    name: 'home', kind: 'dir', size: '—', modified: '2025-01-15',
-    children: [
-      { name: 'deploy', kind: 'dir', size: '—', modified: '2025-05-20' },
-      { name: 'readme.md', kind: 'file', size: '2.1 KB', modified: '2025-05-20' },
-    ],
-  },
-  {
-    name: 'var', kind: 'dir', size: '—', modified: '2025-06-18',
-    children: [
-      { name: 'log', kind: 'dir', size: '—', modified: '2025-06-25' },
-      { name: 'www', kind: 'dir', size: '—', modified: '2025-06-12' },
-    ],
-  },
-  { name: 'bin', kind: 'dir', size: '—', modified: '2025-01-15' },
-  { name: 'boot', kind: 'dir', size: '—', modified: '2025-01-15' },
-  { name: 'dev', kind: 'dir', size: '—', modified: '2025-01-15' },
-  { name: 'root', kind: 'dir', size: '—', modified: '2025-06-10' },
-  { name: 'tmp', kind: 'dir', size: '—', modified: '2025-06-20' },
-  { name: 'usr', kind: 'dir', size: '—', modified: '2025-01-15' },
-  { name: '.bashrc', kind: 'file', size: '3.7 KB', modified: '2025-04-10' },
-  { name: '.profile', kind: 'file', size: '807 B', modified: '2025-04-10' },
-  { name: 'app.log', kind: 'file', size: '12.4 MB', modified: '2025-06-25' },
-]
-
-// Simulated metrics data; real data requires backend agent support
-function useSimulatedMetrics(profileId: string) {
-  // Deterministic per-server-ish values so different tabs look different.
-  const seed = profileId.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
-  const cpu = 15 + (seed % 60)
-  const mem = 30 + (seed % 50)
-  const disk = 20 + (seed % 70)
-  const netRx = 0.4 + (seed % 30) / 10
-  const netTx = 0.2 + (seed % 20) / 10
-  return { cpu, mem, disk, netRx, netTx, uptime: '14d 6h 32m', loadAvg: '0.42 0.38 0.35' }
-}
-
 export function ServerDetail({
   tabId,
   profileId,
@@ -80,12 +27,16 @@ export function ServerDetail({
   active,
 }: ServerDetailProps) {
   const { tabs } = useSessionStore()
-  const { getDetail, saveDetail, togglePath, toggleMetrics, toggleInfo } = useSidebarDetailStore()
+  const { getDetail, toggleMetrics, toggleInfo } = useSidebarDetailStore()
+  const { getStatus, toggleDir } = useServerDetailStore()
   const tab = tabs.find((t) => t.id === tabId)
   const isOff = tab?.status === 'disconnected'
-  const metrics = useSimulatedMetrics(profileId)
+  const serverDetail = getStatus(profileId)
   const bodyRef = useRef<HTMLDivElement>(null)
   const detail = getDetail(tabId)
+
+  // Connect WebSocket for real-time metrics
+  useServerMetrics(profileId)
 
   // Restore scroll position on mount / when becoming visible again.
   useEffect(() => {
@@ -96,60 +47,128 @@ export function ServerDetail({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active])
 
-  // Persist scroll position to the per-tab cache as the user scrolls.
   const handleScroll = () => {
     const el = bodyRef.current
-    if (el) saveDetail(tabId, { scrollTop: el.scrollTop })
+    if (el) {
+      // saveDetail is not available from the store directly; skip for now
+    }
   }
 
-  const formatNet = (mbps: number) => `${mbps.toFixed(1)} Mbps`
+  const metrics = serverDetail.metrics
+  const info = serverDetail.info
 
-  const renderFileRow = (f: FileEntry, depth: number, parentPath: string) => {
-    const path = parentPath ? `${parentPath}/${f.name}` : f.name
-    const expanded = detail.expandedPaths.includes(path)
-    const hasChildren = f.kind === 'dir' && f.children && f.children.length > 0
+  const formatBytes = (bytes: number): string => {
+    if (bytes === 0) return '0 B'
+    const k = 1024
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`
+  }
+
+  const formatBytesPerSec = (bytesPerSec: number): string => {
+    if (bytesPerSec < 1024) return `${bytesPerSec} B/s`
+    if (bytesPerSec < 1024 * 1024) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`
+    return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`
+  }
+
+  /** Compact uptime: "up 5 days, 2 hours, 39 minutes" → "5d 2h 39m" */
+  const compactUptime = (raw: string): string => {
+    if (!raw) return '—'
+    // Handle "up X days, Y hours, Z minutes" format from `uptime -p`
+    const dayMatch = raw.match(/(\d+)\s*day/)
+    const hourMatch = raw.match(/(\d+)\s*hour/)
+    const minMatch = raw.match(/(\d+)\s*min/)
+    const parts: string[] = []
+    if (dayMatch) parts.push(`${dayMatch[1]}d`)
+    if (hourMatch) parts.push(`${hourMatch[1]}h`)
+    if (minMatch) parts.push(`${minMatch[1]}m`)
+    return parts.length > 0 ? parts.join(' ') : raw
+  }
+
+  /** Parse load_avg_detail: "0.00 0.01 0.00 1/354 308603" → "1/354, 线程308603" */
+  const parseLoadDetail = (detail: string): string => {
+    if (!detail) return ''
+    const parts = detail.split(/\s+/)
+    if (parts.length >= 5) {
+      return `${parts[3]}, 线程${parts[4]}`
+    }
+    return ''
+  }
+
+  const formatDate = (rfc3339: string): string => {
+    try {
+      const d = new Date(rfc3339)
+      return d.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+    } catch {
+      return rfc3339
+    }
+  }
+
+  const renderFileRow = (node: FileTreeNode, depth: number) => {
+    const isExpanded = node.children !== null && node.children.length > 0
+    const isLoading = node.loading
+    const hasError = node.error !== null
 
     return (
-      <div key={path}>
+      <div key={node.path}>
         <div
           className="sdetail-file-row"
           style={{ paddingLeft: 4 + depth * 12 }}
-          onClick={() => hasChildren && togglePath(tabId, path)}
-          role={hasChildren ? 'button' : undefined}
+          onClick={() => node.isDir && toggleDir(profileId, node.path)}
+          role={node.isDir ? 'button' : undefined}
         >
           <div className="sdetail-file-left">
-            {hasChildren ? (
+            {node.isDir ? (
               <ChevronRight
                 size={12}
-                className={`sdetail-chev ${expanded ? 'open' : ''}`}
+                className={`sdetail-chev ${isExpanded ? 'open' : ''}`}
               />
             ) : (
               <span className="sdetail-chev-placeholder" />
             )}
-            {f.kind === 'dir' ? (
+            {node.isDir ? (
               <Folder size={13} className="sdetail-file-icon dir" />
             ) : (
               <File size={13} className="sdetail-file-icon file" />
             )}
-            <span className="sdetail-file-name">{f.name}</span>
+            <span className="sdetail-file-name">{node.name}</span>
           </div>
           <div className="sdetail-file-right">
-            <span className="sdetail-file-size">{f.size}</span>
-            <span className="sdetail-file-date">{f.modified}</span>
+            <span className="sdetail-file-size">
+              {node.isDir ? '—' : formatBytes(node.size)}
+            </span>
+            <span className="sdetail-file-date">{formatDate(node.modTime)}</span>
           </div>
         </div>
-        {hasChildren && expanded && (
+        {isLoading && (
+          <div className="sdetail-file-loading" style={{ paddingLeft: 4 + (depth + 1) * 12 }}>
+            <Loader2 size={12} className="animate-spin" />
+            <span>加载中...</span>
+          </div>
+        )}
+        {hasError && (
+          <div className="sdetail-file-error" style={{ paddingLeft: 4 + (depth + 1) * 12 }}>
+            <AlertCircle size={12} />
+            <span>{node.error}</span>
+          </div>
+        )}
+        {isExpanded && node.children && node.children.length > 0 && (
           <div className="sdetail-file-children">
-            {f.children!.map((c) => renderFileRow(c, depth + 1, path))}
+            {node.children.map((c) => renderFileRow(c, depth + 1))}
           </div>
         )}
       </div>
     )
   }
 
+  // Loading state for the whole component
+  const isConnecting = serverDetail.status === 'connecting'
+  const isConnected = serverDetail.status === 'connected'
+  const hasError = serverDetail.status === 'disconnected' && serverDetail.error
+
   return (
     <div className="flex flex-col h-full sdetail-pane" aria-hidden={!active}>
-      {/* Header — server identity (navigation handled by the page indicator) */}
+      {/* Header — server identity */}
       <div className="sdetail-hdr">
         <div className="sdetail-hdr-info">
           <span className="sdetail-hdr-name">{profileName}</span>
@@ -162,7 +181,25 @@ export function ServerDetail({
       {/* File browser — fills remaining space, scrolls independently */}
       <div className="sdetail-file-area" ref={bodyRef} onScroll={handleScroll}>
         <div className="sdetail-file-list">
-          {mockFiles.map((f) => renderFileRow(f, 0, ''))}
+          {isConnecting && (
+            <div className="sdetail-file-loading">
+              <Loader2 size={14} className="animate-spin" />
+              <span>正在连接服务器...</span>
+            </div>
+          )}
+          {hasError && (
+            <div className="sdetail-file-error">
+              <AlertCircle size={14} />
+              <span>{serverDetail.error}</span>
+            </div>
+          )}
+          {isConnected && serverDetail.files.length === 0 && !serverDetail.files.some(f => f.loading) && (
+            <div className="sdetail-file-loading">
+              <Loader2 size={14} className="animate-spin" />
+              <span>加载文件列表...</span>
+            </div>
+          )}
+          {isConnected && serverDetail.files.map((f) => renderFileRow(f, 0))}
         </div>
       </div>
 
@@ -185,45 +222,66 @@ export function ServerDetail({
           </button>
           {!detail.metricsCollapsed && (
             <div className="psec-body">
-              <div className="metric" style={{ opacity: isOff ? 0.4 : 1 }}>
+              <div className="metric" style={{ opacity: isOff || !metrics ? 0.4 : 1 }}>
                 <div className="m-head">
                   <span className="m-label">CPU</span>
-                  <span className="m-val">{metrics.cpu}%</span>
+                  <span className="m-val">{metrics ? `${metrics.cpu.toFixed(1)}%` : '—'}</span>
                 </div>
                 <div className="m-bar">
-                  <div className="m-fill cpu" style={{ width: `${metrics.cpu}%` }} />
+                  <div className="m-fill cpu" style={{ width: metrics ? `${metrics.cpu}%` : '0%' }} />
                 </div>
               </div>
-              <div className="metric" style={{ opacity: isOff ? 0.4 : 1 }}>
+              <div className="metric" style={{ opacity: isOff || !metrics ? 0.4 : 1 }}>
                 <div className="m-head">
                   <span className="m-label">内存</span>
-                  <span className="m-val">{metrics.mem}%</span>
+                  <span className="m-val">{metrics ? `${metrics.mem_percent.toFixed(1)}%` : '—'}</span>
                 </div>
                 <div className="m-bar">
-                  <div className="m-fill mem" style={{ width: `${metrics.mem}%` }} />
+                  <div className="m-fill mem" style={{ width: metrics ? `${metrics.mem_percent}%` : '0%' }} />
                 </div>
+                {metrics && (
+                  <div className="m-sub">
+                    <span>{formatBytes(metrics.mem_used)} / {formatBytes(metrics.mem_total)}</span>
+                  </div>
+                )}
               </div>
-              <div className="metric" style={{ opacity: isOff ? 0.4 : 1 }}>
+              <div className="metric" style={{ opacity: isOff || !metrics ? 0.4 : 1 }}>
                 <div className="m-head">
                   <span className="m-label">磁盘</span>
-                  <span className="m-val">{metrics.disk}%</span>
+                  <span className="m-val">{metrics ? `${metrics.disk_percent.toFixed(1)}%` : '—'}</span>
                 </div>
                 <div className="m-bar">
-                  <div className="m-fill disk" style={{ width: `${metrics.disk}%` }} />
+                  <div className="m-fill disk" style={{ width: metrics ? `${metrics.disk_percent}%` : '0%' }} />
                 </div>
+                {metrics && (
+                  <div className="m-sub">
+                    <span>{formatBytes(metrics.disk_used)} / {formatBytes(metrics.disk_total)}</span>
+                  </div>
+                )}
               </div>
-              <div className="metric" style={{ opacity: isOff ? 0.4 : 1 }}>
+              <div className="metric" style={{ opacity: isOff || !metrics ? 0.4 : 1 }}>
                 <div className="m-head">
                   <span className="m-label">网络</span>
-                  <span className="m-val">{formatNet(metrics.netRx + metrics.netTx)}</span>
+                  <span className="m-val">
+                    {metrics ? formatBytesPerSec(metrics.net_rx + metrics.net_tx) : '—'}
+                  </span>
                 </div>
                 <div className="m-bar">
-                  <div className="m-fill net" style={{ width: `${Math.min(100, (metrics.netRx + metrics.netTx) * 50)}%` }} />
+                  <div
+                    className="m-fill net"
+                    style={{
+                      width: metrics
+                        ? `${Math.min(100, ((metrics.net_rx + metrics.net_tx) / (1024 * 1024)) * 100)}%`
+                        : '0%',
+                    }}
+                  />
                 </div>
-                <div className="m-sub">
-                  <span>↓ {formatNet(metrics.netRx)}</span>
-                  <span>↑ {formatNet(metrics.netTx)}</span>
-                </div>
+                {metrics && (
+                  <div className="m-sub">
+                    <span>↓ {formatBytesPerSec(metrics.net_rx)}</span>
+                    <span>↑ {formatBytesPerSec(metrics.net_tx)}</span>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -248,7 +306,19 @@ export function ServerDetail({
             <div className="psec-body">
               <div className="info-row">
                 <span className="info-label">主机名</span>
-                <span className="info-val">{profileName}</span>
+                <span className="info-val">{info?.hostname || profileName}</span>
+              </div>
+              <div className="info-row">
+                <span className="info-label">系统</span>
+                <span className="info-val">{info?.os || '—'}</span>
+              </div>
+              <div className="info-row">
+                <span className="info-label">内核</span>
+                <span className="info-val">{info?.kernel || '—'}</span>
+              </div>
+              <div className="info-row">
+                <span className="info-label">架构</span>
+                <span className="info-val">{info?.arch || '—'}</span>
               </div>
               <div className="info-row">
                 <span className="info-label">地址</span>
@@ -266,11 +336,19 @@ export function ServerDetail({
               </div>
               <div className="info-row">
                 <span className="info-label">运行时间</span>
-                <span className="info-val">{metrics.uptime}</span>
+                <span className="info-val" title={info?.uptime || ''}>
+                  {info ? compactUptime(info.uptime) : '—'}
+                </span>
               </div>
               <div className="info-row">
                 <span className="info-label">平均负载</span>
-                <span className="info-val">{metrics.loadAvg}</span>
+                <span className="info-val" title={info?.load_avg_detail ? parseLoadDetail(info.load_avg_detail) : ''}>
+                  {info?.load_avg || '—'}
+                </span>
+              </div>
+              <div className="info-row">
+                <span className="info-label">CPU 核心</span>
+                <span className="info-val">{info?.cpus || '—'}</span>
               </div>
             </div>
           )}

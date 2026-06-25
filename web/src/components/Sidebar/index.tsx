@@ -51,7 +51,7 @@ export function Sidebar() {
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null)
 
   // Per-tab page selector + per-tab detail cache (shared across the app).
-  const { getPage, setPage, lastTerminalTabId, setLastTerminalTab, clearTab, pageByTab } =
+  const { getPage, setPage, lastTerminalTabId, setLastTerminalTab, clearTab } =
     useSidebarDetailStore()
 
   // Effective terminal tab for the sidebar: the active terminal tab, or — when

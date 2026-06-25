@@ -103,14 +103,14 @@ func (d *Driver) SSHClient() *gossh.Client {
 }
 
 // ExecProvider is an optional interface for drivers that can execute remote
-// commands on the connected host. Used for direct server-to-server transfer.
-type ExecProvider interface {
-	Exec(ctx context.Context, cmd string) (stdout []byte, stderr []byte, exitCode int, err error)
-}
+// commands on the connected host. Used for direct server-to-server transfer
+// and server detail. Now unified with protocol.CommandExecutor.
+type ExecProvider = protocol.CommandExecutor
 
 // Exec runs a command on the remote host. Used for direct server-to-server
-// transfer (e.g. scp/rsync between two remote hosts).
-func (d *Driver) Exec(ctx context.Context, cmd string) (stdout []byte, stderr []byte, exitCode int, err error) {
+// transfer (e.g. scp/rsync between two remote hosts) and server detail.
+// Implements protocol.CommandExecutor.
+func (d *Driver) Exec(cmd string) (stdout []byte, stderr []byte, exitCode int, err error) {
 	if d.client == nil {
 		return nil, nil, -1, fmt.Errorf("not connected")
 	}

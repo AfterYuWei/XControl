@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { sessionApi } from '@/api/session'
+import { useServerDetailStore } from '@/store/serverDetail'
 
 export type TabKind = 'terminal' | 'sftp'
 
@@ -100,6 +101,15 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           : tab
       ),
     }))
+
+    // When a terminal session connects, trigger the server detail management connection
+    if (status === 'connected') {
+      const tab = get().tabs.find((t) => t.id === tabId)
+      if (tab?.profileId && tab.kind === 'terminal') {
+        const serverDetailStore = useServerDetailStore.getState()
+        serverDetailStore.connect(tab.profileId)
+      }
+    }
   },
 
   fetchSessions: async () => {

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/yuweinfo/sshx/connpool"
 	"github.com/yuweinfo/sshx/crypto"
 	"github.com/yuweinfo/sshx/gateway/handler"
 	"github.com/yuweinfo/sshx/gateway/middleware"
@@ -39,6 +40,9 @@ func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS) http.Handle
 	hub := ws.NewHub()
 	sftpHub := ws.NewSftpHub()
 
+	// Initialize connection pool (shared SSH/SFTP connections per server)
+	pool := connpool.Init(pm)
+
 	// Initialize handlers
 	profileH := handler.NewProfileHandler(profileStore, vaultStore, encryptor)
 	groupH := handler.NewGroupHandler(groupStore, profileStore)
@@ -46,7 +50,8 @@ func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS) http.Handle
 	sessionH := handler.NewSessionHandler(profileStore, vaultStore, auditStore, pm)
 	wsH := handler.NewWSHandler(hub, sessionH)
 	transferMgr := handler.NewTransferManager(sftpHub)
-	sftpH := handler.NewSftpHandler(profileStore, vaultStore, auditStore, pm, sftpHub, transferMgr)
+	sftpH := handler.NewSftpHandler(profileStore, vaultStore, auditStore, pm, sftpHub, transferMgr, pool)
+	serverDetailH := handler.NewServerDetailHandler(profileStore, vaultStore, pool)
 
 	// Profile routes
 	mux.HandleFunc("GET /api/profiles", profileH.List)
@@ -105,6 +110,13 @@ func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS) http.Handle
 
 	// SFTP WebSocket (independent path for transfer progress)
 	mux.HandleFunc("GET /api/sftp/ws", sftpH.HandleWS)
+
+	// Server detail (management connection for file browsing + metrics)
+	mux.HandleFunc("POST /api/server/sessions", serverDetailH.CreateSession)
+	mux.HandleFunc("DELETE /api/server/sessions/{id}", serverDetailH.CloseSession)
+	mux.HandleFunc("GET /api/server/sessions/{id}/info", serverDetailH.GetInfo)
+	mux.HandleFunc("GET /api/server/sessions/{id}/files", serverDetailH.ListFiles)
+	mux.HandleFunc("GET /api/server/ws", serverDetailH.HandleWS)
 
 	// 静态前端资源：仅当传入 embed 的文件系统时注册（桌面打包模式）。
 	// 开发模式下 webFS 为 nil，前端由 Vite dev server 提供。

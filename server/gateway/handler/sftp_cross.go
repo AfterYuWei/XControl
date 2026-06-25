@@ -19,7 +19,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/yuweinfo/sshx/fileutil"
 	"github.com/yuweinfo/sshx/model"
-	sftpdriver "github.com/yuweinfo/sshx/protocol/sftp"
+	"github.com/yuweinfo/sshx/protocol"
 )
 
 // CrossSessionTransfer performs a file transfer between two SFTP sessions.
@@ -208,8 +208,15 @@ func (h *SftpHandler) tryDirectTransfer(
 		return directSkip
 	}
 
+	// Acquire SSH ref on the source pool entry to prevent the connection from
+	// being closed while the transfer is in progress.
+	if src.Entry != nil {
+		src.Entry.AcquireSSHRef()
+		defer src.Entry.ReleaseSSH()
+	}
+
 	// Detect scp availability on source host (works on Linux/macOS/Windows+OpenSSH)
-	out, _, _, err := execDriver.Exec(ctx, "command -v scp")
+	out, _, _, err := execDriver.Exec("command -v scp")
 	if err != nil || len(strings.TrimSpace(string(out))) == 0 {
 		slog.Info("direct transfer skipped: scp not found on source host")
 		return directSkip
@@ -217,7 +224,7 @@ func (h *SftpHandler) tryDirectTransfer(
 
 	// Detect sshpass for password-based auth
 	hasSshpass := false
-	out2, _, _, _ := execDriver.Exec(ctx, "command -v sshpass")
+	out2, _, _, _ := execDriver.Exec("command -v sshpass")
 	if len(strings.TrimSpace(string(out2))) > 0 {
 		hasSshpass = true
 	}
@@ -240,7 +247,7 @@ func (h *SftpHandler) tryDirectTransfer(
 	// Ensure dest dir exists on target via ssh mkdir
 	mkdirCmd := fmt.Sprintf("%sssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 %s 'mkdir -p %q'",
 		sshPrefix, remoteTarget, destDir)
-	if _, stderr, exitCode, err := execDriver.Exec(ctx, mkdirCmd); err != nil || exitCode != 0 {
+	if _, stderr, exitCode, err := execDriver.Exec(mkdirCmd); err != nil || exitCode != 0 {
 		slog.Warn("direct mkdir failed", "stderr", string(stderr), "error", err)
 		return directFail
 	}
@@ -308,7 +315,7 @@ func (h *SftpHandler) tryDirectTransfer(
 // Directories use `scp -r`. Conflict resolution is applied per-path. On
 // success the path's size is added to the shared atomic counter.
 func (h *SftpHandler) directTransferOne(
-	ctx context.Context, execDriver sftpdriver.ExecProvider,
+	ctx context.Context, execDriver protocol.CommandExecutor,
 	src *SftpSession, sshPrefix, remoteTarget, p, destDir string,
 	resolution model.ConflictResolution,
 	totalTransferred *atomic.Int64,
@@ -333,11 +340,11 @@ func (h *SftpHandler) directTransferOne(
 		}
 		rmCmd := fmt.Sprintf("%sssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 %s 'rm %s %q'",
 			sshPrefix, remoteTarget, rmFlag, destPath)
-		execDriver.Exec(ctx, rmCmd) // ignore errors
+		execDriver.Exec(rmCmd) // ignore errors
 	case model.ConflictSkip:
 		testCmd := fmt.Sprintf("%sssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 %s 'test -e %q'",
 			sshPrefix, remoteTarget, destPath)
-		if _, _, exitCode, _ := execDriver.Exec(ctx, testCmd); exitCode == 0 {
+		if _, _, exitCode, _ := execDriver.Exec(testCmd); exitCode == 0 {
 			// Exists → skip; count size as "transferred".
 			totalTransferred.Add(pathSize(ctx, src.Backend, p, srcInfo))
 			return nil
@@ -349,7 +356,7 @@ func (h *SftpHandler) directTransferOne(
 			candPath := destDir + "/" + candidate
 			testCmd := fmt.Sprintf("%sssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 %s 'test -e %q'",
 				sshPrefix, remoteTarget, candPath)
-			if _, _, exitCode, _ := execDriver.Exec(ctx, testCmd); exitCode != 0 {
+			if _, _, exitCode, _ := execDriver.Exec(testCmd); exitCode != 0 {
 				destPath = candPath
 				break
 			}
@@ -362,7 +369,7 @@ func (h *SftpHandler) directTransferOne(
 	cmd := fmt.Sprintf("%sscp %s-o StrictHostKeyChecking=no -o ConnectTimeout=10 %q %s:%q",
 		sshPrefix, scpFlag, p, remoteTarget, destPath)
 
-	_, stderr, exitCode, err := execDriver.Exec(ctx, cmd)
+	_, stderr, exitCode, err := execDriver.Exec(cmd)
 	if err != nil || exitCode != 0 {
 		return fmt.Errorf("scp exit %d: %s", exitCode, string(stderr))
 	}
@@ -724,16 +731,18 @@ func pathSize(ctx context.Context, be fileutil.FileBackend, p string, info fileu
 	return total
 }
 
-// getExecProvider extracts the ExecProvider interface from a session's driver.
-func getExecProvider(session *SftpSession) (sftpdriver.ExecProvider, bool) {
-	if session.Driver == nil {
-		return nil, false
+// getExecProvider extracts the CommandExecutor from a session's pooled entry.
+func getExecProvider(session *SftpSession) (protocol.CommandExecutor, bool) {
+	if session.Entry != nil && session.Entry.Exec != nil {
+		return session.Entry.Exec, true
 	}
-	exec, ok := session.Driver.(sftpdriver.ExecProvider)
-	if !ok {
-		return nil, false
+	// Fallback: legacy driver-based assertion (for sessions created before pool)
+	if session.Driver != nil {
+		if exec, ok := session.Driver.(protocol.CommandExecutor); ok {
+			return exec, true
+		}
 	}
-	return exec, true
+	return nil, false
 }
 
 // transferName generates a display name for the transfer task.

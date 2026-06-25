@@ -55,7 +55,7 @@ jobs:
 
           # 版本号 & tag：
           # - 正式版(tag): version=tag去v(如1.0.0), tag=原tag名
-          # - carry(main): version=short commit(如73a8ffc), tag=short commit
+          # - carry(main): version=0.0.0-dev.YYYYMMDD.sha(semver预发布格式), tag=short commit
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             TAG="${GITHUB_REF_NAME}"
             VERSION="${TAG#v}"
@@ -63,7 +63,8 @@ jobs:
             echo "tag=$TAG" >> $GITHUB_OUTPUT
             echo "release_name=SSHX $VERSION" >> $GITHUB_OUTPUT
           else
-            VERSION="$SHORT_SHA"
+            DATE=$(date -u +%Y%m%d)
+            VERSION="0.0.0-dev.${DATE}.${SHORT_SHA}"
             echo "version=$VERSION" >> $GITHUB_OUTPUT
             echo "tag=$SHORT_SHA" >> $GITHUB_OUTPUT
             echo "release_name=SSHX Carry $SHORT_SHA" >> $GITHUB_OUTPUT
@@ -154,9 +155,12 @@ jobs:
 
       - name: Set version in package.json
         working-directory: electron
+        env:
+          APP_VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          # 用 npm 设置版本号，让产物文件名带正确版本
-          npm version ${{ needs.prepare.outputs.version }} --no-git-tag-version --allow-same-version
+          # 直接用 node 改写 package.json 的 version 字段。
+          # 不用 npm version：它要求 semver 格式，carry 版的 short commit(如 393687e) 非法。
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version=process.env.APP_VERSION;fs.writeFileSync('package.json',JSON.stringify(p,null,2));console.log('version set to:',process.env.APP_VERSION);"
 
       # macOS：CI 按 job 的 goarch 动态设置 mac.target 架构，确保后端二进制与 dmg 架构一致
       - name: Pin mac target arch to current job

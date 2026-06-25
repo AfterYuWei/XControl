@@ -2,7 +2,9 @@ package gateway
 
 import (
 	"database/sql"
+	"io/fs"
 	"net/http"
+	"strings"
 
 	"github.com/yuweinfo/sshx/crypto"
 	"github.com/yuweinfo/sshx/gateway/handler"
@@ -14,7 +16,7 @@ import (
 	"github.com/yuweinfo/sshx/ws"
 )
 
-func NewRouter(db *sql.DB, encryptor *crypto.Encryptor) http.Handler {
+func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS) http.Handler {
 	mux := http.NewServeMux()
 
 	// Initialize stores
@@ -98,6 +100,26 @@ func NewRouter(db *sql.DB, encryptor *crypto.Encryptor) http.Handler {
 
 	// SFTP WebSocket (independent path for transfer progress)
 	mux.HandleFunc("GET /api/sftp/ws", sftpH.HandleWS)
+
+	// 静态前端资源：仅当传入 embed 的文件系统时注册（桌面打包模式）。
+	// 开发模式下 webFS 为 nil，前端由 Vite dev server 提供。
+	if webFS != nil {
+		fileServer := http.FileServer(http.FS(webFS))
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			rel := strings.TrimPrefix(r.URL.Path, "/")
+			if rel == "" {
+				rel = "index.html"
+			}
+			// 找不到对应静态文件时回退到 index.html，支持前端 SPA 路由
+			if _, err := fs.Stat(webFS, rel); err != nil {
+				r2 := r.Clone(r.Context())
+				r2.URL.Path = "/"
+				fileServer.ServeHTTP(w, r2)
+				return
+			}
+			fileServer.ServeHTTP(w, r)
+		})
+	}
 
 	// Apply middleware
 	var h http.Handler = mux

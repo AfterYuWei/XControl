@@ -30,16 +30,33 @@ type ServerInfo struct {
 // --- System metrics (pushed via WebSocket every N seconds) ---
 
 type ServerMetrics struct {
-	CPU        float64 `json:"cpu"`         // 0-100
-	MemUsed    int64   `json:"mem_used"`    // bytes
-	MemTotal   int64   `json:"mem_total"`   // bytes
-	MemPercent float64 `json:"mem_percent"` // 0-100
-	DiskUsed   int64   `json:"disk_used"`   // bytes
-	DiskTotal  int64   `json:"disk_total"`  // bytes
-	DiskPercent float64 `json:"disk_percent"` // 0-100
-	NetRx      int64   `json:"net_rx"`      // bytes/sec
-	NetTx      int64   `json:"net_tx"`      // bytes/sec
-	Timestamp  int64   `json:"timestamp"`   // Unix ms
+	CPU         float64       `json:"cpu"`          // 0-100
+	CPUDetail   []float64     `json:"cpu_detail"`   // per-core usage, 0-100
+	MemUsed     int64         `json:"mem_used"`     // bytes
+	MemTotal    int64         `json:"mem_total"`    // bytes
+	MemPercent  float64       `json:"mem_percent"`  // 0-100
+	MemDetail   []ProcMem     `json:"mem_detail"`   // top processes by memory
+	DiskUsed    int64         `json:"disk_used"`    // bytes
+	DiskTotal   int64         `json:"disk_total"`   // bytes
+	DiskPercent float64       `json:"disk_percent"` // 0-100
+	NetRx       int64         `json:"net_rx"`       // total bytes/sec
+	NetTx       int64         `json:"net_tx"`       // total bytes/sec
+	NetDetail   []NetIfStat   `json:"net_detail"`   // per-interface breakdown
+	Timestamp   int64         `json:"timestamp"`    // Unix ms
+}
+
+// NetIfStat holds per-interface network speed (bytes/sec).
+type NetIfStat struct {
+	Name string `json:"name"` // e.g. "eth0"
+	Rx   int64  `json:"rx"`   // bytes/sec received
+	Tx   int64  `json:"tx"`   // bytes/sec sent
+}
+
+// ProcMem holds memory usage for a single process.
+type ProcMem struct {
+	Name    string  `json:"name"`    // command name
+	Percent float64 `json:"percent"` // %MEM
+	RSS     int64   `json:"rss"`     // resident memory in bytes
 }
 
 // --- WebSocket message types for server detail ---

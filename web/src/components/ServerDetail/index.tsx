@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react'
+import React, { useEffect, useRef } from 'react'
 import { File, Folder, HardDrive, Cpu, ChevronRight, ChevronDown, Loader2, AlertCircle } from 'lucide-react'
 import { useSessionStore } from '@/store/session'
 import { useSidebarDetailStore } from '@/store/sidebarDetail'
 import { useServerDetailStore } from '@/store/serverDetail'
+import { Tooltip } from '@/components/ui/tooltip'
 import { useServerMetrics } from '@/hooks/useServerMetrics'
 import type { FileTreeNode } from '@/store/serverDetail'
 
@@ -27,7 +28,7 @@ export function ServerDetail({
   active,
 }: ServerDetailProps) {
   const { tabs } = useSessionStore()
-  const { getDetail, toggleMetrics, toggleInfo } = useSidebarDetailStore()
+  const { getDetail, toggleFiles, toggleMetrics, toggleInfo } = useSidebarDetailStore()
   const { getStatus, toggleDir } = useServerDetailStore()
   const tab = tabs.find((t) => t.id === tabId)
   const isOff = tab?.status === 'disconnected'
@@ -95,15 +96,6 @@ export function ServerDetail({
     return ''
   }
 
-  const formatDate = (rfc3339: string): string => {
-    try {
-      const d = new Date(rfc3339)
-      return d.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
-    } catch {
-      return rfc3339
-    }
-  }
-
   const renderFileRow = (node: FileTreeNode, depth: number) => {
     const isExpanded = node.children !== null && node.children.length > 0
     const isLoading = node.loading
@@ -135,9 +127,8 @@ export function ServerDetail({
           </div>
           <div className="sdetail-file-right">
             <span className="sdetail-file-size">
-              {node.isDir ? '—' : formatBytes(node.size)}
+              {node.isDir ? '' : formatBytes(node.size)}
             </span>
-            <span className="sdetail-file-date">{formatDate(node.modTime)}</span>
           </div>
         </div>
         {isLoading && (
@@ -178,30 +169,48 @@ export function ServerDetail({
         </div>
       </div>
 
-      {/* File browser — fills remaining space, scrolls independently */}
-      <div className="sdetail-file-area" ref={bodyRef} onScroll={handleScroll}>
-        <div className="sdetail-file-list">
-          {isConnecting && (
-            <div className="sdetail-file-loading">
-              <Loader2 size={14} className="animate-spin" />
-              <span>正在连接服务器...</span>
-            </div>
-          )}
-          {hasError && (
-            <div className="sdetail-file-error">
-              <AlertCircle size={14} />
-              <span>{serverDetail.error}</span>
-            </div>
-          )}
-          {isConnected && serverDetail.files.length === 0 && !serverDetail.files.some(f => f.loading) && (
-            <div className="sdetail-file-loading">
-              <Loader2 size={14} className="animate-spin" />
-              <span>加载文件列表...</span>
-            </div>
-          )}
-          {isConnected && serverDetail.files.map((f) => renderFileRow(f, 0))}
+      {/* File browser header — outside the scroll area */}
+      <button
+        className="psec-title sdetail-collapse-hdr"
+        style={{ padding: '8px 12px 6px', flexShrink: 0 }}
+        onClick={() => toggleFiles(tabId)}
+        aria-label={detail.filesCollapsed ? '展开文件管理' : '折叠文件管理'}
+        aria-expanded={!detail.filesCollapsed}
+      >
+        <Folder size={11} className="psec-title-icon" />
+        <span className="psec-title-text">文件管理</span>
+        <ChevronDown
+          size={12}
+          className={`sdetail-collapse-chev ${detail.filesCollapsed ? 'collapsed' : ''}`}
+        />
+      </button>
+
+      {/* File browser list — fills remaining space, scrolls independently */}
+      {!detail.filesCollapsed && (
+        <div className="sdetail-file-area" ref={bodyRef} onScroll={handleScroll}>
+          <div className="sdetail-file-list">
+            {isConnecting && (
+              <div className="sdetail-file-loading">
+                <Loader2 size={14} className="animate-spin" />
+                <span>正在连接服务器...</span>
+              </div>
+            )}
+            {hasError && (
+              <div className="sdetail-file-error">
+                <AlertCircle size={14} />
+                <span>{serverDetail.error}</span>
+              </div>
+            )}
+            {isConnected && serverDetail.files.length === 0 && !serverDetail.files.some(f => f.loading) && (
+              <div className="sdetail-file-loading">
+                <Loader2 size={14} className="animate-spin" />
+                <span>加载文件列表...</span>
+              </div>
+            )}
+            {isConnected && serverDetail.files.map((f) => renderFileRow(f, 0))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Bottom panels — pinned at the bottom, collapsible */}
       <div className="sdetail-bottom">
@@ -222,29 +231,58 @@ export function ServerDetail({
           </button>
           {!detail.metricsCollapsed && (
             <div className="psec-body">
-              <div className="metric" style={{ opacity: isOff || !metrics ? 0.4 : 1 }}>
-                <div className="m-head">
-                  <span className="m-label">CPU</span>
-                  <span className="m-val">{metrics ? `${metrics.cpu.toFixed(1)}%` : '—'}</span>
-                </div>
-                <div className="m-bar">
-                  <div className="m-fill cpu" style={{ width: metrics ? `${metrics.cpu}%` : '0%' }} />
-                </div>
-              </div>
-              <div className="metric" style={{ opacity: isOff || !metrics ? 0.4 : 1 }}>
-                <div className="m-head">
-                  <span className="m-label">内存</span>
-                  <span className="m-val">{metrics ? `${metrics.mem_percent.toFixed(1)}%` : '—'}</span>
-                </div>
-                <div className="m-bar">
-                  <div className="m-fill mem" style={{ width: metrics ? `${metrics.mem_percent}%` : '0%' }} />
-                </div>
-                {metrics && (
-                  <div className="m-sub">
-                    <span>{formatBytes(metrics.mem_used)} / {formatBytes(metrics.mem_total)}</span>
+              <Tooltip
+                side="top"
+                content={metrics?.cpu_detail?.length ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'auto auto', gap: '2px 12px' }}>
+                    {metrics.cpu_detail.map((v, i) => (
+                      <React.Fragment key={i}>
+                        <span className="opacity-70">Core {i}</span>
+                        <span className="font-mono text-right">{v.toFixed(1)}%</span>
+                      </React.Fragment>
+                    ))}
                   </div>
-                )}
-              </div>
+                ) : null}
+              >
+                <div className="metric" style={{ opacity: isOff || !metrics ? 0.4 : 1 }}>
+                  <div className="m-head">
+                    <span className="m-label">CPU</span>
+                    <span className="m-val">{metrics ? `${metrics.cpu.toFixed(1)}%` : '—'}</span>
+                  </div>
+                  <div className="m-bar">
+                    <div className="m-fill cpu" style={{ width: metrics ? `${metrics.cpu}%` : '0%' }} />
+                  </div>
+                </div>
+              </Tooltip>
+              <Tooltip
+                side="top"
+                content={metrics?.mem_detail?.length ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: '100px auto auto', gap: '2px 10px' }}>
+                    {metrics.mem_detail.map((p, i) => (
+                      <React.Fragment key={i}>
+                        <span className="opacity-70 truncate">{p.name}</span>
+                        <span className="font-mono text-right">{p.percent.toFixed(1)}%</span>
+                        <span className="font-mono text-right opacity-70">{formatBytes(p.rss)}</span>
+                      </React.Fragment>
+                    ))}
+                  </div>
+                ) : null}
+              >
+                <div className="metric" style={{ opacity: isOff || !metrics ? 0.4 : 1 }}>
+                  <div className="m-head">
+                    <span className="m-label">内存</span>
+                    <span className="m-val">{metrics ? `${metrics.mem_percent.toFixed(1)}%` : '—'}</span>
+                  </div>
+                  <div className="m-bar">
+                    <div className="m-fill mem" style={{ width: metrics ? `${metrics.mem_percent}%` : '0%' }} />
+                  </div>
+                  {metrics && (
+                    <div className="m-sub">
+                      <span>{formatBytes(metrics.mem_used)} / {formatBytes(metrics.mem_total)}</span>
+                    </div>
+                  )}
+                </div>
+              </Tooltip>
               <div className="metric" style={{ opacity: isOff || !metrics ? 0.4 : 1 }}>
                 <div className="m-head">
                   <span className="m-label">磁盘</span>
@@ -259,30 +297,29 @@ export function ServerDetail({
                   </div>
                 )}
               </div>
-              <div className="metric" style={{ opacity: isOff || !metrics ? 0.4 : 1 }}>
-                <div className="m-head">
-                  <span className="m-label">网络</span>
-                  <span className="m-val">
-                    {metrics ? formatBytesPerSec(metrics.net_rx + metrics.net_tx) : '—'}
-                  </span>
-                </div>
-                <div className="m-bar">
-                  <div
-                    className="m-fill net"
-                    style={{
-                      width: metrics
-                        ? `${Math.min(100, ((metrics.net_rx + metrics.net_tx) / (1024 * 1024)) * 100)}%`
-                        : '0%',
-                    }}
-                  />
-                </div>
-                {metrics && (
-                  <div className="m-sub">
-                    <span>↓ {formatBytesPerSec(metrics.net_rx)}</span>
-                    <span>↑ {formatBytesPerSec(metrics.net_tx)}</span>
+              <Tooltip
+                side="top"
+                content={metrics?.net_detail?.length ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: '80px auto auto', gap: '1px 8px', fontSize: '10px' }}>
+                    {metrics.net_detail.map((n, i) => (
+                      <React.Fragment key={i}>
+                        <span className="opacity-70 truncate">{n.name}</span>
+                        <span className="font-mono text-right">↓{formatBytesPerSec(n.rx)}</span>
+                        <span className="font-mono text-right">↑{formatBytesPerSec(n.tx)}</span>
+                      </React.Fragment>
+                    ))}
                   </div>
-                )}
-              </div>
+                ) : null}
+              >
+                <div className="metric" style={{ opacity: isOff || !metrics ? 0.4 : 1 }}>
+                  <div className="m-head">
+                    <span className="m-label">网络</span>
+                    <span className="m-val" style={{ whiteSpace: 'nowrap' }}>
+                      {metrics ? `↓${formatBytesPerSec(metrics.net_rx)} ↑${formatBytesPerSec(metrics.net_tx)}` : '—'}
+                    </span>
+                  </div>
+                </div>
+              </Tooltip>
             </div>
           )}
         </div>

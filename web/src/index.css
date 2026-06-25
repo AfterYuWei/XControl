@@ -74,6 +74,32 @@
   --term-bg: #0A0A0A;
   --term-border: #1C1C1C;
   --term-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+
+  /* Hairline shadow system — replaces `border` + `box-shadow` on floating
+     surfaces (Card / Modal / Popover / Menu / Tooltip / Drawer). Three
+     layers stacked inner→outer: inset top highlight → 0 0 0 1px hairline
+     edge ring → small contact shadow → large ambient shadow.
+     Spec: docs/Skill：Hairline Shadow 高级质感卡片阴影实现.md */
+  --shadow-surface:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 0 0 1px rgba(0, 0, 0, 0.06),
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 2px 6px rgba(0, 0, 0, 0.05);
+  --shadow-surface-hover:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 0 0 1px rgba(0, 0, 0, 0.08),
+    0 2px 4px rgba(0, 0, 0, 0.06),
+    0 8px 20px rgba(0, 0, 0, 0.08);
+  --shadow-floating:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 0 0 1px rgba(0, 0, 0, 0.08),
+    0 2px 4px rgba(0, 0, 0, 0.06),
+    0 8px 24px rgba(0, 0, 0, 0.08);
+  --shadow-modal:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 0 0 1px rgba(0, 0, 0, 0.08),
+    0 4px 12px rgba(0, 0, 0, 0.08),
+    0 24px 64px rgba(0, 0, 0, 0.16);
 }
 
 /* ═══════════════════ DARK THEME ═══════════════════ */
@@ -107,6 +133,29 @@
   --term-bg: #0A0A0A;
   --term-border: #1C1C1C;
   --term-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+
+  /* Hairline shadow system (dark) — edge ring uses a white tint so the
+     hairline stays visible against dark panels instead of disappearing. */
+  --shadow-surface:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 1px 2px rgba(0, 0, 0, 0.4),
+    0 2px 6px rgba(0, 0, 0, 0.5);
+  --shadow-surface-hover:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 2px 4px rgba(0, 0, 0, 0.4),
+    0 8px 20px rgba(0, 0, 0, 0.55);
+  --shadow-floating:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 2px 4px rgba(0, 0, 0, 0.4),
+    0 8px 24px rgba(0, 0, 0, 0.55);
+  --shadow-modal:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 4px 12px rgba(0, 0, 0, 0.5),
+    0 24px 64px rgba(0, 0, 0, 0.6);
 }
 
 @layer base {
@@ -167,6 +216,16 @@
     transition: background-color 0.2s ease, border-color 0.2s ease,
       color 0.2s ease;
   }
+}
+
+/* ═══════════════════ HAIRLINE SHADOW UTILITIES ═══════════════════ */
+/* Floating surface components use these instead of `border` + `shadow-*`.
+   Tokens are defined per-theme in :root/.light and .dark above. */
+@layer utilities {
+  .shadow-surface { box-shadow: var(--shadow-surface); }
+  .shadow-surface-hover { box-shadow: var(--shadow-surface-hover); }
+  .shadow-floating { box-shadow: var(--shadow-floating); }
+  .shadow-modal { box-shadow: var(--shadow-modal); }
 }
 
 /* ═══════════════════ APP SHELL ═══════════════════ */
@@ -687,9 +746,8 @@
 /* Context menu (servers & groups) — themed via CSS variables */
 .ctx-menu {
   background: var(--bg-elevated);
-  border: 1px solid var(--border);
   border-radius: var(--r-sm);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-floating);
   padding: 4px;
   min-width: 160px;
 }
@@ -945,8 +1003,8 @@
   transform: translateX(-50%);
   padding: 4px 8px;
   background: var(--bg-elevated);
-  border: 1px solid var(--border);
   border-radius: var(--r-xs);
+  box-shadow: var(--shadow-floating);
   font: 400 11px / 1 var(--sans);
   color: var(--fg-2);
   white-space: nowrap;
@@ -996,8 +1054,8 @@
   padding: 32px 20px;
   text-align: center;
   background: var(--bg-panel);
-  border: 1px solid var(--border-subtle);
   border-radius: var(--r-lg);
+  box-shadow: var(--shadow-surface);
   margin: 24px;
 }
 .term-empty-icon {
@@ -1327,10 +1385,9 @@
   width: 500px;
   max-height: 400px;
   background: var(--bg-panel);
-  border: 1px solid var(--border);
   border-radius: var(--r-lg);
   overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-modal);
   display: flex;
   flex-direction: column;
 }
@@ -1433,8 +1490,8 @@
   left: 50%;
   transform: translateX(-50%) translateY(12px);
   background: var(--bg-elevated);
-  border: 1px solid var(--border);
   border-radius: var(--r);
+  box-shadow: var(--shadow-floating);
   padding: 8px 16px;
   font: 500 11.5px / 1 var(--mono);
   color: var(--fg-2);
@@ -2041,9 +2098,8 @@ input:focus:not(:focus-visible) {
 /* ===== CONTEXT MENU ===== */
 .sftp-ctx-menu {
   background: var(--bg-elevated);
-  border: 1px solid var(--border);
   border-radius: var(--r-sm);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-floating);
   padding: 4px;
   min-width: 168px;
 }
@@ -2312,9 +2368,8 @@ input:focus:not(:focus-visible) {
   width: 440px;
   max-width: 92vw;
   background: var(--bg-panel);
-  border: 1px solid var(--border);
   border-radius: var(--r-lg);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-modal);
   overflow: hidden;
 }
 .sftp-picker-hdr {
@@ -2361,16 +2416,17 @@ input:focus:not(:focus-visible) {
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid transparent;
   border-radius: var(--r);
   background: var(--bg);
+  box-shadow: var(--shadow-surface);
   cursor: pointer;
   text-align: left;
   transition: border-color 0.12s, background 0.12s, box-shadow 0.12s;
 }
 .sftp-server-card:hover {
   background: var(--bg-hover);
-  border-color: var(--fg-5);
+  box-shadow: var(--shadow-surface-hover);
 }
 /* Highlight the active terminal tab's server */
 .sftp-server-card.recommended {
@@ -2455,9 +2511,8 @@ input:focus:not(:focus-visible) {
   display: flex;
   flex-direction: column;
   background: var(--bg-panel);
-  border: 1px solid var(--border);
   border-radius: var(--r-lg);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-modal);
   overflow: hidden;
 }
 .sftp-conflict-hdr {

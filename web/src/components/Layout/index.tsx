@@ -9,6 +9,7 @@ import { Toast } from '@/components/Toast'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { useProfileStore } from '@/store/profile'
 import { useSessionStore } from '@/store/session'
+import { useWindowControls } from '@/hooks/useWindowControls'
 
 export function Layout() {
   const { tabs, openSftpTab } = useSessionStore()
@@ -17,6 +18,10 @@ export function Layout() {
   const [paletteOpen, setPaletteOpen] = useState(false)
 
   const { fetchProfiles, fetchGroups, searchQuery, setSearchQuery } = useProfileStore()
+
+  // 桌面环境窗口控制：仅 Electron 下提供真实操作，浏览器下为 no-op
+  // macOS 用系统原生交通灯（showControls=false），Windows/Linux 自绘右侧按钮
+  const { desktop, mac, showControls, maximized, minimize, toggleMaximize, close } = useWindowControls()
 
   useEffect(() => {
     fetchProfiles()
@@ -46,9 +51,14 @@ export function Layout() {
 
   return (
     <div className="sshx-app" role="application" aria-label="Terminal">
-      {/* Header — full width, left/center/right layout */}
-      <header className="sshx-header">
-        {/* Left: collapse sidebar + theme toggle (migrated from sidebar toolbar) */}
+      {/* Header — 自定义标题栏：棕色底、可拖拽窗口、搜索框居中、右侧窗口控制按钮。
+          桌面环境(framework: false)下作为窗口标题栏；浏览器下仅作普通顶栏。 */}
+      <header
+        className={`sshx-header titlebar ${desktop ? 'is-desktop' : ''} ${mac ? 'is-mac' : ''}`}
+      >
+        {/* 左：折叠侧边栏 + SFTP + 主题切换。
+            容器本身不加 no-drag，保留空白区域可拖拽窗口；
+            具体按钮在 CSS 中声明 no-drag 以恢复点击。 */}
         <div className="header-left">
           <button
             className="hdr-icon-btn"
@@ -79,7 +89,7 @@ export function Layout() {
           <ThemeToggle className="hdr-icon-btn" />
         </div>
 
-        {/* Center: server search */}
+        {/* 中：服务器搜索框。搜索框容器声明 no-drag，输入框可正常聚焦输入 */}
         <div className="header-center">
           <div className="header-search">
             <Search size={14} className="header-search-icon" />
@@ -104,7 +114,7 @@ export function Layout() {
           </div>
         </div>
 
-        {/* Right: server info panel toggle (migrated from tabbar toolbar) */}
+        {/* 右：服务器信息面板开关 */}
         <div className="header-right">
           <button
             className={`tab-act ${panelOpen ? 'on' : ''}`}
@@ -118,6 +128,53 @@ export function Layout() {
             </svg>
           </button>
         </div>
+
+        {/* 窗口控制按钮：仅 Windows/Linux 桌面环境渲染（macOS 用系统交通灯）。
+            Windows 原生风格，关闭悬停变红。控制按钮区在 CSS 中声明 no-drag */}
+        {showControls && (
+          <div className="titlebar-controls">
+            <button
+              className="tb-btn tb-min"
+              title="最小化"
+              aria-label="Minimize"
+              onClick={minimize}
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10">
+                <line x1="0" y1="5" x2="10" y2="5" stroke="currentColor" strokeWidth="1" />
+              </svg>
+            </button>
+            <button
+              className="tb-btn tb-max"
+              title={maximized ? '还原' : '最大化'}
+              aria-label={maximized ? 'Restore' : 'Maximize'}
+              onClick={toggleMaximize}
+            >
+              {maximized ? (
+                // 还原图标：两个重叠方框
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1">
+                  <rect x="0.5" y="2.5" width="6" height="6" />
+                  <path d="M2.5 2.5 V0.5 H8.5 V6.5 H6.5" />
+                </svg>
+              ) : (
+                // 最大化图标：单方框
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1">
+                  <rect x="0.5" y="0.5" width="9" height="9" />
+                </svg>
+              )}
+            </button>
+            <button
+              className="tb-btn tb-close"
+              title="关闭"
+              aria-label="Close"
+              onClick={close}
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10">
+                <line x1="0" y1="0" x2="10" y2="10" stroke="currentColor" strokeWidth="1" />
+                <line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" strokeWidth="1" />
+              </svg>
+            </button>
+          </div>
+        )}
       </header>
 
       {/* Body — sidebar + content */}

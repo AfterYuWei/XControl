@@ -106,7 +106,7 @@ export function ConnectionDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => onOpenChange(false)} />
-      <div className="relative z-50 w-full max-w-md bg-background border border-border rounded-xl shadow-2xl overflow-hidden">
+      <div className="relative z-50 w-full max-w-md bg-background rounded-xl shadow-modal overflow-hidden">
         {/* Header */}
         <div className="p-4">
           <div className="flex items-start justify-between">

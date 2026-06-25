@@ -27,7 +27,7 @@ export function Tooltip({ children, content, side = "top" }: TooltipProps) {
       {visible && (
         <div
           className={cn(
-            "absolute z-50 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground animate-in fade-in-0 whitespace-nowrap",
+            "absolute z-50 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground animate-in fade-in-0 whitespace-nowrap shadow-floating",
             positionClasses[side]
           )}
         >

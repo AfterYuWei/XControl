@@ -11,6 +11,11 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    // 构建产物输出到后端 embed 目录，便于打包成桌面应用
+    outDir: '../server/web_dist',
+    emptyOutDir: true,
+  },
   server: {
     host: '0.0.0.0', 
     allowedHosts: ['.cnb.run'],

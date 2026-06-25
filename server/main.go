@@ -41,7 +41,7 @@ func main() {
 	}
 
 	// Create router
-	handler := gateway.NewRouter(db, encryptor)
+	handler := gateway.NewRouter(db, encryptor, WebFS())
 
 	// Start server
 	addr := fmt.Sprintf(":%d", cfg.Port)

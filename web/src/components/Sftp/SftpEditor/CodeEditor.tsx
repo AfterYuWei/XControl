@@ -1,55 +1,109 @@
-import { useEffect, useRef } from 'react'
+import { useRef, useCallback } from 'react'
+import MonacoEditor, { type OnMount, loader } from '@monaco-editor/react'
 import type { editor } from 'monaco-editor'
-import { getMonaco, sshxThemeName } from '@/lib/monacoSetup'
 import { useSftpStore } from '../storeContext'
 import { useSettingsStore } from '@/store/settings'
 
+// Define custom themes once when the module loads.
+loader.init().then((monaco) => {
+  monaco.editor.defineTheme('sshx-dark', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [],
+    colors: {
+      'editor.background': '#0A0A0A',
+      'editor.foreground': '#E5E5E5',
+      'editorLineNumber.foreground': '#525252',
+      'editorLineNumber.activeForeground': '#A3A3A3',
+      'editor.lineHighlightBackground': '#171717',
+      'editor.lineHighlightBorder': '#00000000',
+      'editorCursor.foreground': '#E5E5E5',
+      'editor.selectionBackground': '#264F78AA',
+      'editor.inactiveSelectionBackground': '#3A3D41AA',
+      'editorWidget.background': '#0F0F0F',
+      'editorWidget.border': '#262626',
+      'editorSuggestWidget.background': '#0F0F0F',
+      'editorSuggestWidget.border': '#262626',
+      'editorSuggestWidget.selectedBackground': '#264F78',
+      'input.background': '#0F0F0F',
+      'input.border': '#262626',
+      'editorGutter.background': '#0A0A0A',
+      'scrollbarSlider.background': '#40404080',
+      'scrollbarSlider.hoverBackground': '#52525280',
+      'scrollbarSlider.activeBackground': '#525252AA',
+    },
+  })
+  monaco.editor.defineTheme('sshx-light', {
+    base: 'vs',
+    inherit: true,
+    rules: [],
+    colors: {
+      'editor.background': '#FFFFFF',
+      'editor.foreground': '#171717',
+      'editorLineNumber.foreground': '#A3A3A3',
+      'editorLineNumber.activeForeground': '#404040',
+      'editor.lineHighlightBackground': '#F5F5F5',
+      'editor.lineHighlightBorder': '#00000000',
+      'editorCursor.foreground': '#171717',
+      'editor.selectionBackground': '#ADD6FF',
+      'editor.inactiveSelectionBackground': '#CCE5FF99',
+      'editorWidget.background': '#FAFAFA',
+      'editorWidget.border': '#E5E5E5',
+      'editorGutter.background': '#FFFFFF',
+      'scrollbarSlider.background': '#D4D4D480',
+      'scrollbarSlider.hoverBackground': '#A3A3A380',
+      'scrollbarSlider.activeBackground': '#A3A3A3AA',
+    },
+  })
+})
+
 /** Monaco editor wrapper for SFTP file editing.
  *
- *  - Lazily loads the Monaco core via getMonaco() (cached promise).
- *  - Binds value to store.editor.content (controlled-ish: we set value on
- *    mount and on external reload, but let Monaco drive edits to avoid
- *    clobbering the cursor on every keystroke).
- *  - Ctrl/Cmd+S → saveEditor(); intercepts browser default.
- *  - Theme follows the resolved app theme (dark/light). */
+ *  Uses @monaco-editor/react which loads Monaco lazily from CDN.
+ *  Ctrl/Cmd+S → saveEditor(); intercepts browser default. */
 export function CodeEditor() {
-  const containerRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
-  const monacoRef = useRef<typeof import('monaco-editor') | null>(null)
 
   const editor = useSftpStore((s) => s.editor)
   const setEditorContent = useSftpStore((s) => s.setEditorContent)
   const saveEditor = useSftpStore((s) => s.saveEditor)
 
-  // Resolved theme — re-reads when theme or systemRevision changes.
   const theme = useSettingsStore((s) => s.theme)
   const systemRevision = useSettingsStore((s) => s.systemRevision)
   const resolvedTheme: 'light' | 'dark' =
     theme === 'system'
-      ? // systemRevision forces recompute on OS change
-        (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      ? window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
       : theme
 
-  // Keep latest content in a ref so the save handler (registered once) reads
-  // the current value without re-registering on every keystroke.
-  const contentRef = useRef(editor.content)
-  contentRef.current = editor.content
+  const handleMount: OnMount = useCallback((inst, monaco) => {
+    editorRef.current = inst
 
-  // Create the editor once.
-  useEffect(() => {
-    let disposed = false
-    let model: editor.ITextModel | null = null
+    // Sync edits → store
+    inst.onDidChangeModelContent(() => {
+      setEditorContent(inst.getValue())
+    })
 
-    getMonaco().then((monaco) => {
-      if (disposed || !containerRef.current) return
-      monacoRef.current = monaco
+    // Ctrl/Cmd+S → save
+    inst.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+      saveEditor()
+    })
+  }, [setEditorContent, saveEditor])
 
-      const el = containerRef.current
-      const inst = monaco.editor.create(el, {
-        value: editor.content,
-        language: editor.language,
-        theme: sshxThemeName(resolvedTheme),
-        automaticLayout: true,
+  return (
+    <MonacoEditor
+      height="100%"
+      language={editor.language}
+      theme={resolvedTheme === 'dark' ? 'sshx-dark' : 'sshx-light'}
+      value={editor.content}
+      onChange={(value) => setEditorContent(value ?? '')}
+      onMount={handleMount}
+      loading={
+        <div className="sftp-editor-monaco-loading">
+          <div className="sftp-editor-monaco-spinner" />
+          <span>编辑器加载中…</span>
+        </div>
+      }
+      options={{
         fontSize: 13,
         fontFamily: "'JetBrains Mono', 'Fira Code', ui-monospace, monospace",
         minimap: { enabled: editor.content.length > 100_000 },
@@ -62,62 +116,8 @@ export function CodeEditor() {
         bracketPairColorization: { enabled: true },
         smoothScrolling: true,
         cursorBlinking: 'smooth',
-      })
-      editorRef.current = inst
-      model = inst.getModel()
-
-      // Sync edits → store (debounce-free; store update is cheap).
-      inst.onDidChangeModelContent(() => {
-        setEditorContent(inst.getValue())
-      })
-
-      // Ctrl/Cmd+S → save. Prevent the browser's save-page dialog.
-      inst.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-        saveEditor()
-      })
-    })
-
-    return () => {
-      disposed = true
-      if (model) model.dispose()
-      editorRef.current?.dispose()
-      editorRef.current = null
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Sync external content changes (reload / open new file) into the editor.
-  useEffect(() => {
-    const inst = editorRef.current
-    if (!inst) return
-    if (inst.getValue() !== editor.content) {
-      inst.setValue(editor.content)
-    }
-  }, [editor.content])
-
-  // Sync language changes.
-  useEffect(() => {
-    const monaco = monacoRef.current
-    const inst = editorRef.current
-    if (!monaco || !inst) return
-    const model = inst.getModel()
-    if (model) monaco.editor.setModelLanguage(model, editor.language)
-  }, [editor.language])
-
-  // Sync readOnly / loading changes.
-  useEffect(() => {
-    editorRef.current?.updateOptions({
-      readOnly: editor.readOnly || editor.loading,
-    })
-  }, [editor.readOnly, editor.loading])
-
-  // Sync theme changes.
-  useEffect(() => {
-    const monaco = monacoRef.current
-    if (!monaco) return
-    monaco.editor.setTheme(sshxThemeName(resolvedTheme))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resolvedTheme, systemRevision])
-
-  return <div ref={containerRef} className="sftp-editor-monaco" />
+        automaticLayout: true,
+      }}
+    />
+  )
 }

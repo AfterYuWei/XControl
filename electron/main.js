@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, Menu } = require('electron')
+const { app, BrowserWindow, shell, Menu, ipcMain } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { spawn } = require('child_process')
@@ -117,8 +117,13 @@ async function createWindow() {
     minWidth: 900,
     minHeight: 600,
     title: 'SSHX',
-    backgroundColor: '#0f172a',
+    backgroundColor: '#0A0A0A',
     show: false,
+    // 无边框：移除系统标题栏，由前端自定义标题栏接管。
+    // frame:false 在 Windows 上仍保留边缘拖拽缩放能力（系统提供隐形缩放边）。
+    frame: false,
+    // 隐藏标题栏文字与按钮，但保留窗口圆角与原生窗口阴影。
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -138,7 +143,32 @@ async function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null
   })
+
+  // 窗口最大化/还原状态变化时，主动推送给渲染进程，
+  // 使标题栏按钮图标能同步系统快捷键(Win+↑/↓)与边缘拖拽触发的最大化。
+  mainWindow.on('maximize', () => {
+    mainWindow?.webContents.send('window:maximized', true)
+  })
+  mainWindow.on('unmaximize', () => {
+    mainWindow?.webContents.send('window:maximized', false)
+  })
 }
+
+// 窗口控制 IPC：渲染层通过 preload 暴露的安全 API 调用，由主进程执行真实窗口操作。
+// 所有 handler 都用 lazy 注册 + main 窗口校验，避免窗口关闭后空指针。
+function win() {
+  return mainWindow
+}
+ipcMain.handle('window:minimize', () => win()?.minimize())
+ipcMain.handle('window:maximizeToggle', () => {
+  const w = win()
+  if (!w) return false
+  if (w.isMaximized()) w.unmaximize()
+  else w.maximize()
+  return w.isMaximized()
+})
+ipcMain.handle('window:close', () => win()?.close())
+ipcMain.handle('window:isMaximized', () => (win() ? win().isMaximized() : false))
 
 // 单实例锁，避免重复启动导致后端端口抢占
 const gotLock = app.requestSingleInstanceLock()

@@ -190,6 +190,66 @@
   position: relative;
   z-index: 30;
 }
+/* 桌面环境：自定义标题栏。整条 header 作为窗口拖拽区(-webkit-app-region:drag)。
+   配色完全由前端 CSS 主题变量控制，不继承任何系统原生样式，跟随应用深浅主题切换。
+   - 深色模式(.dark)：标题栏深暗色，复用 --bg-panel / --fg
+   - 浅色模式(:root/.light)：标题栏浅亮色，复用 --bg-panel / --fg
+   关闭按钮悬停保留 Windows 原生红色 #E81123（见 .tb-close）。 */
+.sshx-header.titlebar.is-desktop {
+  -webkit-app-region: drag;
+  background: var(--bg-panel);
+  border-bottom-color: var(--border);
+  color: var(--fg);
+  /* 右侧留出窗口控制按钮的空间，避免遮挡 */
+  padding-right: 0;
+}
+/* 标题栏内可交互元素重新声明 no-drag，恢复点击与输入。
+   容器空白区域仍为 drag，整个标题栏除按钮/搜索框外均可拖拽。 */
+.sshx-header.titlebar.is-desktop .hdr-icon-btn,
+.sshx-header.titlebar.is-desktop .tab-act,
+.sshx-header.titlebar.is-desktop .header-search,
+.sshx-header.titlebar.is-desktop .header-search input,
+.sshx-header.titlebar.is-desktop .header-search-clear,
+.sshx-header.titlebar.is-desktop .titlebar-controls,
+.sshx-header.titlebar.is-desktop .tb-btn {
+  -webkit-app-region: no-drag;
+}
+
+/* ===== 窗口控制按钮（Windows 原生风格） ===== */
+/* 仅桌面环境渲染。三个按钮高度与标题栏等高，宽度对齐 Win10/11 caption button。
+   配色用主题变量跟随深浅主题；关闭按钮悬停保留 Windows 原生红色 #E81123。 */
+.titlebar-controls {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  margin-left: 4px;
+}
+.tb-btn {
+  width: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--fg-2);
+  cursor: default;
+  transition: background-color 0.12s, color 0.12s;
+}
+.tb-btn:hover {
+  background: var(--bg-hover);
+}
+.tb-btn:active {
+  background: var(--bg-active);
+}
+/* 关闭按钮：悬停红色背景 + 白色图标，与 Windows 原生一致（红色不随主题变化） */
+.tb-close:hover {
+  background: #E81123;
+  color: #FFFFFF;
+}
+.tb-close:active {
+  background: #C42B1C;
+  color: #FFFFFF;
+}
 /* Left & right columns are flex:1 and symmetric so the center search box
    stays visually centered regardless of how many buttons each side holds. */
 .header-left {

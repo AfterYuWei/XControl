@@ -1,8 +1,8 @@
 name: Build Desktop Apps
 
 # 触发条件：
-# - 推送 tag (v*):  正式发布，构建三端安装包并上传到 GitHub Release
-# - 推送 main:      nightly/carry 构建，产物上传到 workflow artifact（30天过期）
+# - 推送 tag (v*):  正式发布，版本号=tag名，上传到正式 GitHub Release
+# - 推送 main:      carry 发布，版本号=short commit，上传到 prerelease GitHub Release
 # - 手动触发:       可选择 release / nightly 模式
 on:
   push:
@@ -43,28 +43,30 @@ jobs:
       - id: meta
         run: |
           # tag 触发 或 手动选 release => 正式发布
-          # main 触发 或 手动选 nightly => nightly
+          # main 触发 或 手动选 nightly => carry(nightly)
           if [[ "${{ github.ref_type }}" == "tag" ]] || [[ "${{ inputs.release_type }}" == "release" ]]; then
             echo "is_release=true" >> $GITHUB_OUTPUT
           else
             echo "is_release=false" >> $GITHUB_OUTPUT
           fi
 
-          # 版本号：tag 用 tag 名(去掉 v 前缀)，nightly 用 0.0.0-dev+日期.短sha
+          SHORT_SHA="${GITHUB_SHA::7}"
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+
+          # 版本号 & tag：
+          # - 正式版(tag): version=tag去v(如1.0.0), tag=原tag名
+          # - carry(main): version=short commit(如73a8ffc), tag=short commit
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             TAG="${GITHUB_REF_NAME}"
-            # 去掉开头的 v，得到纯版本号
             VERSION="${TAG#v}"
             echo "version=$VERSION" >> $GITHUB_OUTPUT
             echo "tag=$TAG" >> $GITHUB_OUTPUT
             echo "release_name=SSHX $VERSION" >> $GITHUB_OUTPUT
           else
-            SHORT_SHA="${GITHUB_SHA::7}"
-            DATE=$(date -u +%Y%m%d)
-            VERSION="0.0.0-dev.${DATE}.${SHORT_SHA}"
+            VERSION="$SHORT_SHA"
             echo "version=$VERSION" >> $GITHUB_OUTPUT
-            echo "tag=" >> $GITHUB_OUTPUT
-            echo "release_name=SSHX Nightly ${DATE}" >> $GITHUB_OUTPUT
+            echo "tag=$SHORT_SHA" >> $GITHUB_OUTPUT
+            echo "release_name=SSHX Carry $SHORT_SHA" >> $GITHUB_OUTPUT
           fi
 
   # 三平台并行构建
@@ -197,7 +199,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run ${{ matrix.dist_script }}
 
-      # 统一产物上传：nightly 与 release 都先收集到 artifact
+      # 统一产物上传：正式版与 carry 版都先收集到 artifact，再由 release job 发到 Release
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -208,12 +210,12 @@ jobs:
             electron/release/SSHX-*.deb
             electron/release/SSHX-*.rpm
           if-no-files-found: error
-          retention-days: ${{ needs.prepare.outputs.is_release == 'true' && 90 || 30 }}
+          retention-days: 30
 
-  # 正式发布：创建 GitHub Release 并上传所有平台安装包
+  # 发布：正式版(tag)发正式 Release，carry 版(main)发 prerelease Release
+  # 都用 softprops/action-gh-release 创建 Release 并上传所有平台安装包
   release:
     needs: [prepare, build]
-    if: needs.prepare.outputs.is_release == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
@@ -237,6 +239,8 @@ jobs:
           body: |
             ## SSHX ${{ needs.prepare.outputs.version }}
 
+            ${{ needs.prepare.outputs.is_release == 'true' && '### ✅ 正式版' || '### 🔄 Carry 版（基于最新 main 分支构建）' }}
+
             ### 安装包
 
             | 平台 | 文件 | 说明 |
@@ -258,28 +262,7 @@ jobs:
             artifacts/SSHX-*.deb
             artifacts/SSHX-*.rpm
           draft: false
-          prerelease: false
+          # carry 版标记为预发布，正式版为正式发布
+          prerelease: ${{ needs.prepare.outputs.is_release != 'true' }}
           generate_release_notes: true
 
-  # nightly 构建汇总：在 workflow summary 页面列出所有产物下载链接
-  nightly-summary:
-    needs: [prepare, build]
-    if: needs.prepare.outputs.is_release == 'false'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Summary
-        run: |
-          echo "## 🌙 SSHX Nightly 构建" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**版本**: \`${{ needs.prepare.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**构建时间**: $(date -u '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 下载产物" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "产物已上传为 workflow artifacts（保留 30 天），在页面下方 Artifacts 区下载：" >> $GITHUB_STEP_SUMMARY
-          echo "- \`sshx-win-${{ needs.prepare.outputs.version }}\` — Windows NSIS 安装包" >> $GITHUB_STEP_SUMMARY
-          echo "- \`sshx-mac-arm64-${{ needs.prepare.outputs.version }}\` — macOS DMG (Apple Silicon)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`sshx-mac-x64-${{ needs.prepare.outputs.version }}\` — macOS DMG (Intel)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`sshx-linux-${{ needs.prepare.outputs.version }}\` — Linux deb/rpm 安装包" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "> 正式发布请打 tag：\`git tag v1.0.0 && git push origin v1.0.0\`" >> $GITHUB_STEP_SUMMARY

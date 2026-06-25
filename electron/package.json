@@ -6,6 +6,10 @@
   "author": "yuweinfo",
   "license": "MIT",
   "homepage": "https://github.com/AfterYuWei/XControl",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AfterYuWei/XControl.git"
+  },
   "scripts": {
     "start": "electron .",
     "dist:win": "electron-builder --win",
@@ -15,8 +19,8 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "devDependencies": {
-    "electron": "^33.2.0",
-    "electron-builder": "^25.1.8"
+    "electron": "33.4.11",
+    "electron-builder": "25.1.8"
   },
   "build": {
     "appId": "com.yuweinfo.sshx",
@@ -25,6 +29,7 @@
     "directories": {
       "output": "release"
     },
+    "publish": null,
     "files": [
       "main.js",
       "preload.js",

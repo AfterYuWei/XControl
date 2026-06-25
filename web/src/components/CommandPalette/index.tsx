@@ -9,7 +9,6 @@ interface CommandPaletteProps {
   open: boolean
   onClose: () => void
   onToggleSidebar: () => void
-  onTogglePanel: () => void
 }
 
 interface PalItem {
@@ -25,7 +24,6 @@ export function CommandPalette({
   open,
   onClose,
   onToggleSidebar,
-  onTogglePanel,
 }: CommandPaletteProps) {
   const { profiles } = useProfileStore()
   const { openTab, tabs, setActiveTab } = useSessionStore()
@@ -51,7 +49,6 @@ export function CommandPalette({
       { type: 'cmd', label: 'New Tab', kbd: '⌘T', action: () => toast('Use the + button to open a new tab') },
       { type: 'cmd', label: 'Close Tab', kbd: '⌘W', action: () => useSessionStore.getState().closeTab(useSessionStore.getState().activeTabId ?? '') },
       { type: 'cmd', label: 'Toggle Sidebar', kbd: '⌘B', action: onToggleSidebar },
-      { type: 'cmd', label: 'Toggle Server Info', kbd: '⌘.', action: onTogglePanel },
       { type: 'cmd', label: 'Reconnect', action: () => toast('Reconnecting…') },
       { type: 'cmd', label: 'Open SFTP', action: () => toast('SFTP browser opened') },
       { type: 'cmd', label: 'Copy SSH Command', action: () => {
@@ -64,7 +61,7 @@ export function CommandPalette({
       items.push(c)
     })
     return items
-  }, [query, profilesList, tabs, onToggleSidebar, onTogglePanel])
+  }, [query, profilesList, tabs, onToggleSidebar])
 
   const items = buildItems()
 

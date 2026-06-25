@@ -20,7 +20,8 @@ export function Layout() {
   const { fetchProfiles, fetchGroups, searchQuery, setSearchQuery } = useProfileStore()
 
   // 桌面环境窗口控制：仅 Electron 下提供真实操作，浏览器下为 no-op
-  const { desktop, maximized, minimize, toggleMaximize, close } = useWindowControls()
+  // macOS 用系统原生交通灯（showControls=false），Windows/Linux 自绘右侧按钮
+  const { desktop, mac, showControls, maximized, minimize, toggleMaximize, close } = useWindowControls()
 
   useEffect(() => {
     fetchProfiles()
@@ -52,7 +53,9 @@ export function Layout() {
     <div className="sshx-app" role="application" aria-label="Terminal">
       {/* Header — 自定义标题栏：棕色底、可拖拽窗口、搜索框居中、右侧窗口控制按钮。
           桌面环境(framework: false)下作为窗口标题栏；浏览器下仅作普通顶栏。 */}
-      <header className={`sshx-header titlebar ${desktop ? 'is-desktop' : ''}`}>
+      <header
+        className={`sshx-header titlebar ${desktop ? 'is-desktop' : ''} ${mac ? 'is-mac' : ''}`}
+      >
         {/* 左：折叠侧边栏 + SFTP + 主题切换。
             容器本身不加 no-drag，保留空白区域可拖拽窗口；
             具体按钮在 CSS 中声明 no-drag 以恢复点击。 */}
@@ -126,9 +129,9 @@ export function Layout() {
           </button>
         </div>
 
-        {/* 窗口控制按钮：仅桌面环境渲染。Windows 原生风格，关闭悬停变红。
-            控制按钮区在 CSS 中声明 no-drag，确保点击不被拖拽吞掉 */}
-        {desktop && (
+        {/* 窗口控制按钮：仅 Windows/Linux 桌面环境渲染（macOS 用系统交通灯）。
+            Windows 原生风格，关闭悬停变红。控制按钮区在 CSS 中声明 no-drag */}
+        {showControls && (
           <div className="titlebar-controls">
             <button
               className="tb-btn tb-min"

@@ -214,6 +214,12 @@
 .sshx-header.titlebar.is-desktop .tb-btn {
   -webkit-app-region: no-drag;
 }
+/* macOS：使用系统原生交通灯（左侧红黄绿圆形按钮），不自绘控制按钮。
+   标题栏左侧需留出交通灯空间（约 78px），避免按钮被交通灯遮挡。
+   header-left 此时承载侧边栏/SFTP/主题按钮，整体右移避让交通灯。 */
+.sshx-header.titlebar.is-desktop.is-mac {
+  padding-left: 78px;
+}
 
 /* ===== 窗口控制按钮（Windows 原生风格） ===== */
 /* 仅桌面环境渲染。三个按钮高度与标题栏等高，宽度对齐 Win10/11 caption button。

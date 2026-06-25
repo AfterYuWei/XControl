@@ -1,5 +1,6 @@
-# 在 Windows 本地编译并打包桌面应用
+# 在 Windows 上本地编译并打包桌面应用
 # 依赖：Node.js、Go
+# 用法：.\build.ps1           # 默认 Windows
 $ErrorActionPreference = "Stop"
 
 $root = Resolve-Path "$PSScriptRoot/.."
@@ -19,7 +20,7 @@ Pop-Location
 Write-Host "==> [3/3] 打包 Electron 应用 (NSIS)" -ForegroundColor Cyan
 Push-Location "$root/electron"
 npm install
-npm run dist
+npm run dist:win
 Pop-Location
 
 Write-Host ""

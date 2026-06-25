@@ -1,8 +1,11 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
-// 桌面环境标识与版本信息
+// 桌面环境标识、平台信息与版本信息
 contextBridge.exposeInMainWorld('sshx', {
   desktop: true,
+  // 平台标识：渲染层据此决定控制按钮布局
+  // darwin=macOS(用系统交通灯), win32=Windows(右侧自绘), linux=Linux(右侧自绘)
+  platform: process.platform,
   versions: {
     electron: process.versions.electron,
     chrome: process.versions.chrome,

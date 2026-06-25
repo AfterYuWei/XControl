@@ -1,0 +1,15 @@
+# 前端构建产物（embed 进后端，不纳入版本库）
+server/web_dist/
+
+# 后端二进制
+server/sshx-server
+server/sshx-server.exe
+
+# 运行时数据（数据库、密钥）
+server/data/
+
+# Electron 构建产物（electron/.gitignore 已忽略 node_modules/release）
+
+# OS
+.DS_Store
+Thumbs.db

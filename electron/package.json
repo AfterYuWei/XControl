@@ -1,0 +1,55 @@
+{
+  "name": "sshx-desktop",
+  "version": "1.0.0",
+  "description": "SSHX 桌面版 - 基于 Electron 的 SSH 终端",
+  "main": "main.js",
+  "author": "yuweinfo",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win",
+    "dist:dir": "electron-builder --win --dir",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.yuweinfo.sshx",
+    "productName": "SSHX",
+    "copyright": "Copyright © yuweinfo",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../server/sshx-server.exe",
+        "to": "sshx-server/sshx-server.exe"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "SSHX-Setup-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "SSHX",
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}

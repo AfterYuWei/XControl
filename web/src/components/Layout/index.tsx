@@ -3,7 +3,6 @@ import { Search, X, FolderUp } from 'lucide-react'
 import { Sidebar } from '@/components/Sidebar'
 import { TerminalView } from '@/components/Terminal'
 import { StatusBar } from '@/components/StatusBar'
-import { ServerPanel } from '@/components/ServerPanel'
 import { CommandPalette } from '@/components/CommandPalette'
 import { Toast } from '@/components/Toast'
 import { ThemeToggle } from '@/components/ThemeToggle'
@@ -14,7 +13,6 @@ import { useWindowControls } from '@/hooks/useWindowControls'
 export function Layout() {
   const { tabs, openSftpTab } = useSessionStore()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [panelOpen, setPanelOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
 
   const { fetchProfiles, fetchGroups, searchQuery, setSearchQuery } = useProfileStore()
@@ -28,7 +26,7 @@ export function Layout() {
     fetchGroups()
   }, [fetchProfiles, fetchGroups])
 
-  // Global keyboard shortcuts: ⌘K palette, ⌘B sidebar, ⌘. panel
+  // Global keyboard shortcuts: ⌘K palette, ⌘B sidebar
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const meta = e.metaKey || e.ctrlKey
@@ -39,10 +37,6 @@ export function Layout() {
       if (meta && e.key === 'b') {
         e.preventDefault()
         setSidebarCollapsed((v) => !v)
-      }
-      if (meta && e.key === '.') {
-        e.preventDefault()
-        setPanelOpen((v) => !v)
       }
     }
     document.addEventListener('keydown', handler)
@@ -56,7 +50,7 @@ export function Layout() {
       <header
         className={`sshx-header titlebar ${desktop ? 'is-desktop' : ''} ${mac ? 'is-mac' : ''}`}
       >
-        {/* 左：折叠侧边栏 + SFTP + 主题切换。
+        {/* 左：折叠侧边栏 + SFTP。
             容器本身不加 no-drag，保留空白区域可拖拽窗口；
             具体按钮在 CSS 中声明 no-drag 以恢复点击。 */}
         <div className="header-left">
@@ -86,7 +80,6 @@ export function Layout() {
           >
             <FolderUp size={14} />
           </button>
-          <ThemeToggle className="hdr-icon-btn" />
         </div>
 
         {/* 中：服务器搜索框。搜索框容器声明 no-drag，输入框可正常聚焦输入 */}
@@ -114,19 +107,9 @@ export function Layout() {
           </div>
         </div>
 
-        {/* 右：服务器信息面板开关 */}
+        {/* 右：主题切换按钮 */}
         <div className="header-right">
-          <button
-            className={`tab-act ${panelOpen ? 'on' : ''}`}
-            data-tip="Server Info (⌘.)"
-            onClick={() => setPanelOpen((v) => !v)}
-            aria-label="Toggle server info panel"
-          >
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="1.5" y="1.5" width="13" height="13" rx="2" />
-              <line x1="9.5" y1="1.5" x2="9.5" y2="14.5" />
-            </svg>
-          </button>
+          <ThemeToggle className="tab-act" />
         </div>
 
         {/* 窗口控制按钮：仅 Windows/Linux 桌面环境渲染（macOS 用系统交通灯）。
@@ -190,10 +173,7 @@ export function Layout() {
 
         {/* Content */}
         <div className="cnt-wrap">
-          {tabs.length === 0 ? <EmptyState /> : <TerminalView panelOpen={panelOpen} />}
-
-          {/* Right Panel */}
-          <ServerPanel open={panelOpen} onClose={() => setPanelOpen(false)} />
+          {tabs.length === 0 ? <EmptyState /> : <TerminalView />}
         </div>
       </div>
 
@@ -205,7 +185,6 @@ export function Layout() {
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
         onToggleSidebar={() => setSidebarCollapsed((v) => !v)}
-        onTogglePanel={() => setPanelOpen((v) => !v)}
       />
 
       {/* Toast */}

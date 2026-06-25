@@ -2,12 +2,8 @@ import { useSessionStore } from '@/store/session'
 import { TerminalPane } from './TerminalPane'
 import { SftpView } from '@/components/Sftp/SftpView'
 
-interface TerminalViewProps {
-  panelOpen: boolean
-}
-
 /** Content router: renders SftpView for sftp-kind tabs, TerminalPane otherwise. */
-export function TerminalView({ panelOpen }: TerminalViewProps) {
+export function TerminalView() {
   const { tabs, activeTabId } = useSessionStore()
   const activeTab = tabs.find((t) => t.id === activeTabId)
   const isSftp = activeTab?.kind === 'sftp'
@@ -37,10 +33,6 @@ export function TerminalView({ panelOpen }: TerminalViewProps) {
           )
         })}
       </div>
-      {/* panelOpen is consumed via CSS sibling selector: when .sshx-panel.open
-          is present, .term-wrap gets extra right margin. Kept as prop to allow
-          future conditional rendering. */}
-      {panelOpen ? null : null}
     </div>
   )
 }

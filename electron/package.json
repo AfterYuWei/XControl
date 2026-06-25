@@ -5,6 +5,7 @@
   "main": "main.js",
   "author": "yuweinfo",
   "license": "MIT",
+  "homepage": "https://github.com/AfterYuWei/XControl",
   "scripts": {
     "start": "electron .",
     "dist:win": "electron-builder --win",
@@ -62,7 +63,7 @@
         }
       ],
       "target": [
-        { "target": "dmg", "arch": ["x64", "arm64"] }
+        { "target": "dmg", "arch": ["arm64"] }
       ],
       "category": "public.app-category.developer-tools",
       "artifactName": "SSHX-${version}-${arch}.${ext}"
@@ -76,8 +77,8 @@
         }
       ],
       "target": [
-        { "target": "AppImage", "arch": ["x64"] },
-        { "target": "deb", "arch": ["x64"] }
+        { "target": "deb", "arch": ["x64"] },
+        { "target": "rpm", "arch": ["x64"] }
       ],
       "category": "Development",
       "artifactName": "SSHX-${version}-${arch}.${ext}"

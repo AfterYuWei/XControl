@@ -3,6 +3,7 @@ import { FilePane } from './FilePane'
 import { TransferQueue } from './TransferQueue'
 import { ServerPicker } from './ServerPicker'
 import { ConflictDialog } from './ConflictDialog'
+import { EditorDialog } from './SftpEditor/EditorDialog'
 import { SftpStoreContext } from './storeContext'
 import { createSftpStore, type SftpStoreApi, type PaneSide } from '@/store/sftp'
 import { useSftpTransfer } from '@/hooks/useSftpTransfer'
@@ -100,6 +101,7 @@ export function SftpView() {
         />
 
         <ConflictDialog />
+        <EditorDialog />
       </div>
     </SftpStoreContext.Provider>
   )

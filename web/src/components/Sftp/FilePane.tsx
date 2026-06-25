@@ -81,7 +81,11 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
       : null
 
   const openEntry = (entry: SftpEntry) => {
-    if (entry.is_dir) navigate(entry.path)
+    if (entry.is_dir) {
+      navigate(entry.path)
+    } else {
+      store.openEditor(pane, entry.path)
+    }
   }
 
   // --- Drag & drop (cross-pane file transfer). Direction is derived from

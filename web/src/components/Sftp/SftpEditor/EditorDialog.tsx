@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Loader2, FileX } from 'lucide-react'
+import { FileX } from 'lucide-react'
 import { Dialog } from '@/components/ui/dialog'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useSftpStore } from '../storeContext'
 import { CodeEditor } from './CodeEditor'
 import { EditorToolbar } from './EditorToolbar'
@@ -40,8 +41,18 @@ export function EditorDialog() {
         <div className="sftp-editor-body">
           {editor.loading ? (
             <div className="sftp-editor-loading">
-              <Loader2 size={24} className="sftp-editor-spinner" />
-              <span>加载中…</span>
+              {/* Skeleton lines mimicking a code editor */}
+              <div className="sftp-editor-skeleton">
+                {Array.from({ length: 18 }).map((_, i) => (
+                  <div key={i} className="sftp-editor-skel-line">
+                    <Skeleton className="sftp-editor-skel-gutter" />
+                    <Skeleton
+                      className="sftp-editor-skel-code"
+                      style={{ width: `${30 + Math.random() * 60}%` }}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
           ) : (
             <CodeEditor />

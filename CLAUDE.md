@@ -43,18 +43,22 @@ Layered architecture:
 - **`main.go`** → **`config/`** (env vars) → **`store/`** (SQLite persistence via modernc.org/sqlite, pure Go, no CGO)
 - **`model/`** — Data types: Profile, Group, Vault, Snippet, AuditLog
 - **`crypto/`** — AES-256-GCM encryption for vault credentials; key auto-generated on first run at `./data/key`
-- **`protocol/`** — `Driver` + `Shell` interfaces with factory registry (`ProtocolManager`). Currently only `ssh/` is implemented. This is the extension point for adding new protocols.
-- **`ws/`** — WebSocket hub (session_id → Conn mapping) and message types (input/output/resize/exit/error/ping/pong)
+- **`protocol/`** — `Driver` + `Shell` interfaces with factory registry (`ProtocolManager`). SSH and SFTP are implemented. This is the extension point for adding new protocols.
+- **`ws/`** — WebSocket hub (session_id → Conn mapping) and message types (input/output/resize/exit/error/ping/pong). Also includes `SftpHub` for SFTP transfer progress.
 - **`gateway/`** — HTTP router (Go 1.22+ enhanced routing), middleware (CORS, logger, recovery), and handlers
+
+**Note:** There is no separate service layer. Business logic lives in `gateway/handler/` handlers.
 
 Key request flow: `POST /api/sessions` with profile_id → backend opens SSH connection → frontend opens `WebSocket /ws?session_id=...` → bidirectional terminal I/O.
 
+SFTP flow: `POST /api/sftp/sessions` → `GET /api/sftp/sessions/{id}/list` for directory listing → file operations (upload/download/mkdir/rename/delete) → built-in text editor via `GET/PUT /api/sftp/sessions/{id}/file`.
+
 ### Frontend (React) — `web/src/`
 
-- **`api/`** — Fetch wrapper (`client.ts`) and resource-specific modules (profile, group, session, snippet)
+- **`api/`** — Fetch wrapper (`client.ts`) and resource-specific modules (profile, group, session, snippet, sftp)
 - **`store/`** — Zustand stores: `profile.ts` (connections + groups + search/filter), `session.ts` (terminal tabs + lifecycle), `settings.ts` (theme/fonts, localStorage-persisted)
 - **`hooks/`** — `useTerminal.ts` (xterm.js lifecycle), `useWebSocket.ts` (connection, heartbeat, I/O)
-- **`components/`** — Layout (resizable sidebar), Sidebar (connection list with search/group filter), ProfileForm (create/edit dialog), Terminal (TabBar + TerminalPane), ConnectionDialog (animated progress), `ui/` (shadcn/ui primitives)
+- **`components/`** — Layout (resizable sidebar), Sidebar (connection list with search/group filter), ProfileForm (create/edit dialog), Terminal (TabBar + TerminalPane), ConnectionDialog (animated progress), Sftp (file browser with dual-pane layout, Monaco editor, transfer queue), `ui/` (shadcn/ui primitives)
 - **`types/`** — TypeScript interfaces mirroring backend models
 
 Path alias: `@` maps to `./src` (configured in `vite.config.ts`).
@@ -67,6 +71,10 @@ SQLite with 5 auto-migrated tables on startup: `groups`, `vault` (encrypted cred
 
 JSON messages with `type` field: `input`, `output`, `resize`, `exit`, `error`, `ping`, `pong`, `auth`, `metadata`.
 
+## Desktop Packaging (Electron) — `electron/`
+
+The `electron/` directory contains an Electron wrapper for building desktop applications. The Go backend binary embeds the frontend static files via `//go:embed` (production build). Build scripts: `build.sh` (Linux/macOS), `build.ps1` (Windows). See `electron/README.md` for details.
+
 ## Technical Notes
 
 - Go module: `github.com/yuweinfo/sshx`
@@ -74,4 +82,5 @@ JSON messages with `type` field: `input`, `output`, `resize`, `exit`, `error`, `
 - Tailwind CSS v4 with CSS-first configuration via `@tailwindcss/vite` plugin and `@theme` directive in `web/src/index.css`
 - No test infrastructure exists yet (no Go test files, no frontend test runner)
 - SSH host key verification uses `InsecureIgnoreHostKey()` — acceptable for development, not production
+- SFTP file editor uses Monaco Editor via `@monaco-editor/loader` and `vite-plugin-monaco-editor`
 - Detailed design document: `docs/DEVELOPMENT.md` (in Chinese, includes API specs, data model, and architecture diagrams)

@@ -1,7 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import monacoEditorPlugin from 'vite-plugin-monaco-editor'
 import path from 'path'
 
 // https://vite.dev/config/
@@ -9,13 +8,6 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
-    // Monaco editor: bundles the editor + language web workers as separate
-    // chunks. Only the listed language workers are packaged to keep the
-    // Electron-embedded build small (workers are served from /assets in the
-    // Go-embedded static FS at runtime).
-    monacoEditorPlugin({
-      languageWorkers: ['json', 'css', 'html', 'typescript', 'shell'],
-    }),
   ],
   resolve: {
     alias: {
@@ -28,7 +20,7 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
-    host: '0.0.0.0', 
+    host: '0.0.0.0',
     allowedHosts: ['.cnb.run'],
     proxy: {
       '/api': 'http://localhost:9090',

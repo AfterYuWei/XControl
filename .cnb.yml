@@ -27,6 +27,6 @@ main:
             PLUGIN_GIT_USER: "余味"
             PLUGIN_GIT_EMAIL: "yuwei1228@hotmail.com"
             username: ${GITHUB_USERNAME}
-            password: ${GITHUB_ACCESS_TOKEN}
+            password: ${GITHUB_AFTERYUWEI_ACCESS_TOKEN}
             sync_mode: push
             force: true

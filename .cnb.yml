@@ -7,3 +7,26 @@ $:
       services:
         - vscode
         - docker
+
+main:
+  push:
+    - imports:
+        - https://cnb.cool/yuweinfo/config/-/blob/main/env.github.yml
+      services:
+        - docker
+      stages:
+        - name: docker build
+          script: docker build -t ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:latest .
+        - name: docker push
+          script: docker push ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:latest
+        - name: sync-to-github
+          image: tencentcom/git-sync
+          settings:
+            target_url: https://github.com/AfterYuWei/XControl.git
+            auth_type: https
+            PLUGIN_GIT_USER: "余味"
+            PLUGIN_GIT_EMAIL: "yuwei1228@hotmail.com"
+            username: ${GITHUB_USERNAME}
+            password: ${GITHUB_ACCESS_TOKEN}
+            sync_mode: push
+            force: true

@@ -476,18 +476,25 @@ export function Sidebar() {
       )}
 
       {/* Segmented page indicator — page 1 = global list, page 2 = per-tab detail.
-          Each tab remembers its own page independently. */}
+          Each segment is a tall transparent hit area wrapping a thin line so
+          the visible stroke stays delicate while the click target is generous. */}
       <div className="sidebar-pager">
         <button
-          className={`pager-seg ${currentPage === 0 ? 'active' : ''}`}
+          className={`pager-hit ${currentPage === 0 ? 'active' : ''}`}
           aria-label="第 1 页"
+          aria-current={currentPage === 0}
           onClick={() => setPage(effectiveTabId || GLOBAL_PAGE_KEY, 0)}
-        />
+        >
+          <span className="pager-line" />
+        </button>
         <button
-          className={`pager-seg ${currentPage === 1 ? 'active' : ''}`}
+          className={`pager-hit ${currentPage === 1 ? 'active' : ''}`}
           aria-label="第 2 页"
+          aria-current={currentPage === 1}
           onClick={() => setPage(effectiveTabId || GLOBAL_PAGE_KEY, 1)}
-        />
+        >
+          <span className="pager-line" />
+        </button>
       </div>
 
       {/* Profile form dialog */}

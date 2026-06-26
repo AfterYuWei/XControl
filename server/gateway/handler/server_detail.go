@@ -29,6 +29,7 @@ type ServerDetailSession struct {
 	Entry     *connpool.Entry // shared connection from pool
 	Status    string          // connecting | connected | disconnected
 	Error     string
+	HomeDir   string          // User's home directory
 	CreatedAt time.Time
 
 	cancel context.CancelFunc
@@ -109,11 +110,19 @@ func (h *ServerDetailHandler) CreateSession(w http.ResponseWriter, r *http.Reque
 	}
 
 	sessionID := uuid.New().String()
+
+	// Determine home directory based on username
+	homeDir := "/root"
+	if profile.Username != "root" {
+		homeDir = "/home/" + profile.Username
+	}
+
 	session := &ServerDetailSession{
 		ID:        sessionID,
 		ProfileID: req.ProfileID,
 		Entry:     entry,
 		Status:    "connected",
+		HomeDir:   homeDir,
 		CreatedAt: time.Now(),
 		cancel:    func() {},
 		done:      make(chan struct{}),
@@ -126,6 +135,7 @@ func (h *ServerDetailHandler) CreateSession(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusCreated, model.ServerSessionResponse{
 		SessionID: sessionID,
 		Status:    "connected",
+		HomeDir:   homeDir,
 	})
 }
 
@@ -201,6 +211,10 @@ func (h *ServerDetailHandler) ListFiles(w http.ResponseWriter, r *http.Request) 
 		p = "/"
 	}
 
+	// show_hidden controls whether hidden files (starting with .) are included.
+	// Default is false (hidden files are filtered out).
+	showHidden := r.URL.Query().Get("show_hidden") == "true"
+
 	// Use the standard FileBackend.List() — unified error handling and formatting
 	ctx := r.Context()
 	entries, err := entry.Backend.List(ctx, p)
@@ -219,12 +233,134 @@ func (h *ServerDetailHandler) ListFiles(w http.ResponseWriter, r *http.Request) 
 	// Convert to SftpEntry format (unified with SftpHandler)
 	result := make([]model.SftpEntry, 0, len(entries))
 	for _, e := range entries {
+		// Filter out hidden files unless explicitly requested
+		if !showHidden && len(e.Name) > 0 && e.Name[0] == '.' {
+			continue
+		}
 		result = append(result, toSftpEntry(e))
 	}
 	_ = session
 	writeJSON(w, http.StatusOK, model.SftpListResponse{
 		Path:    p,
 		Entries: result,
+	})
+}
+
+// Mkdir creates a new directory.
+func (h *ServerDetailHandler) Mkdir(w http.ResponseWriter, r *http.Request) {
+	session, entry, ok := h.resolveSession(w, r)
+	if !ok {
+		return
+	}
+	if entry.Backend == nil {
+		writeError(w, http.StatusNotImplemented, "NOT_SUPPORTED", "SFTP not available")
+		return
+	}
+
+	var req model.SftpMkdirRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_JSON", err.Error())
+		return
+	}
+	if req.Path == "" {
+		writeError(w, http.StatusBadRequest, "VALIDATION", "path is required")
+		return
+	}
+
+	ctx := r.Context()
+	if err := entry.Backend.Mkdir(ctx, req.Path); err != nil {
+		if strings.Contains(err.Error(), "permission") {
+			writeError(w, http.StatusForbidden, "PERMISSION_DENIED", err.Error())
+		} else if strings.Contains(err.Error(), "exist") {
+			writeError(w, http.StatusConflict, "ALREADY_EXISTS", err.Error())
+		} else {
+			writeError(w, http.StatusInternalServerError, "MKDIR_FAILED", err.Error())
+		}
+		return
+	}
+
+	_ = session
+	writeJSON(w, http.StatusOK, model.SftpEntry{
+		Path:  req.Path,
+		IsDir: true,
+	})
+}
+
+// Rename renames or moves a file or directory.
+func (h *ServerDetailHandler) Rename(w http.ResponseWriter, r *http.Request) {
+	session, entry, ok := h.resolveSession(w, r)
+	if !ok {
+		return
+	}
+	if entry.Backend == nil {
+		writeError(w, http.StatusNotImplemented, "NOT_SUPPORTED", "SFTP not available")
+		return
+	}
+
+	var req model.SftpRenameRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_JSON", err.Error())
+		return
+	}
+	if req.OldPath == "" || req.NewPath == "" {
+		writeError(w, http.StatusBadRequest, "VALIDATION", "old_path and new_path are required")
+		return
+	}
+
+	ctx := r.Context()
+	if err := entry.Backend.Rename(ctx, req.OldPath, req.NewPath); err != nil {
+		if strings.Contains(err.Error(), "permission") {
+			writeError(w, http.StatusForbidden, "PERMISSION_DENIED", err.Error())
+		} else if strings.Contains(err.Error(), "not found") {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", err.Error())
+		} else {
+			writeError(w, http.StatusInternalServerError, "RENAME_FAILED", err.Error())
+		}
+		return
+	}
+
+	_ = session
+	writeJSON(w, http.StatusOK, model.SftpEntry{
+		Path: req.NewPath,
+	})
+}
+
+// Delete deletes files or directories.
+func (h *ServerDetailHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	session, entry, ok := h.resolveSession(w, r)
+	if !ok {
+		return
+	}
+	if entry.Backend == nil {
+		writeError(w, http.StatusNotImplemented, "NOT_SUPPORTED", "SFTP not available")
+		return
+	}
+
+	var req model.SftpDeleteRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_JSON", err.Error())
+		return
+	}
+	if len(req.Paths) == 0 {
+		writeError(w, http.StatusBadRequest, "VALIDATION", "paths is required")
+		return
+	}
+
+	ctx := r.Context()
+	deleted := 0
+	failed := 0
+	for _, p := range req.Paths {
+		if err := entry.Backend.Remove(ctx, p); err != nil {
+			failed++
+		} else {
+			deleted++
+		}
+	}
+
+	_ = session
+	writeJSON(w, http.StatusOK, model.SftpDeleteResponse{
+		Deleted: deleted,
+		Failed:  failed,
 	})
 }
 

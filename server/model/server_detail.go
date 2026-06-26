@@ -9,6 +9,7 @@ type ServerSessionRequest struct {
 type ServerSessionResponse struct {
 	SessionID string `json:"session_id"`
 	Status    string `json:"status"`
+	HomeDir   string `json:"home_dir,omitempty"` // User's home directory
 }
 
 // --- Server info (static, fetched once after connection) ---

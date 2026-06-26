@@ -1,6 +1,7 @@
 import { createStore, type StoreApi } from 'zustand'
 import { sftpApi } from '@/api/sftp'
 import { profileApi } from '@/api/profile'
+import { useEditorStore } from '@/store/editor'
 import type {
   SftpEntry,
   SftpServer,
@@ -9,7 +10,6 @@ import type {
   TransferDirection,
   ConflictResolution,
   SftpConflictInfo,
-  LineEnding,
 } from '@/types/sftp'
 import { toast } from '@/store/toast'
 
@@ -105,28 +105,6 @@ export interface PendingConflict {
   direction: TransferDirection
 }
 
-/** Editor state slice. Holds at most one open file (MVP; multi-tab is Phase 2).
- *  `originalContent` is the last server-confirmed content; `dirty` is derived
- *  as content !== originalContent. `modTime` is the optimistic-lock token. */
-export interface EditorState {
-  open: boolean
-  pane: PaneSide | null
-  sessionId: string | null
-  path: string | null
-  content: string
-  originalContent: string
-  modTime: string | null
-  language: string
-  lineEnding: LineEnding
-  readOnly: boolean
-  loading: boolean
-  saving: boolean
-  error: string | null
-  /** Set when a save returned 409 FILE_MODIFIED; the user must choose to
-   *  reload (discard local) or force-overwrite. */
-  conflict: boolean
-}
-
 /** One open connection (a server) inside a pane. Owns its session, path,
  *  view mode, cached entries, and selection. */
 export interface SftpTab {
@@ -193,17 +171,9 @@ export interface SftpStore {
   completeTransfer: (taskId: string, status: string, finishedAt: number) => void
   failTransfer: (taskId: string, status: string, errorMessage: string) => void
 
-  // --- Built-in editor ---
-  editor: EditorState
-  /** Open a file in the editor. Fetches content from the backend; on guard
-   *  errors (too large / binary / non-UTF-8) shows a toast and does not open. */
+  // --- Built-in editor (deprecated: use editor store instead) ---
+  /** @deprecated Use useEditorStore.openFile() instead */
   openEditor: (pane: PaneSide, path: string) => Promise<void>
-  closeEditor: () => void
-  setEditorContent: (content: string) => void
-  setEditorLanguage: (language: string) => void
-  saveEditor: () => Promise<void>
-  /** Reload the file from the server, discarding local changes. */
-  reloadEditor: () => Promise<void>
 }
 
 function makeTabId(): string {
@@ -246,23 +216,6 @@ export function createSftpStore(): SftpStoreApi {
     servers: [],
     serversLoading: false,
     pendingConflict: null,
-
-    editor: {
-      open: false,
-      pane: null,
-      sessionId: null,
-      path: null,
-      content: '',
-      originalContent: '',
-      modTime: null,
-      language: 'plaintext',
-      lineEnding: 'lf',
-      readOnly: false,
-      loading: false,
-      saving: false,
-      error: null,
-      conflict: false,
-    },
 
     loadServers: async () => {
       set({ serversLoading: true })
@@ -495,7 +448,7 @@ export function createSftpStore(): SftpStoreApi {
       }))
     },
 
-    // --- Built-in editor actions ---
+    // --- Built-in editor (deprecated: use editor store instead) ---
 
     openEditor: async (pane, path) => {
       const tab = activeTabOf(get(), pane)
@@ -503,123 +456,8 @@ export function createSftpStore(): SftpStoreApi {
         toast('当前标签页未连接')
         return
       }
-      set({
-        editor: {
-          ...get().editor,
-          open: true,
-          pane,
-          sessionId: tab.sessionId,
-          path,
-          content: '',
-          originalContent: '',
-          modTime: null,
-          language: 'plaintext',
-          lineEnding: 'lf',
-          readOnly: false,
-          loading: true,
-          saving: false,
-          error: null,
-          conflict: false,
-        },
-      })
-      try {
-        const res = await sftpApi.readFile(tab.sessionId, path)
-        set({
-          editor: {
-            ...get().editor,
-            content: res.content,
-            originalContent: res.content,
-            modTime: res.mod_time,
-            language: res.language,
-            lineEnding: res.line_ending,
-            readOnly: res.read_only,
-            loading: false,
-            error: null,
-          },
-        })
-      } catch (err) {
-        const msg = extractApiError(err, '打开文件失败')
-        toast(msg)
-        set({
-          editor: {
-            ...initialEditorState,
-          },
-        })
-      }
-    },
-
-    closeEditor: () => set({ editor: { ...initialEditorState } }),
-
-    setEditorContent: (content) =>
-      set((s) => ({ editor: { ...s.editor, content } })),
-
-    setEditorLanguage: (language) =>
-      set((s) => ({ editor: { ...s.editor, language } })),
-
-    saveEditor: async () => {
-      const { editor } = get()
-      if (!editor.sessionId || !editor.path || !editor.modTime || editor.saving) return
-      if (editor.readOnly) {
-        toast('文件为只读，无法保存')
-        return
-      }
-      set((s) => ({ editor: { ...s.editor, saving: true } }))
-      try {
-        const res = await sftpApi.writeFile(editor.sessionId, editor.path, {
-          content: editor.content,
-          expected_mod_time: editor.modTime,
-          line_ending: editor.lineEnding,
-        })
-        set((s) => ({
-          editor: {
-            ...s.editor,
-            originalContent: s.editor.content,
-            modTime: res.mod_time,
-            saving: false,
-            conflict: false,
-            error: null,
-          },
-        }))
-        toast('已保存')
-        // Refresh the source pane so the file list reflects the new mtime.
-        if (editor.pane) get().refresh(editor.pane)
-      } catch (err) {
-        const code = extractApiCode(err)
-        if (code === 'FILE_MODIFIED') {
-          set((s) => ({ editor: { ...s.editor, saving: false, conflict: true } }))
-          toast('文件已被其他进程修改，请重新加载')
-        } else {
-          const msg = extractApiError(err, '保存失败')
-          set((s) => ({ editor: { ...s.editor, saving: false, error: msg } }))
-          toast(msg)
-        }
-      }
-    },
-
-    reloadEditor: async () => {
-      const { editor } = get()
-      if (!editor.sessionId || !editor.path) return
-      set((s) => ({ editor: { ...s.editor, loading: true, conflict: false } }))
-      try {
-        const res = await sftpApi.readFile(editor.sessionId, editor.path)
-        set({
-          editor: {
-            ...get().editor,
-            content: res.content,
-            originalContent: res.content,
-            modTime: res.mod_time,
-            language: res.language,
-            lineEnding: res.line_ending,
-            readOnly: res.read_only,
-            loading: false,
-            error: null,
-          },
-        })
-      } catch (err) {
-        const msg = extractApiError(err, '重新加载失败')
-        set((s) => ({ editor: { ...s.editor, loading: false, error: msg } }))
-        toast(msg)
-      }
+      // Delegate to the unified editor store
+      useEditorStore.getState().openFile(tab.sessionId, 'sftp', path)
     },
   }))
 
@@ -627,35 +465,6 @@ export function createSftpStore(): SftpStoreApi {
 }
 
 /* ── store helpers (pure) ── */
-
-const initialEditorState: EditorState = {
-  open: false,
-  pane: null,
-  sessionId: null,
-  path: null,
-  content: '',
-  originalContent: '',
-  modTime: null,
-  language: 'plaintext',
-  lineEnding: 'lf',
-  readOnly: false,
-  loading: false,
-  saving: false,
-  error: null,
-  conflict: false,
-}
-
-/** Extract a human message from an API error (thrown by api client). */
-function extractApiError(err: unknown, fallback: string): string {
-  const e = err as { error?: { message?: string }; message?: string }
-  return e?.error?.message ?? e?.message ?? fallback
-}
-
-/** Extract the API error code (e.g. "FILE_MODIFIED") for branch logic. */
-function extractApiCode(err: unknown): string {
-  const e = err as { error?: { code?: string } }
-  return e?.error?.code ?? ''
-}
 
 interface TabSlice {
   tabs: SftpTab[]

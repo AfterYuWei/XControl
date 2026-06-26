@@ -52,6 +52,7 @@ func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS) http.Handle
 	transferMgr := handler.NewTransferManager(sftpHub)
 	sftpH := handler.NewSftpHandler(profileStore, vaultStore, auditStore, pm, sftpHub, transferMgr, pool)
 	serverDetailH := handler.NewServerDetailHandler(profileStore, vaultStore, pool)
+	editH := handler.NewEditHandler(sftpH, serverDetailH)
 
 	// Profile routes
 	mux.HandleFunc("GET /api/profiles", profileH.List)
@@ -96,8 +97,15 @@ func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS) http.Handle
 
 	// SFTP built-in editor (text file read/write with size, binary, and
 	// encoding guards + optimistic-lock via mod_time).
+	// Note: These routes are kept for backward compatibility. The preferred
+	// API is /api/edit/sessions/{id}/file which works for both SFTP and
+	// ServerDetail sessions.
 	mux.HandleFunc("GET /api/sftp/sessions/{id}/file", sftpH.ReadFile)
 	mux.HandleFunc("PUT /api/sftp/sessions/{id}/file", sftpH.WriteFile)
+
+	// Unified file editor routes (works for both SFTP and ServerDetail sessions)
+	mux.HandleFunc("GET /api/edit/sessions/{id}/file", editH.ReadFile)
+	mux.HandleFunc("PUT /api/edit/sessions/{id}/file", editH.WriteFile)
 
 	// SFTP transfers
 	mux.HandleFunc("POST /api/sftp/sessions/{id}/upload", sftpH.Upload)

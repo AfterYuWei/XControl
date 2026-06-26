@@ -5,6 +5,7 @@ import { useSidebarDetailStore } from '@/store/sidebarDetail'
 import { useServerDetailStore } from '@/store/serverDetail'
 import { Tooltip } from '@/components/ui/tooltip'
 import { useServerMetrics } from '@/hooks/useServerMetrics'
+import { EditorDialog } from '@/components/Editor/EditorDialog'
 import type { FileTreeNode } from '@/store/serverDetail'
 
 interface ServerDetailProps {
@@ -101,13 +102,26 @@ export function ServerDetail({
     const isLoading = node.loading
     const hasError = node.error !== null
 
+    const handleClick = () => {
+      if (node.isDir) {
+        toggleDir(profileId, node.path)
+      } else {
+        // Open file in editor
+        getStatus(profileId) // ensure we have the latest state
+        const detail = useServerDetailStore.getState().getStatus(profileId)
+        if (detail.sessionId) {
+          useServerDetailStore.getState().openEditor(profileId, node.path)
+        }
+      }
+    }
+
     return (
       <div key={node.path}>
         <div
           className="sdetail-file-row"
           style={{ paddingLeft: 4 + depth * 12 }}
-          onClick={() => node.isDir && toggleDir(profileId, node.path)}
-          role={node.isDir ? 'button' : undefined}
+          onClick={handleClick}
+          role="button"
         >
           <div className="sdetail-file-left">
             {node.isDir ? (
@@ -391,6 +405,8 @@ export function ServerDetail({
           )}
         </div>
       </div>
+
+      <EditorDialog />
     </div>
   )
 }

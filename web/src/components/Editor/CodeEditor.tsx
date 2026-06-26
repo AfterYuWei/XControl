@@ -1,7 +1,6 @@
 import { useRef, useCallback } from 'react'
 import MonacoEditor, { type OnMount, loader } from '@monaco-editor/react'
 import type { editor } from 'monaco-editor'
-import { useSftpStore } from '../storeContext'
 import { useSettingsStore } from '@/store/settings'
 
 // Define custom themes once when the module loads.
@@ -57,61 +56,76 @@ loader.init().then((monaco) => {
   })
 })
 
-/** Monaco editor wrapper for SFTP file editing.
+interface CodeEditorProps {
+  content: string
+  language: string
+  readOnly: boolean
+  loading: boolean
+  onChange: (value: string) => void
+  onSave: () => void
+}
+
+/** Monaco editor wrapper for file editing.
  *
  *  Uses @monaco-editor/react which loads Monaco lazily from CDN.
- *  Ctrl/Cmd+S → saveEditor(); intercepts browser default. */
-export function CodeEditor() {
+ *  Ctrl/Cmd+S → onSave(); intercepts browser default. */
+export function CodeEditor({
+  content,
+  language,
+  readOnly,
+  loading,
+  onChange,
+  onSave,
+}: CodeEditorProps) {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
-
-  const editor = useSftpStore((s) => s.editor)
-  const setEditorContent = useSftpStore((s) => s.setEditorContent)
-  const saveEditor = useSftpStore((s) => s.saveEditor)
 
   const theme = useSettingsStore((s) => s.theme)
   const systemRevision = useSettingsStore((s) => s.systemRevision)
-  void systemRevision // 仅用于建立订阅依赖，system 模式下跟随系统主题变化
+  void systemRevision
   const resolvedTheme: 'light' | 'dark' =
     theme === 'system'
       ? window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
       : theme
 
-  const handleMount: OnMount = useCallback((inst, monaco) => {
-    editorRef.current = inst
+  const handleMount: OnMount = useCallback(
+    (inst, monaco) => {
+      editorRef.current = inst
 
-    // Sync edits → store
-    inst.onDidChangeModelContent(() => {
-      setEditorContent(inst.getValue())
-    })
+      // Sync edits → store
+      inst.onDidChangeModelContent(() => {
+        onChange(inst.getValue())
+      })
 
-    // Ctrl/Cmd+S → save
-    inst.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-      saveEditor()
-    })
-  }, [setEditorContent, saveEditor])
+      // Ctrl/Cmd+S → save
+      inst.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+        onSave()
+      })
+    },
+    [onChange, onSave]
+  )
 
   return (
     <MonacoEditor
       height="100%"
-      language={editor.language}
+      language={language}
       theme={resolvedTheme === 'dark' ? 'sshx-dark' : 'sshx-light'}
-      value={editor.content}
-      onChange={(value) => setEditorContent(value ?? '')}
+      value={content}
+      onChange={(value) => onChange(value ?? '')}
       onMount={handleMount}
       loading={
-        <div className="sftp-editor-monaco-loading">
-          <div className="sftp-editor-monaco-spinner" />
+        <div className="editor-monaco-loading">
+          <div className="editor-monaco-spinner" />
           <span>编辑器加载中…</span>
         </div>
       }
       options={{
         fontSize: 13,
         fontFamily: "'JetBrains Mono', 'Fira Code', ui-monospace, monospace",
-        minimap: { enabled: editor.content.length > 100_000 },
+        minimap: { enabled: content.length > 100_000 },
         scrollBeyondLastLine: false,
         tabSize: 2,
-        wordWrap: editor.content.length > 500_000 ? 'on' : 'off',
-        readOnly: editor.readOnly || editor.loading,
+        wordWrap: content.length > 500_000 ? 'on' : 'off',
+        readOnly: readOnly || loading,
         lineNumbers: 'on',
         renderWhitespace: 'selection',
         bracketPairColorization: { enabled: true },

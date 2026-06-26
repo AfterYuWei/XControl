@@ -15,6 +15,8 @@ export function useWebSocket(options: UseWebSocketOptions) {
   const { sessionId, onMessage, onOpen, onClose, onError } = options
   const wsRef = useRef<WebSocket | null>(null)
   const [status, setStatus] = useState<WSStatus>('connecting')
+  const [latency, setLatency] = useState<number | null>(null)
+  const pingTimeRef = useRef<number>(0)
 
   // Store callbacks in refs so the effect only depends on sessionId
   const callbacksRef = useRef({ onMessage, onOpen, onClose, onError })
@@ -41,6 +43,13 @@ export function useWebSocket(options: UseWebSocketOptions) {
       ws.onmessage = (event) => {
         try {
           const msg: WSMessage = JSON.parse(event.data)
+          // Handle pong internally for latency measurement
+          if (msg.type === 'pong' && pingTimeRef.current > 0) {
+            const rtt = Date.now() - pingTimeRef.current
+            setLatency(rtt)
+            pingTimeRef.current = 0
+            return
+          }
           callbacksRef.current.onMessage?.(msg)
         } catch (err) {
           console.error('Failed to parse WS message:', err)
@@ -49,6 +58,7 @@ export function useWebSocket(options: UseWebSocketOptions) {
 
       ws.onclose = () => {
         setStatus('disconnected')
+        setLatency(null)
         callbacksRef.current.onClose?.()
       }
 
@@ -59,12 +69,13 @@ export function useWebSocket(options: UseWebSocketOptions) {
 
     connect()
 
-    // Heartbeat
+    // Heartbeat with latency measurement (every 5 seconds)
     const heartbeat = setInterval(() => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
+        pingTimeRef.current = Date.now()
         wsRef.current.send(JSON.stringify({ type: 'ping' }))
       }
-    }, 30000)
+    }, 5000)
 
     return () => {
       clearInterval(heartbeat)
@@ -91,6 +102,7 @@ export function useWebSocket(options: UseWebSocketOptions) {
 
   return {
     status,
+    latency,
     send,
     sendInput,
     sendResize,

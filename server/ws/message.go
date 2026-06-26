@@ -15,6 +15,9 @@ const (
 	MsgAuth    MessageType = "auth"
 	MsgMeta    MessageType = "metadata"
 
+	// Terminal current working directory (detected via OSC 7)
+	MsgCwd MessageType = "cwd"
+
 	// SFTP transfer progress messages
 	MsgTransferProgress MessageType = "transfer_progress"
 	MsgTransferComplete MessageType = "transfer_complete"
@@ -47,6 +50,10 @@ type MetaPayload struct {
 	Host      string `json:"host"`
 	Username  string `json:"username"`
 	Protocol  string `json:"protocol"`
+}
+
+type CwdPayload struct {
+	Path string `json:"path"`
 }
 
 // --- SFTP transfer payloads ---

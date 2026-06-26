@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import {
   File, Folder, HardDrive, Cpu, Loader2, AlertCircle,
   FilePlus, FolderPlus, RefreshCw, Pencil, Trash2, Copy, Eye, EyeOff,
-  FolderOpen, FileEdit, Inbox
+  FolderOpen, FileEdit, Inbox, MapPin
 } from 'lucide-react'
 import { useSessionStore } from '@/store/session'
 import { useSidebarDetailStore } from '@/store/sidebarDetail'
@@ -279,6 +279,16 @@ export function ServerDetail({
         </button>
         {!detail.filesCollapsed && isConnected && (
           <div className="sdetail-file-actions">
+            {/* Locate button - navigate to terminal's current directory */}
+            {tab?.cwd && (
+              <button
+                className="sdetail-act-btn"
+                title={`定位到终端目录: ${tab.cwd}`}
+                onClick={() => listFiles(profileId, tab.cwd!)}
+              >
+                <MapPin size={12} />
+              </button>
+            )}
             {serverDetail.selected.size > 0 && (
               <button
                 className="sdetail-act-btn sdetail-act-btn-danger"
@@ -310,6 +320,14 @@ export function ServerDetail({
           </div>
         )}
       </div>
+
+      {/* Current path display - clickable to edit */}
+      {!detail.filesCollapsed && isConnected && (
+        <PathBreadcrumb
+          path={serverDetail.currentPath || '/'}
+          onNavigate={(path) => listFiles(profileId, path)}
+        />
+      )}
 
       {/* File browser list — fills remaining space, scrolls independently */}
       {!detail.filesCollapsed && (
@@ -614,6 +632,65 @@ export function ServerDetail({
         entries={deleteConfirm?.entries.map(toSftpEntry) || []}
         onConfirm={handleDelete}
       />
+    </div>
+  )
+}
+
+/** Path breadcrumb component - supports selection, copy, and manual input navigation */
+function PathBreadcrumb({ path, onNavigate }: { path: string; onNavigate: (path: string) => void }) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [editValue, setEditValue] = useState(path)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Enter edit mode
+  const handleDoubleClick = () => {
+    setEditValue(path)
+    setIsEditing(true)
+    setTimeout(() => inputRef.current?.select(), 0)
+  }
+
+  // Submit navigation
+  const handleSubmit = () => {
+    const trimmed = editValue.trim()
+    if (trimmed && trimmed !== path) {
+      onNavigate(trimmed)
+    }
+    setIsEditing(false)
+  }
+
+  // Handle keyboard events
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSubmit()
+    } else if (e.key === 'Escape') {
+      setIsEditing(false)
+    }
+  }
+
+  if (isEditing) {
+    return (
+      <div className="sdetail-file-path editing">
+        <input
+          ref={inputRef}
+          type="text"
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onBlur={handleSubmit}
+          onKeyDown={handleKeyDown}
+          className="sdetail-path-input"
+          spellCheck={false}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className="sdetail-file-path"
+      title={`${path}\n双击编辑路径`}
+      onDoubleClick={handleDoubleClick}
+    >
+      {path}
     </div>
   )
 }

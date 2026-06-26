@@ -1,10 +1,13 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/coder/websocket"
@@ -54,6 +57,10 @@ func (h *WSHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		wsConn.Close(websocket.StatusPolicyViolation, "session failed")
 		return
 	}
+
+	// Inject OSC 7 configuration BEFORE sending metadata and starting data flow
+	// This happens while frontend is still showing "connecting" dialog
+	h.injectOSC7Config(session)
 
 	// Send metadata
 	info := session.Driver.Info()
@@ -152,11 +159,18 @@ func (h *WSHandler) writePump(ctx context.Context, conn *ws.Conn, session *Sessi
 	}
 
 	defer func() {
-		// Clean up session when writePump exits (WebSocket disconnected)
 		h.sessions.RemoveSession(conn.SessionID)
 	}()
 
 	buf := make([]byte, 4096)
+	var osc7Buffer []byte
+
+	// Filter control for injected OSC 7 config command
+	// Uses a buffer to handle network packet fragmentation
+	isFilteringInit := true
+	initTarget := []byte(` __osc7_cwd()`) // Leading space to match the command with space prefix
+	var initFilterBuf []byte
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -181,10 +195,152 @@ func (h *WSHandler) writePump(ctx context.Context, conn *ws.Conn, session *Sessi
 				}
 			}
 			if n > 0 {
-				h.sendWSMessage(wsConn.WS(), ws.MsgOutput, string(buf[:n]), nil)
+				data := buf[:n]
+
+				// Surgical filter for injected OSC 7 config command
+				// Handles network packet fragmentation gracefully
+				if isFilteringInit {
+					initFilterBuf = append(initFilterBuf, data...)
+
+					if idx := bytes.Index(initFilterBuf, initTarget); idx != -1 {
+						// Found command start, safely find line end (\n)
+						endIdx := bytes.Index(initFilterBuf[idx:], []byte("\n"))
+
+						if endIdx != -1 {
+							actualEnd := idx + endIdx + 1
+							// Precise removal: keep data before command (Banner/MOTD) and after (Prompt)
+							cleanedData := append([]byte{}, initFilterBuf[:idx]...)
+							cleanedData = append(cleanedData, initFilterBuf[actualEnd:]...)
+							data = cleanedData
+							isFilteringInit = false // Done, disable filter
+							initFilterBuf = nil     // Release memory
+						} else {
+							// Found start but no newline (truncated by network)
+							// Send data before command start, hold the rest
+							data = append([]byte{}, initFilterBuf[:idx]...)
+							initFilterBuf = initFilterBuf[idx:]
+						}
+					} else {
+						// Command not seen yet (Banner may be split across packets)
+						data = initFilterBuf
+						initFilterBuf = nil
+
+						// Safety fallback: disable filter if no command found after 10KB
+						if len(data) > 10240 {
+							isFilteringInit = false
+						}
+					}
+				}
+
+				// Process OSC 7 sequences (only after filtering is complete)
+				if !isFilteringInit {
+					osc7Buffer = append(osc7Buffer, data...)
+					cwd := extractOSC7(&osc7Buffer)
+					if cwd != "" {
+						h.sendWSMessage(wsConn.WS(), ws.MsgCwd, "", ws.CwdPayload{
+							Path: cwd,
+						})
+					}
+				}
+
+				// Send to frontend (clean data with command filtered out)
+				if len(data) > 0 {
+					h.sendWSMessage(wsConn.WS(), ws.MsgOutput, string(data), nil)
+				}
 			}
 		}
 	}
+}
+
+// extractOSC7 extracts the current working directory from OSC 7 escape sequences.
+// OSC 7 format: \x1b]7;file://hostname/path\x07
+// Returns the path portion if found, empty string otherwise.
+func extractOSC7(buf *[]byte) string {
+	// OSC 7 starts with ESC ] 7 ;
+	osc7Prefix := []byte{0x1b, ']', '7', ';'}
+	// Ends with BEL (0x07) or ST (ESC \)
+	belByte := byte(0x07)
+	stSequence := []byte{0x1b, '\\'}
+
+	var result string
+
+	for {
+		// Find start of OSC 7
+		startIdx := bytes.Index(*buf, osc7Prefix)
+		if startIdx == -1 {
+			// Keep last len(osc7Prefix)-1 bytes in case of partial match
+			keepLen := len(osc7Prefix) - 1
+			if len(*buf) > keepLen {
+				*buf = (*buf)[len(*buf)-keepLen:]
+			}
+			break
+		}
+
+		// Find end of OSC 7 (BEL or ST)
+		searchFrom := startIdx + len(osc7Prefix)
+		endIdx := -1
+		terminatorLen := 0
+
+		// Look for BEL
+		for i := searchFrom; i < len(*buf); i++ {
+			if (*buf)[i] == belByte {
+				endIdx = i
+				terminatorLen = 1
+				break
+			}
+		}
+
+		// If BEL not found, look for ST
+		if endIdx == -1 {
+			stIdx := bytes.Index((*buf)[searchFrom:], stSequence)
+			if stIdx != -1 {
+				endIdx = searchFrom + stIdx
+				terminatorLen = len(stSequence)
+			}
+		}
+
+		if endIdx == -1 {
+			// Incomplete sequence, keep it in buffer
+			*buf = (*buf)[startIdx:]
+			break
+		}
+
+		// Extract the URI: file://hostname/path
+		uri := string((*buf)[searchFrom:endIdx])
+
+		// Remove processed bytes
+		*buf = (*buf)[endIdx+terminatorLen:]
+
+		// Parse the URI
+		if strings.HasPrefix(uri, "file://") {
+			// Parse URL to get path
+			parsedURL, err := url.Parse(uri)
+			if err == nil && parsedURL.Path != "" {
+				result = parsedURL.Path
+			}
+		}
+	}
+
+	return result
+}
+
+// injectOSC7Config injects OSC 7 terminal directory tracking configuration
+// This runs before the data flow starts, so the output won't be visible to the user
+func (h *WSHandler) injectOSC7Config(session *Session) {
+	if session == nil || session.Shell == nil {
+		return
+	}
+
+	// Send OSC 7 setup command with leading space to suppress history recording
+	// The leading space tells bash/zsh not to add this command to history
+	osc7Cmd := ` __osc7_cwd() { printf "\033]7;file://%s%s\007" "$(hostname)" "$PWD"; }; `
+	osc7Cmd += `if [ -n "$ZSH_VERSION" ]; then precmd_functions+=(__osc7_cwd); `
+	osc7Cmd += `elif [ -n "$BASH_VERSION" ]; then `
+	osc7Cmd += `[[ "$PROMPT_COMMAND" != *__osc7_cwd* ]] && PROMPT_COMMAND="__osc7_cwd${PROMPT_COMMAND:+;$PROMPT_COMMAND}"; fi`
+	session.Shell.Write([]byte(osc7Cmd + "\n"))
+
+	// Wait for the command to execute before frontend starts receiving
+	time.Sleep(200 * time.Millisecond)
 }
 
 func (h *WSHandler) sendWSMessage(wsConn *websocket.Conn, msgType ws.MessageType, data string, payload any) {

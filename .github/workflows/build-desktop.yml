@@ -84,19 +84,10 @@ jobs:
             ext: .exe
             dist_script: dist:win
             artifact_glob: "SSHX-Setup-*"
-          # macOS 拆成 arm64(Apple Silicon) 和 x64(Intel) 两个 job，
-          # 各自只打单架构，确保后端二进制与 dmg 架构一致
           - os: macos-latest
             platform: mac-arm64
             goos: darwin
             goarch: arm64
-            ext: ""
-            dist_script: dist:mac
-            artifact_glob: "SSHX-*.dmg"
-          - os: macos-13
-            platform: mac-x64
-            goos: darwin
-            goarch: amd64
             ext: ""
             dist_script: dist:mac
             artifact_glob: "SSHX-*.dmg"
@@ -261,7 +252,6 @@ jobs:
             |------|------|------|
             | Windows | `SSHX-Setup-*-x64.exe` | NSIS 安装程序 |
             | macOS (Apple Silicon) | `SSHX-*-arm64.dmg` | DMG 镜像 |
-            | macOS (Intel) | `SSHX-*-x64.dmg` | DMG 镜像 |
             | Linux (Debian/Ubuntu) | `SSHX-*-x64.deb` | deb 安装包 |
             | Linux (Fedora/RHEL) | `SSHX-*-x64.rpm` | rpm 安装包 |
 

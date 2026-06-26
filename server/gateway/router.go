@@ -124,6 +124,9 @@ func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS) http.Handle
 	mux.HandleFunc("DELETE /api/server/sessions/{id}", serverDetailH.CloseSession)
 	mux.HandleFunc("GET /api/server/sessions/{id}/info", serverDetailH.GetInfo)
 	mux.HandleFunc("GET /api/server/sessions/{id}/files", serverDetailH.ListFiles)
+	mux.HandleFunc("POST /api/server/sessions/{id}/mkdir", serverDetailH.Mkdir)
+	mux.HandleFunc("POST /api/server/sessions/{id}/rename", serverDetailH.Rename)
+	mux.HandleFunc("POST /api/server/sessions/{id}/delete", serverDetailH.Delete)
 	mux.HandleFunc("GET /api/server/ws", serverDetailH.HandleWS)
 
 	// 静态前端资源：仅当传入 embed 的文件系统时注册（桌面打包模式）。

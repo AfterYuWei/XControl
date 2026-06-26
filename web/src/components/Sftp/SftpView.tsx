@@ -122,16 +122,29 @@ function SftpDialogs() {
   const renameDialog = useSftpStore((s) => s.renameDialog)
   const deleteConfirm = useSftpStore((s) => s.deleteConfirm)
 
-  // Get active tab path for file/folder creation
-  const getActiveTabPath = (pane: PaneSide): string => {
+  // Get the target path for new file/folder creation
+  // If a directory is selected, use that path; otherwise use current tab path
+  const getTargetPath = (pane: PaneSide): string => {
     const state = storeApi.getState()
     const tabs = pane === 'left' ? state.leftTabs : state.rightTabs
     const activeId = pane === 'left' ? state.activeLeftTabId : state.activeRightTabId
     const tab = tabs.find((t) => t.id === activeId)
-    return tab?.path || '/'
+    if (!tab) return '/'
+
+    const selected = tab.selected
+    if (selected.size === 1) {
+      const selectedPath = Array.from(selected)[0]
+      const entry = tab.entries.find((e) => e.path === selectedPath)
+      if (entry) {
+        // If selected is a directory, create inside it
+        // If selected is a file, create in its parent directory
+        return entry.is_dir ? entry.path : (entry.path.substring(0, entry.path.lastIndexOf('/')) || '/')
+      }
+    }
+    return tab.path || '/'
   }
 
-  // Check if name already exists in current directory
+  // Check if name already exists in target directory
   const checkDuplicate = (pane: PaneSide, name: string): string | null => {
     const state = storeApi.getState()
     const tabs = pane === 'left' ? state.leftTabs : state.rightTabs
@@ -147,7 +160,7 @@ function SftpDialogs() {
     if (!newFileDialog) return
     const duplicateError = checkDuplicate(newFileDialog.pane, name)
     if (duplicateError) throw new Error(duplicateError)
-    const currentPath = getActiveTabPath(newFileDialog.pane)
+    const currentPath = getTargetPath(newFileDialog.pane)
     const filePath = currentPath === '/' ? `/${name}` : `${currentPath}/${name}`
     await store.createFile(newFileDialog.pane, filePath)
   }
@@ -156,7 +169,7 @@ function SftpDialogs() {
     if (!newFolderDialog) return
     const duplicateError = checkDuplicate(newFolderDialog.pane, name)
     if (duplicateError) throw new Error(duplicateError)
-    const currentPath = getActiveTabPath(newFolderDialog.pane)
+    const currentPath = getTargetPath(newFolderDialog.pane)
     const folderPath = currentPath === '/' ? `/${name}` : `${currentPath}/${name}`
     await store.mkdir(newFolderDialog.pane, folderPath)
   }

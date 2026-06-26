@@ -1595,9 +1595,17 @@
   border-radius: var(--r-xs);
   cursor: default;
   transition: background 0.08s;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .sdetail-file-row:hover {
   background: var(--bg-hover);
+}
+.sdetail-file-row.selected {
+  background: var(--accent-bg, rgba(59, 130, 246, 0.1));
+}
+.sdetail-file-row.selected:hover {
+  background: var(--accent-bg-hover, rgba(59, 130, 246, 0.15));
 }
 .sdetail-file-left {
   display: flex;
@@ -1678,6 +1686,91 @@
   font: 400 11px/1 var(--sans);
   color: var(--err, #ef4444);
 }
+
+/* Server detail file header with action buttons */
+.sdetail-file-hdr {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.sdetail-file-hdr .psec-title {
+  margin-bottom: 0;
+  border-bottom: none;
+}
+.sdetail-file-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 8px;
+}
+.sdetail-act-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  color: var(--fg-3);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.sdetail-act-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-1);
+}
+.sdetail-act-btn:active {
+  transform: scale(0.95);
+}
+
+.sdetail-act-btn-danger {
+  color: var(--err, #ef4444);
+}
+.sdetail-act-btn-danger:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--err, #ef4444);
+}
+
+/* Dropdown wrapper */
+.sdetail-dropdown-wrapper {
+  position: relative;
+}
+
+/* Dropdown menu */
+.sdetail-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 100;
+  min-width: 120px;
+  padding: 4px;
+  background: var(--bg-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.sdetail-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  font: 400 12px/1 var(--sans);
+  color: var(--fg-2);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sdetail-dropdown-item:hover {
+  background: var(--bg-hover);
+  color: var(--fg-1);
+}
+
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }

@@ -105,6 +105,26 @@ export interface PendingConflict {
   direction: TransferDirection
 }
 
+/** Dialog state types for file operations */
+export interface NewFileDialogState {
+  pane: PaneSide
+}
+
+export interface NewFolderDialogState {
+  pane: PaneSide
+}
+
+export interface RenameDialogState {
+  pane: PaneSide
+  path: string
+  currentName: string
+}
+
+export interface DeleteConfirmState {
+  pane: PaneSide
+  entries: SftpEntry[]
+}
+
 /** One open connection (a server) inside a pane. Owns its session, path,
  *  view mode, cached entries, and selection. */
 export interface SftpTab {
@@ -113,6 +133,7 @@ export interface SftpTab {
   sessionId: string | null
   path: string
   view: SftpViewMode
+  showHidden: boolean    // whether to show hidden files (starting with .)
   selected: Set<string>
   entries: SftpEntry[]    // cached list-view entries
   tree: TreeNode | null   // cached tree-view root
@@ -141,6 +162,7 @@ export interface SftpStore {
   clearSelection: (pane: PaneSide) => void
   toggleView: (pane: PaneSide) => Promise<void>
   setView: (pane: PaneSide, v: SftpViewMode) => Promise<void>
+  toggleShowHidden: (pane: PaneSide) => Promise<void>
   closeTab: (pane: PaneSide, tabId: string) => void
   setActiveTab: (pane: PaneSide, tabId: string) => void
   connectServer: (pane: PaneSide, server: SftpServer) => Promise<void>
@@ -148,6 +170,7 @@ export interface SftpStore {
 
   // File operations
   mkdir: (pane: PaneSide, path: string) => Promise<void>
+  createFile: (pane: PaneSide, filePath: string) => Promise<void>
   rename: (pane: PaneSide, oldPath: string, newPath: string) => Promise<void>
   deleteSelected: (pane: PaneSide) => Promise<void>
 
@@ -165,6 +188,19 @@ export interface SftpStore {
   /** Resolve a pending conflict with the chosen strategy and resume the
    *  transfer. */
   resolveConflict: (resolution: ConflictResolution) => Promise<void>
+
+  // Dialog states
+  newFileDialog: NewFileDialogState | null
+  newFolderDialog: NewFolderDialogState | null
+  renameDialog: RenameDialogState | null
+  deleteConfirm: DeleteConfirmState | null
+
+  // Dialog actions
+  openNewFileDialog: (pane: PaneSide) => void
+  openNewFolderDialog: (pane: PaneSide) => void
+  openRenameDialog: (pane: PaneSide, entry: SftpEntry) => void
+  openDeleteConfirm: (pane: PaneSide, entries?: SftpEntry[]) => void
+  closeDialogs: () => void
 
   // WebSocket progress callbacks (called by useSftpTransfer hook)
   updateTransferProgress: (taskId: string, transferred: number, size: number, speed: number, status: string) => void
@@ -187,6 +223,7 @@ function makeTab(server: SftpServer): SftpTab {
     sessionId: null,
     path: '/',
     view: 'list',
+    showHidden: false,
     selected: new Set(),
     entries: [],
     tree: null,
@@ -216,6 +253,12 @@ export function createSftpStore(): SftpStoreApi {
     servers: [],
     serversLoading: false,
     pendingConflict: null,
+
+    // Dialog states
+    newFileDialog: null,
+    newFolderDialog: null,
+    renameDialog: null,
+    deleteConfirm: null,
 
     loadServers: async () => {
       set({ serversLoading: true })
@@ -292,6 +335,15 @@ export function createSftpStore(): SftpStoreApi {
       await setViewAndFetch(get, set, pane, v)
     },
 
+    toggleShowHidden: async (pane) => {
+      const { tabs, activeId } = tabsOf(get(), pane)
+      const tab = tabs.find((t) => t.id === activeId)
+      if (!tab) return
+      const newShowHidden = !tab.showHidden
+      set(updateActiveTab(get(), pane, (t) => ({ ...t, showHidden: newShowHidden })))
+      await fetchEntries(get, set, pane, tab.path)
+    },
+
     closeTab: (pane, tabId) => {
       const { tabs, activeId } = tabsOf(get(), pane)
       // Close SFTP session on backend
@@ -315,6 +367,19 @@ export function createSftpStore(): SftpStoreApi {
         await fetchEntries(get, set, pane, tab.path)
       } catch (err) {
         console.error('mkdir failed', err)
+        throw err
+      }
+    },
+
+    createFile: async (pane, filePath) => {
+      const tab = activeTabOf(get(), pane)
+      if (!tab?.sessionId) return
+      try {
+        await sftpApi.writeFile(tab.sessionId, filePath, { content: '', expected_mod_time: '' })
+        await fetchEntries(get, set, pane, tab.path)
+      } catch (err) {
+        console.error('createFile failed', err)
+        throw err
       }
     },
 
@@ -326,6 +391,7 @@ export function createSftpStore(): SftpStoreApi {
         await fetchEntries(get, set, pane, tab.path)
       } catch (err) {
         console.error('rename failed', err)
+        throw err
       }
     },
 
@@ -339,6 +405,7 @@ export function createSftpStore(): SftpStoreApi {
         await fetchEntries(get, set, pane, tab.path)
       } catch (err) {
         console.error('delete failed', err)
+        throw err
       }
     },
 
@@ -372,6 +439,40 @@ export function createSftpStore(): SftpStoreApi {
     },
 
     dismissConflict: () => set({ pendingConflict: null }),
+
+    // Dialog actions
+    openNewFileDialog: (pane) => set({ newFileDialog: { pane }, newFolderDialog: null, renameDialog: null, deleteConfirm: null }),
+
+    openNewFolderDialog: (pane) => set({ newFolderDialog: { pane }, newFileDialog: null, renameDialog: null, deleteConfirm: null }),
+
+    openRenameDialog: (pane, entry) => set({
+      renameDialog: { pane, path: entry.path, currentName: entry.name },
+      newFileDialog: null,
+      newFolderDialog: null,
+      deleteConfirm: null,
+    }),
+
+    openDeleteConfirm: (pane, entries) => {
+      const tab = activeTabOf(get(), pane)
+      if (!tab) return
+      const entriesToDelete = entries ?? Array.from(tab.selected).map((path) =>
+        tab.entries.find((e) => e.path === path)
+      ).filter(Boolean) as SftpEntry[]
+      if (entriesToDelete.length === 0) return
+      set({
+        deleteConfirm: { pane, entries: entriesToDelete },
+        newFileDialog: null,
+        newFolderDialog: null,
+        renameDialog: null,
+      })
+    },
+
+    closeDialogs: () => set({
+      newFileDialog: null,
+      newFolderDialog: null,
+      renameDialog: null,
+      deleteConfirm: null,
+    }),
 
     resolveConflict: async (resolution) => {
       const pending = get().pendingConflict
@@ -525,6 +626,7 @@ async function connectAndNavigate(
     // If still connecting, poll for status
     let sessionId = res.session_id
     let status = res.status
+    let homeDir = res.home_dir || '/'
 
     // Wait for connection (max 30 seconds)
     const deadline = Date.now() + 30000
@@ -535,6 +637,10 @@ async function connectAndNavigate(
         status = info.status
         if (info.error) {
           throw new Error(info.error)
+        }
+        // Update home_dir from session info if available
+        if (info.home_dir) {
+          homeDir = info.home_dir
         }
       } catch {
         break
@@ -548,8 +654,8 @@ async function connectAndNavigate(
     // Update tab with session ID
     set(updateTabById(get(), pane, tabId, (t) => ({ ...t, sessionId })))
 
-    // Fetch root listing
-    await fetchEntries(get, set, pane, '/')
+    // Fetch home directory listing (default to / if home_dir not available)
+    await fetchEntries(get, set, pane, homeDir)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     set(updateTabById(get(), pane, tabId, (t) => ({ ...t, loading: false, error: msg })))
@@ -674,7 +780,7 @@ async function fetchEntries(get: GetState, set: SetState, pane: PaneSide, path: 
   })))
 
   try {
-    const res = await sftpApi.list(tab.sessionId, path)
+    const res = await sftpApi.list(tab.sessionId, path, tab.showHidden)
     // Only apply if this is still the latest request
     const current = activeTabOf(get(), pane)
     if (!current || current.fetchSeq !== seq) return

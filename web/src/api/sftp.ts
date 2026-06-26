@@ -21,6 +21,7 @@ export interface SftpSessionInfo {
   profile_id: string
   status: string
   error?: string
+  home_dir?: string // User's home directory
   created_at: string
 }
 
@@ -41,9 +42,9 @@ export const sftpApi = {
 
   // --- File operations ---
 
-  list: (sessionId: string, path: string) =>
+  list: (sessionId: string, path: string, showHidden = false) =>
     api.get<SftpListResponse>(
-      `/api/sftp/sessions/${sessionId}/list?path=${encodeURIComponent(path)}`
+      `/api/sftp/sessions/${sessionId}/list?path=${encodeURIComponent(path)}&show_hidden=${showHidden}`
     ),
 
   stat: (sessionId: string, path: string) =>

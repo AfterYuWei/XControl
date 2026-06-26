@@ -46,6 +46,7 @@ export interface SftpServer {
 export interface SftpCreateSessionResponse {
   session_id: string
   status: string
+  home_dir?: string // User's home directory
 }
 
 /** Response type for GET /api/sftp/sessions/{id}/list */

@@ -4,6 +4,7 @@ import {
   Server,
   FolderOpen,
   Inbox,
+  FilePlus,
   FolderPlus,
   RefreshCw,
   Pencil,
@@ -121,21 +122,33 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
         ]
       : []),
     { id: 'd1', label: '', divider: true },
-    { id: 'rename', label: '重命名', icon: <Pencil size={13} />, onClick: () => {} },
+    { id: 'rename', label: '重命名', icon: <Pencil size={13} />, onClick: () => store.openRenameDialog(pane, entry) },
     { id: 'copy', label: '复制路径', icon: <Copy size={13} />, onClick: () => navigator.clipboard?.writeText(entry.path) },
     { id: 'd2', label: '', divider: true },
-    { id: 'del', label: '删除', icon: <Trash2 size={13} />, danger: true, onClick: () => {} },
+    { id: 'del', label: '删除', icon: <Trash2 size={13} />, danger: true, onClick: () => store.openDeleteConfirm(pane, [entry]) },
   ]
 
   const blankMenuItems = (): MenuItem[] => [
-    { id: 'mkdir', label: '新建文件夹', icon: <FolderPlus size={13} />, onClick: () => {} },
+    { id: 'newFile', label: '新建文件', icon: <FilePlus size={13} />, onClick: () => store.openNewFileDialog(pane) },
+    { id: 'newFolder', label: '新建文件夹', icon: <FolderPlus size={13} />, onClick: () => store.openNewFolderDialog(pane) },
+    { id: 'd1', label: '', divider: true },
     { id: 'refresh', label: '刷新', icon: <RefreshCw size={13} />, onClick: () => navigate(path) },
   ]
 
   const handleRefresh = () => navigate(path)
 
   const renderListView = () => (
-    <div className="sftp-list" onClick={() => clearSel()}>
+    <div
+      className="sftp-list"
+      onClick={() => clearSel()}
+      onContextMenu={(e) => {
+        // Only show context menu when clicking on empty area (not on file rows)
+        if (e.target === e.currentTarget || (e.target as HTMLElement).closest('.sftp-list-empty')) {
+          e.preventDefault()
+          setCtx({ x: e.clientX, y: e.clientY, entry: null })
+        }
+      }}
+    >
       {dragOver && (
         <div className="sftp-drop-hint">
           <FolderUp size={18} />
@@ -208,7 +221,17 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
   )
 
   const renderTreeView = () => (
-    <div className="sftp-list sftp-list-tree" onClick={() => clearSel()}>
+    <div
+      className="sftp-list sftp-list-tree"
+      onClick={() => clearSel()}
+      onContextMenu={(e) => {
+        // Only show context menu when clicking on empty area
+        if (e.target === e.currentTarget || (e.target as HTMLElement).closest('.sftp-list-empty')) {
+          e.preventDefault()
+          setCtx({ x: e.clientX, y: e.clientY, entry: null })
+        }
+      }}
+    >
       {dragOver && (
         <div className="sftp-drop-hint">
           <FolderUp size={18} />
@@ -257,12 +280,6 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
         if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false)
       }}
       onDrop={handleDrop}
-      onContextMenu={(e) => {
-        if (e.target === e.currentTarget) {
-          e.preventDefault()
-          setCtx({ x: e.clientX, y: e.clientY, entry: null })
-        }
-      }}
     >
       <PaneTabs pane={pane} onPickServer={onPickServer} />
 
@@ -270,9 +287,24 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
         <Breadcrumb path={path} onNavigate={navigate} />
         <PaneActions
           view={view}
+          showHidden={activeTab.showHidden}
           hasSelection={selected.size > 0}
+          selectedCount={selected.size}
           onToggleView={() => store.toggleView(pane)}
+          onToggleShowHidden={() => store.toggleShowHidden(pane)}
           onRefresh={handleRefresh}
+          onNewFile={() => store.openNewFileDialog(pane)}
+          onNewFolder={() => store.openNewFolderDialog(pane)}
+          onRename={() => {
+            const selectedPath = Array.from(selected)[0]
+            const entry = activeTab.entries.find((e) => e.path === selectedPath)
+            if (entry) store.openRenameDialog(pane, entry)
+          }}
+          onDelete={() => store.openDeleteConfirm(pane)}
+          onCopyPath={() => {
+            const selectedPath = Array.from(selected)[0]
+            if (selectedPath) navigator.clipboard?.writeText(selectedPath)
+          }}
         />
       </div>
 

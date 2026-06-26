@@ -151,6 +151,11 @@ func (h *WSHandler) writePump(ctx context.Context, conn *ws.Conn, session *Sessi
 		return
 	}
 
+	defer func() {
+		// Clean up session when writePump exits (WebSocket disconnected)
+		h.sessions.RemoveSession(conn.SessionID)
+	}()
+
 	buf := make([]byte, 4096)
 	for {
 		select {
@@ -163,7 +168,6 @@ func (h *WSHandler) writePump(ctx context.Context, conn *ws.Conn, session *Sessi
 				Code: session.Shell.ExitCode(),
 			})
 			wsConn.WS().Close(websocket.StatusNormalClosure, "session ended")
-			h.sessions.RemoveSession(conn.SessionID)
 			return
 		default:
 			n, err := session.Shell.Read(buf)

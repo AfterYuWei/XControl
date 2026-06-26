@@ -29,6 +29,7 @@ type SftpSession struct {
 	Entry     *connpool.Entry  // non-nil for pooled remote sessions
 	Status    string           // connecting | connected | disconnected
 	Error     string
+	HomeDir   string           // User's home directory
 	CreatedAt time.Time
 
 	// Connection info retained for direct server-to-server transfer (scp).
@@ -108,10 +109,17 @@ func (h *SftpHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 	if req.ProfileID == "local" {
 		session.Backend = fileutil.NewLocalBackend()
 		session.Status = "connected"
+		// Get home directory for local user
+		if homeDir, err := os.UserHomeDir(); err == nil {
+			session.HomeDir = homeDir
+		} else {
+			session.HomeDir = "/"
+		}
 		h.broadcastSessionStatus(sessionID, "connected")
 		writeJSON(w, http.StatusCreated, model.SftpCreateSessionResponse{
 			SessionID: sessionID,
 			Status:    session.Status,
+			HomeDir:   session.HomeDir,
 		})
 		return
 	}
@@ -170,6 +178,12 @@ func (h *SftpHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 		session.Entry = entry
 		session.Backend = entry.Backend
 		session.Status = "connected"
+		// Determine home directory based on username
+		if profile.Username == "root" {
+			session.HomeDir = "/root"
+		} else {
+			session.HomeDir = "/home/" + profile.Username
+		}
 		h.profiles.UpdateLastUsed(req.ProfileID)
 		h.broadcastSessionStatus(sessionID, "connected")
 
@@ -198,6 +212,7 @@ func (h *SftpHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
 			ProfileID: s.ProfileID,
 			Status:    s.Status,
 			Error:     s.Error,
+			HomeDir:   s.HomeDir,
 			CreatedAt: s.CreatedAt,
 		})
 	}
@@ -218,6 +233,7 @@ func (h *SftpHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 		ProfileID: session.ProfileID,
 		Status:    session.Status,
 		Error:     session.Error,
+		HomeDir:   session.HomeDir,
 		CreatedAt: session.CreatedAt,
 	})
 }
@@ -290,6 +306,10 @@ func (h *SftpHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// show_hidden controls whether hidden files (starting with .) are included.
+	// Default is false (hidden files are filtered out).
+	showHidden := r.URL.Query().Get("show_hidden") == "true"
+
 	ctx, cancel := h.opCtx(r, session)
 	defer cancel()
 
@@ -301,6 +321,10 @@ func (h *SftpHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	result := make([]model.SftpEntry, 0, len(entries))
 	for _, e := range entries {
+		// Filter out hidden files unless explicitly requested
+		if !showHidden && len(e.Name) > 0 && e.Name[0] == '.' {
+			continue
+		}
 		result = append(result, toSftpEntry(e))
 	}
 	writeJSON(w, http.StatusOK, model.SftpListResponse{

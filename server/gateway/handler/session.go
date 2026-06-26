@@ -226,8 +226,21 @@ func (h *SessionHandler) GetSession(id string) *Session {
 
 func (h *SessionHandler) RemoveSession(id string) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
-	delete(h.sessions, id)
+	session, ok := h.sessions[id]
+	if ok {
+		delete(h.sessions, id)
+	}
+	h.mu.Unlock()
+
+	// Close SSH resources if they exist
+	if ok {
+		if session.Shell != nil {
+			session.Shell.Close()
+		}
+		if session.Driver != nil {
+			session.Driver.Close()
+		}
+	}
 }
 
 func (h *SessionHandler) SendError(sessionID string, code, message string) {

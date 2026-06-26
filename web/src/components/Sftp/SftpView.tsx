@@ -1,11 +1,13 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useContext } from 'react'
 import { FilePane } from './FilePane'
 import { TransferQueue } from './TransferQueue'
 import { ServerPicker } from './ServerPicker'
 import { ConflictDialog } from './ConflictDialog'
+import { InputDialog, validateSftpName } from './InputDialog'
+import { DeleteConfirmDialog } from './DeleteConfirmDialog'
 import { EditorDialog } from '@/components/Editor/EditorDialog'
-import { SftpStoreContext } from './storeContext'
-import { createSftpStore, type SftpStoreApi, type PaneSide } from '@/store/sftp'
+import { SftpStoreContext, useSftpStore } from './storeContext'
+import { createSftpStore, type SftpStoreApi, type PaneSide, parentPath } from '@/store/sftp'
 import { useSftpTransfer } from '@/hooks/useSftpTransfer'
 
 /** SFTP file manager — symmetric dual-pane layout. Both panes are identical
@@ -101,8 +103,142 @@ export function SftpView() {
         />
 
         <ConflictDialog />
+        <SftpDialogs />
         <EditorDialog />
       </div>
     </SftpStoreContext.Provider>
+  )
+}
+
+/** Renders all SFTP operation dialogs (new file, new folder, rename, delete confirm).
+ *  Must be inside SftpStoreContext.Provider. */
+function SftpDialogs() {
+  const store = useSftpStore()
+  const storeApi = useContext(SftpStoreContext)!
+
+  // Get dialog states from store
+  const newFileDialog = useSftpStore((s) => s.newFileDialog)
+  const newFolderDialog = useSftpStore((s) => s.newFolderDialog)
+  const renameDialog = useSftpStore((s) => s.renameDialog)
+  const deleteConfirm = useSftpStore((s) => s.deleteConfirm)
+
+  // Get active tab path for file/folder creation
+  const getActiveTabPath = (pane: PaneSide): string => {
+    const state = storeApi.getState()
+    const tabs = pane === 'left' ? state.leftTabs : state.rightTabs
+    const activeId = pane === 'left' ? state.activeLeftTabId : state.activeRightTabId
+    const tab = tabs.find((t) => t.id === activeId)
+    return tab?.path || '/'
+  }
+
+  // Check if name already exists in current directory
+  const checkDuplicate = (pane: PaneSide, name: string): string | null => {
+    const state = storeApi.getState()
+    const tabs = pane === 'left' ? state.leftTabs : state.rightTabs
+    const activeId = pane === 'left' ? state.activeLeftTabId : state.activeRightTabId
+    const tab = tabs.find((t) => t.id === activeId)
+    if (tab?.entries.some((e) => e.name === name)) {
+      return '同名文件或文件夹已存在'
+    }
+    return null
+  }
+
+  const handleCreateFile = async (name: string) => {
+    if (!newFileDialog) return
+    const duplicateError = checkDuplicate(newFileDialog.pane, name)
+    if (duplicateError) throw new Error(duplicateError)
+    const currentPath = getActiveTabPath(newFileDialog.pane)
+    const filePath = currentPath === '/' ? `/${name}` : `${currentPath}/${name}`
+    await store.createFile(newFileDialog.pane, filePath)
+  }
+
+  const handleCreateFolder = async (name: string) => {
+    if (!newFolderDialog) return
+    const duplicateError = checkDuplicate(newFolderDialog.pane, name)
+    if (duplicateError) throw new Error(duplicateError)
+    const currentPath = getActiveTabPath(newFolderDialog.pane)
+    const folderPath = currentPath === '/' ? `/${name}` : `${currentPath}/${name}`
+    await store.mkdir(newFolderDialog.pane, folderPath)
+  }
+
+  const handleRename = async (newName: string) => {
+    if (!renameDialog) return
+    if (newName === renameDialog.currentName) return
+    const duplicateError = checkDuplicate(renameDialog.pane, newName)
+    if (duplicateError) throw new Error(duplicateError)
+    const parent = parentPath(renameDialog.path)
+    const newPath = parent === '/' ? `/${newName}` : `${parent}/${newName}`
+    await store.rename(renameDialog.pane, renameDialog.path, newPath)
+  }
+
+  const handleDelete = async () => {
+    if (!deleteConfirm) return
+    const pane = deleteConfirm.pane
+    const paths = deleteConfirm.entries.map((e) => e.path)
+
+    const state = storeApi.getState()
+    const tabs = pane === 'left' ? state.leftTabs : state.rightTabs
+    const activeId = pane === 'left' ? state.activeLeftTabId : state.activeRightTabId
+    const tab = tabs.find((t) => t.id === activeId)
+    if (!tab?.sessionId) return
+
+    try {
+      const { sftpApi } = await import('@/api/sftp')
+      await sftpApi.delete(tab.sessionId, paths)
+      await store.refresh(pane)
+    } catch (err) {
+      console.error('delete failed', err)
+      throw err
+    }
+  }
+
+  return (
+    <>
+      <InputDialog
+        open={newFileDialog !== null}
+        onOpenChange={(open) => !open && store.closeDialogs()}
+        title="新建文件"
+        label="文件名"
+        placeholder="请输入文件名"
+        confirmText="创建"
+        onSubmit={handleCreateFile}
+        validate={validateSftpName}
+      />
+
+      <InputDialog
+        open={newFolderDialog !== null}
+        onOpenChange={(open) => !open && store.closeDialogs()}
+        title="新建文件夹"
+        label="文件夹名称"
+        placeholder="请输入文件夹名称"
+        confirmText="创建"
+        onSubmit={handleCreateFolder}
+        validate={validateSftpName}
+      />
+
+      <InputDialog
+        open={renameDialog !== null}
+        onOpenChange={(open) => !open && store.closeDialogs()}
+        title="重命名"
+        label="新名称"
+        placeholder="请输入新名称"
+        defaultValue={renameDialog?.currentName || ''}
+        confirmText="确认"
+        onSubmit={handleRename}
+        validate={(name) => {
+          const baseError = validateSftpName(name)
+          if (baseError) return baseError
+          if (renameDialog && name === renameDialog.currentName) return '新名称不能与原名称相同'
+          return null
+        }}
+      />
+
+      <DeleteConfirmDialog
+        open={deleteConfirm !== null}
+        onOpenChange={(open) => !open && store.closeDialogs()}
+        entries={deleteConfirm?.entries || []}
+        onConfirm={handleDelete}
+      />
+    </>
   )
 }

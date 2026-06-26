@@ -157,25 +157,29 @@ func (h *SftpHandler) WriteFile(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	// Optimistic lock: verify the file hasn't changed since the client read it.
+	// If the file does not exist, treat this as a create operation.
 	current, err := backend.Stat(ctx, cleanPath)
-	if err != nil {
+	isNewFile := errors.Is(err, fileutil.ErrNotFound)
+	if err != nil && !isNewFile {
 		h.handleFileErr(w, err)
 		return
 	}
-	if current.IsDir {
-		writeError(w, http.StatusBadRequest, "IS_DIRECTORY", "cannot write a directory")
-		return
-	}
-	if req.ExpectedModTime != "" {
-		expected, perr := time.Parse(time.RFC3339Nano, req.ExpectedModTime)
-		if perr != nil {
-			writeError(w, http.StatusBadRequest, "INVALID_MOD_TIME", "expected_mod_time is not a valid RFC 3339 timestamp")
+	if !isNewFile {
+		if current.IsDir {
+			writeError(w, http.StatusBadRequest, "IS_DIRECTORY", "cannot write a directory")
 			return
 		}
-		if !current.ModTime.Equal(expected) {
-			writeError(w, http.StatusConflict, "FILE_MODIFIED",
-				"文件在编辑期间已被其他进程修改，请重新加载以避免覆盖")
-			return
+		if req.ExpectedModTime != "" {
+			expected, perr := time.Parse(time.RFC3339Nano, req.ExpectedModTime)
+			if perr != nil {
+				writeError(w, http.StatusBadRequest, "INVALID_MOD_TIME", "expected_mod_time is not a valid RFC 3339 timestamp")
+				return
+			}
+			if !current.ModTime.Equal(expected) {
+				writeError(w, http.StatusConflict, "FILE_MODIFIED",
+					"文件在编辑期间已被其他进程修改，请重新加载以避免覆盖")
+				return
+			}
 		}
 	}
 
@@ -221,16 +225,30 @@ func (h *SftpHandler) WriteFile(w http.ResponseWriter, r *http.Request) {
 	// so we use RFC 3339Nano.
 	updated, err := backend.Stat(ctx, cleanPath)
 	if err != nil {
-		// Write succeeded; fall back to current's mtime.
-		writeJSON(w, http.StatusOK, model.SftpFileWriteResponse{
-			Path:    cleanPath,
-			Size:    int64(len(data)),
-			ModTime: current.ModTime.Format(time.RFC3339Nano),
-		})
+		// Write succeeded but re-stat failed.
+		if isNewFile {
+			// For new files, use current time as fallback.
+			writeJSON(w, http.StatusOK, model.SftpFileWriteResponse{
+				Path:    cleanPath,
+				Size:    int64(len(data)),
+				ModTime: time.Now().Format(time.RFC3339Nano),
+			})
+		} else {
+			// For existing files, fall back to current's mtime.
+			writeJSON(w, http.StatusOK, model.SftpFileWriteResponse{
+				Path:    cleanPath,
+				Size:    int64(len(data)),
+				ModTime: current.ModTime.Format(time.RFC3339Nano),
+			})
+		}
 		return
 	}
 
-	h.auditSftp(session.ProfileID, "sftp_write_file", "path="+cleanPath+" size="+itoa64(len(data)))
+	action := "sftp_write_file"
+	if isNewFile {
+		action = "sftp_create_file"
+	}
+	h.auditSftp(session.ProfileID, action, "path="+cleanPath+" size="+itoa64(len(data)))
 	writeJSON(w, http.StatusOK, model.SftpFileWriteResponse{
 		Path:    cleanPath,
 		Size:    updated.Size,

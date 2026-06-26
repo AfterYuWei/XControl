@@ -98,24 +98,29 @@ func ReadFileContent(ctx context.Context, backend fileutil.FileBackend, path str
 
 // WriteFileContent writes content to a remote file with optimistic locking.
 // Returns the new mod_time for the next save.
+// If the file does not exist, it will be created (new file support).
 func WriteFileContent(ctx context.Context, backend fileutil.FileBackend, path string, req model.SftpFileWriteRequest) (*model.SftpFileWriteResponse, error) {
 	cleanPath := fileutil.CleanPath(path)
 
 	// Optimistic lock: verify the file hasn't changed since the client read it.
+	// If the file does not exist, treat this as a create operation.
 	current, err := backend.Stat(ctx, cleanPath)
-	if err != nil {
+	isNewFile := errors.Is(err, fileutil.ErrNotFound)
+	if err != nil && !isNewFile {
 		return nil, err
 	}
-	if current.IsDir {
-		return nil, &FileEditError{Code: "IS_DIRECTORY", Message: "cannot write a directory"}
-	}
-	if req.ExpectedModTime != "" {
-		expected, perr := time.Parse(time.RFC3339Nano, req.ExpectedModTime)
-		if perr != nil {
-			return nil, &FileEditError{Code: "INVALID_MOD_TIME", Message: "expected_mod_time is not a valid RFC 3339 timestamp"}
+	if !isNewFile {
+		if current.IsDir {
+			return nil, &FileEditError{Code: "IS_DIRECTORY", Message: "cannot write a directory"}
 		}
-		if !current.ModTime.Equal(expected) {
-			return nil, &FileEditError{Code: "FILE_MODIFIED", Message: "文件在编辑期间已被其他进程修改，请重新加载以避免覆盖"}
+		if req.ExpectedModTime != "" {
+			expected, perr := time.Parse(time.RFC3339Nano, req.ExpectedModTime)
+			if perr != nil {
+				return nil, &FileEditError{Code: "INVALID_MOD_TIME", Message: "expected_mod_time is not a valid RFC 3339 timestamp"}
+			}
+			if !current.ModTime.Equal(expected) {
+				return nil, &FileEditError{Code: "FILE_MODIFIED", Message: "文件在编辑期间已被其他进程修改，请重新加载以避免覆盖"}
+			}
 		}
 	}
 
@@ -151,7 +156,16 @@ func WriteFileContent(ctx context.Context, backend fileutil.FileBackend, path st
 	// Re-stat to obtain the new ModTime
 	updated, err := backend.Stat(ctx, cleanPath)
 	if err != nil {
-		// Write succeeded; fall back to current's mtime.
+		// Write succeeded but re-stat failed.
+		if isNewFile {
+			// For new files, use current time as fallback.
+			return &model.SftpFileWriteResponse{
+				Path:    cleanPath,
+				Size:    int64(len(data)),
+				ModTime: time.Now().Format(time.RFC3339Nano),
+			}, nil
+		}
+		// For existing files, fall back to current's mtime.
 		return &model.SftpFileWriteResponse{
 			Path:    cleanPath,
 			Size:    int64(len(data)),

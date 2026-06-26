@@ -51,6 +51,7 @@ type SftpCreateSessionRequest struct {
 type SftpCreateSessionResponse struct {
 	SessionID string `json:"session_id"`
 	Status    string `json:"status"`
+	HomeDir   string `json:"home_dir,omitempty"` // User's home directory
 }
 
 type SftpSessionInfo struct {
@@ -58,6 +59,7 @@ type SftpSessionInfo struct {
 	ProfileID string    `json:"profile_id"`
 	Status    string    `json:"status"`
 	Error     string    `json:"error,omitempty"`
+	HomeDir   string    `json:"home_dir,omitempty"` // User's home directory
 	CreatedAt time.Time `json:"created_at"`
 }
 

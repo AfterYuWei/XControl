@@ -14,6 +14,7 @@ interface TerminalTab {
   host?: string
   port?: number
   username?: string
+  cwd?: string // Current working directory from OSC 7
 }
 
 interface SessionStore {
@@ -27,6 +28,7 @@ interface SessionStore {
   closeTab: (tabId: string) => void
   setActiveTab: (tabId: string) => void
   updateTabStatus: (tabId: string, status: TerminalTab['status'], sessionId?: string) => void
+  updateTabCwd: (tabId: string, cwd: string) => void
   fetchSessions: () => Promise<void>
 }
 
@@ -91,6 +93,14 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   setActiveTab: (tabId) => {
     set({ activeTabId: tabId })
+  },
+
+  updateTabCwd: (tabId, cwd) => {
+    set((state) => ({
+      tabs: state.tabs.map((tab) =>
+        tab.id === tabId ? { ...tab, cwd } : tab
+      ),
+    }))
   },
 
   updateTabStatus: (tabId, status, sessionId) => {

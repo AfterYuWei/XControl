@@ -4,7 +4,7 @@ import { useWebSocket } from '@/hooks/useWebSocket'
 import { useSessionStore } from '@/store/session'
 import { useSettingsStore } from '@/store/settings'
 import { ConnectionDialog } from '@/components/ConnectionDialog'
-import type { WSMessage, MetaPayload, ErrorPayload } from '@/types/ws'
+import type { WSMessage, MetaPayload, ErrorPayload, CwdPayload } from '@/types/ws'
 
 type WSStatus = 'connecting' | 'connected' | 'disconnected'
 
@@ -24,7 +24,7 @@ interface TerminalPaneProps {
 
 export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const { updateTabStatus } = useSessionStore()
+  const { updateTabStatus, updateTabCwd } = useSessionStore()
   const { fontSize, fontFamily } = useSettingsStore()
   const [showDialog, setShowDialog] = useState(false)
   const [connectionError, setConnectionError] = useState('')
@@ -63,6 +63,13 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
           setTimeout(() => setShowDialog(false), 500)
           break
         }
+        case 'cwd': {
+          const cwd = msg.payload as CwdPayload
+          if (cwd?.path) {
+            updateTabCwd(tab.id, cwd.path)
+          }
+          break
+        }
         case 'exit':
           updateTabStatus(tab.id, 'disconnected')
           writeln('\r\n\x1b[33m[会话已结束]\x1b[0m')
@@ -77,7 +84,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
         }
       }
     },
-    [tab.id, updateTabStatus, write, writeln, clear, reset]
+    [tab.id, updateTabStatus, updateTabCwd, write, writeln, clear, reset]
   )
 
   const { status: wsStatus, sendInput, sendResize } = useWebSocket({

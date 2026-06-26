@@ -8,6 +8,7 @@ export type WSMessageType =
   | 'pong'
   | 'auth'
   | 'metadata'
+  | 'cwd'
 
 export interface WSMessage {
   type: WSMessageType
@@ -34,4 +35,8 @@ export interface MetaPayload {
   host: string
   username: string
   protocol: string
+}
+
+export interface CwdPayload {
+  path: string
 }

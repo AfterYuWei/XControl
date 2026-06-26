@@ -30,3 +30,4 @@ main:
             password: ${GITHUB_AFTERYUWEI_ACCESS_TOKEN}
             sync_mode: push
             force: true
+            tags: true

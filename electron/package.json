@@ -1,7 +1,7 @@
 {
-  "name": "sshx-desktop",
+  "name": "xcontrol-desktop",
   "version": "1.0.0",
-  "description": "SSHX 桌面版 - 基于 Electron 的 SSH 终端",
+  "description": "XControl 桌面版 - 基于 Electron 的 SSH 终端",
   "main": "main.js",
   "author": "yuweinfo",
   "license": "MIT",
@@ -23,8 +23,8 @@
     "electron-builder": "25.1.8"
   },
   "build": {
-    "appId": "com.yuweinfo.sshx",
-    "productName": "SSHX",
+    "appId": "com.yuweinfo.xcontrol",
+    "productName": "XControl",
     "copyright": "Copyright © yuweinfo",
     "directories": {
       "output": "release"
@@ -39,8 +39,8 @@
     "win": {
       "extraResources": [
         {
-          "from": "../server/sshx-server.exe",
-          "to": "sshx-server/sshx-server.exe"
+          "from": "../server/xcontrol-server.exe",
+          "to": "xcontrol-server/xcontrol-server.exe"
         }
       ],
       "target": [
@@ -49,7 +49,7 @@
           "arch": ["x64"]
         }
       ],
-      "artifactName": "SSHX-Setup-${version}-${arch}.${ext}"
+      "artifactName": "XControl-Setup-${version}-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -57,28 +57,28 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "SSHX",
+      "shortcutName": "XControl",
       "deleteAppDataOnUninstall": false
     },
     "mac": {
       "extraResources": [
         {
-          "from": "../server/sshx-server",
-          "to": "sshx-server/sshx-server"
+          "from": "../server/xcontrol-server",
+          "to": "xcontrol-server/xcontrol-server"
         }
       ],
       "target": [
         { "target": "dmg", "arch": ["arm64"] }
       ],
       "category": "public.app-category.developer-tools",
-      "artifactName": "SSHX-${version}-${arch}.${ext}"
+      "artifactName": "XControl-${version}-${arch}.${ext}"
     },
     "linux": {
       "maintainer": "yuweinfo <dev@yuweinfo.com>",
       "extraResources": [
         {
-          "from": "../server/sshx-server",
-          "to": "sshx-server/sshx-server"
+          "from": "../server/xcontrol-server",
+          "to": "xcontrol-server/xcontrol-server"
         }
       ],
       "target": [
@@ -86,7 +86,7 @@
         { "target": "rpm", "arch": ["x64"] }
       ],
       "category": "Development",
-      "artifactName": "SSHX-${version}-${arch}.${ext}"
+      "artifactName": "XControl-${version}-${arch}.${ext}"
     }
   }
 }

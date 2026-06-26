@@ -3,7 +3,7 @@ package store
 import (
 	"database/sql"
 
-	"github.com/yuweinfo/sshx/model"
+	"github.com/yuweinfo/xcontrol/model"
 )
 
 type sqliteGroupStore struct {

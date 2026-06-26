@@ -14,9 +14,9 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 	"github.com/pkg/sftp"
 
-	"github.com/yuweinfo/sshx/fileutil"
-	sshdriver "github.com/yuweinfo/sshx/protocol/ssh"
-	"github.com/yuweinfo/sshx/protocol"
+	"github.com/yuweinfo/xcontrol/fileutil"
+	sshdriver "github.com/yuweinfo/xcontrol/protocol/ssh"
+	"github.com/yuweinfo/xcontrol/protocol"
 )
 
 type Driver struct {

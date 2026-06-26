@@ -1,4 +1,4 @@
-# SSHX SFTP 模块接口文档
+# XControl SFTP 模块接口文档
 
 > 面向后端开发人员的系统设计与对接文档。本文档基于前端已实现的 SFTP 文件管理器数据结构与交互，定义后端需要提供的 REST + WebSocket 接口。
 
@@ -6,7 +6,7 @@
 
 ### 1.1 设计目标
 
-SSHX 的 SFTP 模块提供浏览器端的可视化文件管理能力，支持：
+XControl 的 SFTP 模块提供浏览器端的可视化文件管理能力，支持：
 
 - **双栏对称文件浏览**：左右两个 pane 均可连接任意服务器（含本机），每个 pane 支持多服务器标签页。
 - **目录浏览**：列表视图（单目录）与树形视图（递归展开）两种模式。
@@ -160,7 +160,7 @@ import (
 
     gossh "golang.org/x/crypto/ssh"
     "github.com/pkg/sftp"
-    "github.com/yuweinfo/sshx/protocol"
+    "github.com/yuweinfo/xcontrol/protocol"
 )
 
 type Driver struct {
@@ -735,7 +735,7 @@ function useSftpTransfer(sessionId: string, onProgress: (msg) => void) {
 ### 8.1 路径校验
 
 - **路径穿越防护**：所有路径参数必须解析为绝对路径，拒绝 `..` 越界。服务端用 `filepath.Clean` + `filepath.Abs` 规范化后校验。
-- **本机沙箱**（推荐）：本机连接 (`profile_id == "local"`) 限制在配置的根目录下（如工作区目录），避免暴露整个文件系统。配置项 `SSHX_LOCAL_ROOT`。
+- **本机沙箱**（推荐）：本机连接 (`profile_id == "local"`) 限制在配置的根目录下（如工作区目录），避免暴露整个文件系统。配置项 `XCONTROL_LOCAL_ROOT`。
 
 ### 8.2 凭据安全
 
@@ -745,7 +745,7 @@ function useSftpTransfer(sessionId: string, onProgress: (msg) => void) {
 ### 8.3 传输安全
 
 - 大文件传输使用流式处理（`io.Copy`），避免一次性读入内存。
-- 限制单次上传文件大小（配置项 `SSHX_MAX_UPLOAD_SIZE`，默认 500MB）。
+- 限制单次上传文件大小（配置项 `XCONTROL_MAX_UPLOAD_SIZE`，默认 500MB）。
 - 限制并发传输数量（默认 5），超出排队。
 
 ### 8.4 审计日志
@@ -851,7 +851,7 @@ web/src/
 ### Phase 4：增强
 
 1. 树形视图懒加载（`GET /tree?depth=1` 按需展开）
-2. 本机沙箱配置 `SSHX_LOCAL_ROOT`
+2. 本机沙箱配置 `XCONTROL_LOCAL_ROOT`
 3. 传输大小/并发限制
 4. 审计日志接入
 
@@ -861,7 +861,7 @@ web/src/
 
 以下需前后端协商确认：
 
-1. **本机文件访问范围**：本机连接是否限制在工作区目录？还是允许访问整个文件系统？（建议沙箱，配置 `SSHX_LOCAL_ROOT`）
+1. **本机文件访问范围**：本机连接是否限制在工作区目录？还是允许访问整个文件系统？（建议沙箱，配置 `XCONTROL_LOCAL_ROOT`）
 答: 允许访问整个文件系统
 2. **传输历史持久化**：传输任务是否需要持久化到 SQLite，还是仅内存？（建议内存即可，刷新页面后历史不保留）
 答: 仅内存

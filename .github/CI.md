@@ -27,11 +27,11 @@ GitHub Actions 自动构建三端安装包并创建正式 Release，包含：
 
 | 平台 | 产物 | 说明 |
 |------|------|------|
-| Windows | `SSHX-Setup-1.0.0-x64.exe` | NSIS 安装程序 |
-| macOS (Apple Silicon) | `SSHX-1.0.0-arm64.dmg` | DMG 镜像 |
-| macOS (Intel) | `SSHX-1.0.0-x64.dmg` | DMG 镜像 |
-| Linux (Debian/Ubuntu) | `SSHX-1.0.0-amd64.deb` | deb 安装包 |
-| Linux (Fedora/RHEL) | `SSHX-1.0.0-x64.rpm` | rpm 安装包 |
+| Windows | `XControl-Setup-1.0.0-x64.exe` | NSIS 安装程序 |
+| macOS (Apple Silicon) | `XControl-1.0.0-arm64.dmg` | DMG 镜像 |
+| macOS (Intel) | `XControl-1.0.0-x64.dmg` | DMG 镜像 |
+| Linux (Debian/Ubuntu) | `XControl-1.0.0-amd64.deb` | deb 安装包 |
+| Linux (Fedora/RHEL) | `XControl-1.0.0-x64.rpm` | rpm 安装包 |
 
 ## Carry 版
 
@@ -48,10 +48,10 @@ git push origin main
 prepare (ubuntu)  →  判断 release/carry + 计算版本号与 tag
       ↓
 build (matrix 并行)
-  ├─ win         (windows-latest)  → SSHX-Setup-x64.exe
-  ├─ mac-arm64   (macos-latest)    → SSHX-arm64.dmg
-  ├─ mac-x64     (macos-13)        → SSHX-x64.dmg
-  └─ linux       (ubuntu-latest)   → SSHX-x64.deb + SSHX-x64.rpm
+  ├─ win         (windows-latest)  → XControl-Setup-x64.exe
+  ├─ mac-arm64   (macos-latest)    → XControl-arm64.dmg
+  ├─ mac-x64     (macos-13)        → XControl-x64.dmg
+  └─ linux       (ubuntu-latest)   → XControl-x64.deb + XControl-x64.rpm
       ↓
 release (ubuntu)    →  创建 GitHub Release（正式版/预发布）
 ```

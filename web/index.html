@@ -15,7 +15,7 @@
       // Apply persisted theme before paint to avoid a flash of the wrong theme.
       (function () {
         try {
-          var raw = localStorage.getItem('sshx-settings')
+          var raw = localStorage.getItem('xcontrol-settings')
           var theme = raw ? (JSON.parse(raw).state || {}).theme : 'dark'
           if (!theme) theme = 'dark'
           var resolved = theme

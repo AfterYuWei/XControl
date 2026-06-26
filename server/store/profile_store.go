@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/yuweinfo/sshx/model"
+	"github.com/yuweinfo/xcontrol/model"
 )
 
 type sqliteProfileStore struct {

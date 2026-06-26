@@ -17,9 +17,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/yuweinfo/sshx/fileutil"
-	"github.com/yuweinfo/sshx/model"
-	"github.com/yuweinfo/sshx/protocol"
+	"github.com/yuweinfo/xcontrol/fileutil"
+	"github.com/yuweinfo/xcontrol/model"
+	"github.com/yuweinfo/xcontrol/protocol"
 )
 
 // CrossSessionTransfer performs a file transfer between two SFTP sessions.
@@ -566,7 +566,7 @@ func dirArchiveName(srcDir string) string {
 // transferred count since those bytes were already accounted for; the final
 // task.Transferred is set to task.Size by the caller (doStreamRelay).
 //
-// Temp files use the "sshx-tx-" prefix and are cleaned up by the TransferManager
+// Temp files use the "xcontrol-tx-" prefix and are cleaned up by the TransferManager
 // sweep loop (orphan cleanup after 1 hour) if the process dies mid-transfer.
 func (h *SftpHandler) transferDirAsTarGz(
 	ctx context.Context, entry *transferEntry,
@@ -610,7 +610,7 @@ func (h *SftpHandler) transferDirAsTarGz(
 	}
 
 	// --- Phase 1: Create tar.gz temp file from source directory ---
-	tmpFile := filepath.Join(h.transfers.tmpDir, "sshx-tx-"+task.ID+".tar.gz")
+	tmpFile := filepath.Join(h.transfers.tmpDir, "xcontrol-tx-"+task.ID+".tar.gz")
 	defer os.Remove(tmpFile) // best-effort cleanup
 
 	f, err := os.Create(tmpFile)

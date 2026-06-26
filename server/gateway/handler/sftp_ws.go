@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/coder/websocket"
-	"github.com/yuweinfo/sshx/ws"
+	"github.com/yuweinfo/xcontrol/ws"
 )
 
 // HandleWS upgrades the HTTP connection to a WebSocket for SFTP transfer

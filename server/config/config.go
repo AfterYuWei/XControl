@@ -14,10 +14,10 @@ type Config struct {
 
 func Load() *Config {
 	return &Config{
-		Port:     getEnvInt("SSHX_PORT", 9090),
-		DBPath:   getEnvStr("SSHX_DB_PATH", "./data/sshx.db"),
-		KeyPath:  getEnvStr("SSHX_KEY_PATH", "./data/key"),
-		LogLevel: getEnvStr("SSHX_LOG_LEVEL", "info"),
+		Port:     getEnvInt("XCONTROL_PORT", 9090),
+		DBPath:   getEnvStr("XCONTROL_DB_PATH", "./data/xcontrol.db"),
+		KeyPath:  getEnvStr("XCONTROL_KEY_PATH", "./data/key"),
+		LogLevel: getEnvStr("XCONTROL_LOG_LEVEL", "info"),
 	}
 }
 

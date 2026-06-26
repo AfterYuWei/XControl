@@ -10,14 +10,14 @@ let mainWindow = null
 let backendPort = 0
 
 // 后端可执行文件路径：打包后在 resources 目录，开发时取 server 目录。
-// 跨平台后端文件名：Windows 为 sshx-server.exe，macOS/Linux 为 sshx-server（无后缀）。
+// 跨平台后端文件名：Windows 为 xcontrol-server.exe，macOS/Linux 为 xcontrol-server（无后缀）。
 function getBackendExecutable() {
   const ext = process.platform === 'win32' ? '.exe' : ''
-  const name = `sshx-server${ext}`
+  const name = `xcontrol-server${ext}`
   if (app.isPackaged) {
-    return path.join(process.resourcesPath, 'sshx-server', name)
+    return path.join(process.resourcesPath, 'xcontrol-server', name)
   }
-  return process.env.SSHX_SERVER_PATH || path.join(__dirname, '..', 'server', name)
+  return process.env.XCONTROL_SERVER_PATH || path.join(__dirname, '..', 'server', name)
 }
 
 // 申请一个空闲端口，避免与其它占用 9090 的服务冲突
@@ -44,10 +44,10 @@ function startBackend(port) {
 
   // 数据库与密钥存放在用户数据目录，避免写入只读的 resources 目录
   const env = Object.assign({}, process.env, {
-    SSHX_PORT: String(port),
-    SSHX_DB_PATH: path.join(userData, 'sshx.db'),
-    SSHX_KEY_PATH: path.join(userData, 'key'),
-    SSHX_LOG_LEVEL: 'info',
+    XCONTROL_PORT: String(port),
+    XCONTROL_DB_PATH: path.join(userData, 'xcontrol.db'),
+    XCONTROL_KEY_PATH: path.join(userData, 'key'),
+    XCONTROL_LOG_LEVEL: 'info',
   })
 
   backendProcess = spawn(exe, [], {
@@ -122,7 +122,7 @@ async function createWindow() {
     height: 800,
     minWidth: 900,
     minHeight: 600,
-    title: 'SSHX',
+    title: 'XControl',
     backgroundColor: '#0A0A0A',
     show: false,
     autoHideMenuBar: true,

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-SSHX is a browser-based SSH terminal application. Users manage SSH connections through a web UI powered by xterm.js, with encrypted credential storage, multi-tab sessions, and group-based organization. The UI and documentation are in Chinese.
+XControl is a browser-based SSH terminal application. Users manage SSH connections through a web UI powered by xterm.js, with encrypted credential storage, multi-tab sessions, and group-based organization. The UI and documentation are in Chinese.
 
 ## Development Commands
 
@@ -12,11 +12,11 @@ SSHX is a browser-based SSH terminal application. Users manage SSH connections t
 
 ```bash
 cd server
-go build -o sshx-server .      # Build
-./sshx-server                   # Run (default port 9090)
+go build -o xcontrol-server .      # Build
+./xcontrol-server                   # Run (default port 9090)
 ```
 
-Environment variables: `SSHX_PORT`, `SSHX_DB_PATH`, `SSHX_KEY_PATH`, `SSHX_LOG_LEVEL` (info|debug).
+Environment variables: `XCONTROL_PORT`, `XCONTROL_DB_PATH`, `XCONTROL_KEY_PATH`, `XCONTROL_LOG_LEVEL` (info|debug).
 
 ### Frontend (React/TypeScript) — `web/`
 
@@ -31,7 +31,7 @@ npm run preview                 # Preview production build
 
 ### Running Locally
 
-Start the Go backend first (`cd server && ./sshx-server`), then the Vite dev server (`cd web && npm run dev`). The frontend proxies API/WebSocket requests to `localhost:9090`.
+Start the Go backend first (`cd server && ./xcontrol-server`), then the Vite dev server (`cd web && npm run dev`). The frontend proxies API/WebSocket requests to `localhost:9090`.
 
 ## Architecture
 
@@ -77,7 +77,7 @@ The `electron/` directory contains an Electron wrapper for building desktop appl
 
 ## Technical Notes
 
-- Go module: `github.com/yuweinfo/sshx`
+- Go module: `github.com/yuweinfo/xcontrol`
 - UI components use shadcn/ui (new-york style, Lucide icons, Tailwind CSS variables)
 - Tailwind CSS v4 with CSS-first configuration via `@tailwindcss/vite` plugin and `@theme` directive in `web/src/index.css`
 - No test infrastructure exists yet (no Go test files, no frontend test runner)

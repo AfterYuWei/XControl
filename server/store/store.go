@@ -1,6 +1,6 @@
 package store
 
-import "github.com/yuweinfo/sshx/model"
+import "github.com/yuweinfo/xcontrol/model"
 
 type ProfileStore interface {
 	List(groupID string, search string) ([]*model.Profile, error)

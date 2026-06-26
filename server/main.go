@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/yuweinfo/sshx/config"
-	"github.com/yuweinfo/sshx/crypto"
-	"github.com/yuweinfo/sshx/gateway"
-	"github.com/yuweinfo/sshx/store"
+	"github.com/yuweinfo/xcontrol/config"
+	"github.com/yuweinfo/xcontrol/crypto"
+	"github.com/yuweinfo/xcontrol/gateway"
+	"github.com/yuweinfo/xcontrol/store"
 )
 
 func main() {
@@ -23,7 +23,7 @@ func main() {
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
 
-	slog.Info("starting sshx server", "port", cfg.Port)
+	slog.Info("starting xcontrol server", "port", cfg.Port)
 
 	// Initialize database
 	db, err := store.InitDB(cfg.DBPath)

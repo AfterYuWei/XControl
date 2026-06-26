@@ -13,7 +13,7 @@ export function Toast() {
 
   return (
     <div
-      className={`sshx-toast ${visible ? 'show' : ''}`}
+      className={`xcontrol-toast ${visible ? 'show' : ''}`}
       role="status"
       aria-live="polite"
     >

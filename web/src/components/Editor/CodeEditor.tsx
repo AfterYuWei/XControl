@@ -5,7 +5,7 @@ import { useSettingsStore } from '@/store/settings'
 
 // Define custom themes once when the module loads.
 loader.init().then((monaco) => {
-  monaco.editor.defineTheme('sshx-dark', {
+  monaco.editor.defineTheme('xcontrol-dark', {
     base: 'vs-dark',
     inherit: true,
     rules: [],
@@ -32,7 +32,7 @@ loader.init().then((monaco) => {
       'scrollbarSlider.activeBackground': '#525252AA',
     },
   })
-  monaco.editor.defineTheme('sshx-light', {
+  monaco.editor.defineTheme('xcontrol-light', {
     base: 'vs',
     inherit: true,
     rules: [],
@@ -108,7 +108,7 @@ export function CodeEditor({
     <MonacoEditor
       height="100%"
       language={language}
-      theme={resolvedTheme === 'dark' ? 'sshx-dark' : 'sshx-light'}
+      theme={resolvedTheme === 'dark' ? 'xcontrol-dark' : 'xcontrol-light'}
       value={content}
       onChange={(value) => onChange(value ?? '')}
       onMount={handleMount}

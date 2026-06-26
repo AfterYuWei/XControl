@@ -6,7 +6,7 @@ import (
 
 	gossh "golang.org/x/crypto/ssh"
 
-	"github.com/yuweinfo/sshx/protocol"
+	"github.com/yuweinfo/xcontrol/protocol"
 )
 
 func init() {

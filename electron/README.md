@@ -1,17 +1,17 @@
-# SSHX 桌面版（Electron）
+# XControl 桌面版（Electron）
 
-将 SSHX（Go 后端 + React 前端）打包成 Windows 桌面应用。
+将 XControl（Go 后端 + React 前端）打包成 Windows 桌面应用。
 
 ## 架构
 
 ```
 Electron 主进程 (main.js)
    │  1. 申请空闲端口
-   │  2. 以子进程启动 sshx-server（embed 了前端静态文件）
+   │  2. 以子进程启动 xcontrol-server（embed 了前端静态文件）
    │  3. 轮询后端就绪后加载 http://127.0.0.1:<port>/
    │  4. 退出时结束后端进程
    ▼
-BrowserWindow  ──HTTP/WS──>  sshx-server  ──SSH──>  远程主机
+BrowserWindow  ──HTTP/WS──>  xcontrol-server  ──SSH──>  远程主机
 ```
 
 ### 跨平台窗口标题栏
@@ -22,12 +22,12 @@ BrowserWindow  ──HTTP/WS──>  sshx-server  ──SSH──>  远程主机
 | **Windows** | `frame: false` | 自绘右侧按钮（最小化/最大化/关闭），关闭悬停红 |
 | **Linux** | `frame: false` | 自绘右侧按钮（同 Windows 风格） |
 
-- 前端通过 `window.sshx.platform` 判断平台，macOS 不渲染自绘按钮，标题栏左侧留 78px 给交通灯。
-- 后端可执行文件名跨平台：Windows 为 `sshx-server.exe`，macOS/Linux 为 `sshx-server`（无后缀）。`extraResources` 用 `${osExeSuffix}` 宏自动适配。
+- 前端通过 `window.xcontrol.platform` 判断平台，macOS 不渲染自绘按钮，标题栏左侧留 78px 给交通灯。
+- 后端可执行文件名跨平台：Windows 为 `xcontrol-server.exe`，macOS/Linux 为 `xcontrol-server`（无后缀）。`extraResources` 用 `${osExeSuffix}` 宏自动适配。
 
-- 前端构建产物通过 `//go:embed` 打进 `sshx-server.exe`，无需单独分发静态文件。
-- 数据库（`sshx.db`）和密钥（`key`）存放在用户数据目录（`%APPDATA%/SSHX`），卸载不删除。
-- 后端日志：`%APPDATA%/SSHX/logs/backend.log`。
+- 前端构建产物通过 `//go:embed` 打进 `xcontrol-server.exe`，无需单独分发静态文件。
+- 数据库（`xcontrol.db`）和密钥（`key`）存放在用户数据目录（`%APPDATA%/XControl`），卸载不删除。
+- 后端日志：`%APPDATA%/XControl/logs/backend.log`。
 
 ## 关键改动说明
 
@@ -64,9 +64,9 @@ cd electron
 
 | 平台 | 命令 | 产物 | 说明 |
 |------|------|------|------|
-| Windows | `./build.sh win` 或 `.\build.ps1` | `SSHX-Setup-1.0.0-x64.exe` | NSIS 安装包 |
-| macOS | `./build.sh mac` | `SSHX-1.0.0-x64.dmg` / `SSHX-1.0.0-arm64.dmg` | DMG 镜像（Intel + Apple Silicon） |
-| Linux | `./build.sh linux` | `SSHX-1.0.0-x64.AppImage` / `.deb` | AppImage 通用 + deb 包 |
+| Windows | `./build.sh win` 或 `.\build.ps1` | `XControl-Setup-1.0.0-x64.exe` | NSIS 安装包 |
+| macOS | `./build.sh mac` | `XControl-1.0.0-x64.dmg` / `XControl-1.0.0-arm64.dmg` | DMG 镜像（Intel + Apple Silicon） |
+| Linux | `./build.sh linux` | `XControl-1.0.0-x64.AppImage` / `.deb` | AppImage 通用 + deb 包 |
 
 ### 方式一：在 Windows 上本地打包（推荐 Windows 版）
 
@@ -77,7 +77,7 @@ cd electron
 .\build.ps1
 ```
 
-产物：`electron/release/SSHX-Setup-1.0.0-x64.exe`（NSIS 安装包）。
+产物：`electron/release/XControl-Setup-1.0.0-x64.exe`（NSIS 安装包）。
 
 ### 方式二：在 Linux/macOS 上交叉打包 Windows 版
 
@@ -122,7 +122,7 @@ cd electron && ./build.sh linux
    ```
 2. 让 Electron 直接加载 Vite：设置环境变量后启动
    ```bash
-   # electron/main.js 在开发模式下默认找 ../server/sshx-server.exe
+   # electron/main.js 在开发模式下默认找 ../server/xcontrol-server.exe
    # 若想连已有后端，可改 main.js 临时把 loadURL 指向 http://localhost:5173
    cd electron && npm install && npm start
    ```
@@ -130,6 +130,6 @@ cd electron && ./build.sh linux
 ## 注意事项
 
 - 后端使用 `modernc.org/sqlite`（纯 Go），交叉编译 **无需 CGO**，`CGO_ENABLED=0` 即可。
-- `sshx-server.exe` 通过 `extraResources` 打入安装包的 `resources/sshx-server/` 目录。
+- `xcontrol-server.exe` 通过 `extraResources` 打入安装包的 `resources/xcontrol-server/` 目录。
 - 若需自定义图标，把 `build/icon.ico` 放入 `electron/` 并在 `package.json` 的 `build.win` 加 `"icon": "build/icon.ico"`。
 - 端口动态分配，多开受单实例锁限制（第二次启动会聚焦到已有窗口）。

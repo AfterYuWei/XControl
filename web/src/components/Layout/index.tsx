@@ -44,11 +44,11 @@ export function Layout() {
   }, [])
 
   return (
-    <div className="sshx-app" role="application" aria-label="Terminal">
+    <div className="xcontrol-app" role="application" aria-label="Terminal">
       {/* Header — 自定义标题栏：棕色底、可拖拽窗口、搜索框居中、右侧窗口控制按钮。
           桌面环境(framework: false)下作为窗口标题栏；浏览器下仅作普通顶栏。 */}
       <header
-        className={`sshx-header titlebar ${desktop ? 'is-desktop' : ''} ${mac ? 'is-mac' : ''}`}
+        className={`xcontrol-header titlebar ${desktop ? 'is-desktop' : ''} ${mac ? 'is-mac' : ''}`}
       >
         {/* 左：折叠侧边栏 + SFTP。
             容器本身不加 no-drag，保留空白区域可拖拽窗口；
@@ -161,10 +161,10 @@ export function Layout() {
       </header>
 
       {/* Body — sidebar + content */}
-      <div className="sshx-body">
+      <div className="xcontrol-body">
         {/* Sidebar */}
         <aside
-          className={`sshx-sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}
+          className={`xcontrol-sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}
           role="navigation"
           aria-label="Server list"
         >

@@ -12,12 +12,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/yuweinfo/sshx/connpool"
-	"github.com/yuweinfo/sshx/fileutil"
-	"github.com/yuweinfo/sshx/model"
-	"github.com/yuweinfo/sshx/protocol"
-	"github.com/yuweinfo/sshx/store"
-	"github.com/yuweinfo/sshx/ws"
+	"github.com/yuweinfo/xcontrol/connpool"
+	"github.com/yuweinfo/xcontrol/fileutil"
+	"github.com/yuweinfo/xcontrol/model"
+	"github.com/yuweinfo/xcontrol/protocol"
+	"github.com/yuweinfo/xcontrol/store"
+	"github.com/yuweinfo/xcontrol/ws"
 )
 
 // SftpSession holds an active SFTP connection (or a local backend).

@@ -16,21 +16,21 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/yuweinfo/sshx/fileutil"
-	"github.com/yuweinfo/sshx/model"
-	"github.com/yuweinfo/sshx/ws"
+	"github.com/yuweinfo/xcontrol/fileutil"
+	"github.com/yuweinfo/xcontrol/model"
+	"github.com/yuweinfo/xcontrol/ws"
 )
 
 // TransferManager manages asynchronous file transfer tasks. It tracks task
 // state in memory (no persistence, per design decision) and pushes progress
 // updates via the SFTP WebSocket hub.
 //
-// --- Temp file lifecycle (sshx-tx / sshx-dl) ---
+// --- Temp file lifecycle (xcontrol-tx / xcontrol-dl) ---
 //
 // Temp files are created under os.TempDir() with one of two prefixes:
 //
-//   - "sshx-dl-<taskID>"     — download staging (single file or .zip)
-//   - "sshx-tx-<taskID>.tar.gz" — cross-session directory archive (tar.gz)
+//   - "xcontrol-dl-<taskID>"     — download staging (single file or .zip)
+//   - "xcontrol-tx-<taskID>.tar.gz" — cross-session directory archive (tar.gz)
 //
 // Normal flow: temp files are deleted immediately after use (download served,
 // archive uploaded). Abnormal flow (process crash, kill -9): temp files
@@ -214,7 +214,7 @@ func (tm *TransferManager) StartDownload(session *SftpSession, paths []string) (
 		}
 
 		// Temp file for staging
-		tmpFile := filepath.Join(tm.tmpDir, "sshx-dl-"+taskID)
+		tmpFile := filepath.Join(tm.tmpDir, "xcontrol-dl-"+taskID)
 		entry.cleanup = func() {
 			os.Remove(tmpFile)
 		}
@@ -241,7 +241,7 @@ func (tm *TransferManager) StartDownload(session *SftpSession, paths []string) (
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	tmpFile := filepath.Join(tm.tmpDir, "sshx-dl-"+taskID+".zip")
+	tmpFile := filepath.Join(tm.tmpDir, "xcontrol-dl-"+taskID+".zip")
 	entry := &transferEntry{
 		task:    task,
 		cancel:  cancel,
@@ -397,7 +397,7 @@ func (tm *TransferManager) ServeDownloadFile(w http.ResponseWriter, r *http.Requ
 	if strings.HasSuffix(entry.task.FileName, ".zip") {
 		ext = ".zip"
 	}
-	tmpFile := filepath.Join(tm.tmpDir, "sshx-dl-"+taskID+ext)
+	tmpFile := filepath.Join(tm.tmpDir, "xcontrol-dl-"+taskID+ext)
 
 	f, err := os.Open(tmpFile)
 	if err != nil {
@@ -804,7 +804,7 @@ func (tm *TransferManager) sweepLoop() {
 			continue
 		}
 		for _, e := range entries {
-			if !strings.HasPrefix(e.Name(), "sshx-dl-") && !strings.HasPrefix(e.Name(), "sshx-tx-") {
+			if !strings.HasPrefix(e.Name(), "xcontrol-dl-") && !strings.HasPrefix(e.Name(), "xcontrol-tx-") {
 				continue
 			}
 			info, err := e.Info()

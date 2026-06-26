@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-SSHX is a browser-based SSH terminal application. Users manage SSH connections through a web UI powered by xterm.js, with encrypted credential storage, multi-tab sessions, and group-based organization. The UI and documentation are in Chinese.
+XControl is a browser-based SSH terminal application. Users manage SSH connections through a web UI powered by xterm.js, with encrypted credential storage, multi-tab sessions, and group-based organization. The UI and documentation are in Chinese.
 
 ## Development Commands
 
@@ -10,11 +10,11 @@ SSHX is a browser-based SSH terminal application. Users manage SSH connections t
 
 ```bash
 cd server
-go build -o sshx-server .      # Build binary
-./sshx-server                   # Run (default port 9090)
+go build -o xcontrol-server .      # Build binary
+./xcontrol-server                   # Run (default port 9090)
 ```
 
-Environment variables: `SSHX_PORT`, `SSHX_DB_PATH`, `SSHX_KEY_PATH`, `SSHX_LOG_LEVEL` (info|debug). The SQLite database and auto-generated AES key are stored under `server/data/` by default.
+Environment variables: `XCONTROL_PORT`, `XCONTROL_DB_PATH`, `XCONTROL_KEY_PATH`, `XCONTROL_LOG_LEVEL` (info|debug). The SQLite database and auto-generated AES key are stored under `server/data/` by default.
 
 ### Frontend (React/TypeScript) — `web/`
 
@@ -32,7 +32,7 @@ The Vite dev server listens on `0.0.0.0` and proxies `/api` and `/ws` to `localh
 
 ### Running Locally
 
-Start the Go backend first (`cd server && ./sshx-server`), then the Vite dev server (`cd web && npm run dev`). Open the URL printed by Vite; API and WebSocket requests are proxied to the backend.
+Start the Go backend first (`cd server && ./xcontrol-server`), then the Vite dev server (`cd web && npm run dev`). Open the URL printed by Vite; API and WebSocket requests are proxied to the backend.
 
 ### Tests
 
@@ -40,7 +40,7 @@ No test infrastructure exists yet. There are no Go test files or frontend test r
 
 ## Architecture
 
-SSHX uses a two-process model: a Go HTTP/WebSocket server that persists state and opens SSH connections, and a Vite-served React SPA that renders the terminal UI. They communicate over REST and a WebSocket carrying terminal I/O.
+XControl uses a two-process model: a Go HTTP/WebSocket server that persists state and opens SSH connections, and a Vite-served React SPA that renders the terminal UI. They communicate over REST and a WebSocket carrying terminal I/O.
 
 ### Backend (Go) — `server/`
 
@@ -87,7 +87,7 @@ JSON messages carry a `type` field. Common types are `input`, `output`, `resize`
 
 ## Technical Notes
 
-- Go module: `github.com/yuweinfo/sshx`.
+- Go module: `github.com/yuweinfo/xcontrol`.
 - Tailwind CSS v4 is configured CSS-first in `web/src/index.css` using `@theme` and the `@tailwindcss/vite` plugin.
 - UI text and `docs/DEVELOPMENT.md` are in Chinese; keep the language consistent when editing user-facing strings.
 - SSH host key verification currently uses `InsecureIgnoreHostKey()` — acceptable for development, not production.

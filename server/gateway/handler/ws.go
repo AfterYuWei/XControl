@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/yuweinfo/sshx/ws"
+	"github.com/yuweinfo/xcontrol/ws"
 )
 
 type WSHandler struct {

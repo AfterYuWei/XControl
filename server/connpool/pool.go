@@ -18,8 +18,8 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 	"github.com/pkg/sftp"
 
-	"github.com/yuweinfo/sshx/fileutil"
-	"github.com/yuweinfo/sshx/protocol"
+	"github.com/yuweinfo/xcontrol/fileutil"
+	"github.com/yuweinfo/xcontrol/protocol"
 )
 
 // poolKey returns the cache key for a server address.

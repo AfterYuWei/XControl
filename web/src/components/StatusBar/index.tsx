@@ -5,13 +5,13 @@ import { useSessionStore } from '@/store/session'
 export function StatusBar() {
   const { tabs, activeTabId, setActiveTab, closeTab } = useSessionStore()
   const [time, setTime] = useState('')
-  const [latency, setLatency] = useState<number | null>(null)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const activeTab = tabs.find((t) => t.id === activeTabId)
   const connected = activeTab?.status === 'connected'
+  const latency = activeTab?.latency ?? null
 
   // Clock
   useEffect(() => {
@@ -29,20 +29,6 @@ export function StatusBar() {
     const timer = setInterval(update, 30000)
     return () => clearInterval(timer)
   }, [])
-
-  // Simulated latency for the active session while connected.
-  // Replaced every few seconds so the status dot color reflects quality.
-  // (No real ping transport exists yet; values are simulated.)
-  useEffect(() => {
-    if (!connected) {
-      setLatency(null)
-      return
-    }
-    const tick = () => setLatency(Math.floor(Math.random() * 340) + 10)
-    tick()
-    const id = setInterval(tick, 3000)
-    return () => clearInterval(id)
-  }, [connected, activeTabId])
 
   // Latency-driven color: green < 100ms, yellow 100–300ms, red > 300ms / offline
   const dotClass =

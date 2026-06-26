@@ -15,6 +15,7 @@ interface TerminalTab {
   port?: number
   username?: string
   cwd?: string // Current working directory from OSC 7
+  latency?: number // WebSocket round-trip time in ms
 }
 
 interface SessionStore {
@@ -29,6 +30,7 @@ interface SessionStore {
   setActiveTab: (tabId: string) => void
   updateTabStatus: (tabId: string, status: TerminalTab['status'], sessionId?: string) => void
   updateTabCwd: (tabId: string, cwd: string) => void
+  updateTabLatency: (tabId: string, latency: number) => void
   fetchSessions: () => Promise<void>
 }
 
@@ -99,6 +101,14 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     set((state) => ({
       tabs: state.tabs.map((tab) =>
         tab.id === tabId ? { ...tab, cwd } : tab
+      ),
+    }))
+  },
+
+  updateTabLatency: (tabId, latency) => {
+    set((state) => ({
+      tabs: state.tabs.map((tab) =>
+        tab.id === tabId ? { ...tab, latency } : tab
       ),
     }))
   },

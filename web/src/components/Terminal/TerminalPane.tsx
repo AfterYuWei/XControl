@@ -24,7 +24,7 @@ interface TerminalPaneProps {
 
 export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const { updateTabStatus, updateTabCwd } = useSessionStore()
+  const { updateTabStatus, updateTabCwd, updateTabLatency } = useSessionStore()
   const { fontSize, fontFamily } = useSettingsStore()
   const [showDialog, setShowDialog] = useState(false)
   const [connectionError, setConnectionError] = useState('')
@@ -87,7 +87,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     [tab.id, updateTabStatus, updateTabCwd, write, writeln, clear, reset]
   )
 
-  const { status: wsStatus, sendInput, sendResize } = useWebSocket({
+  const { status: wsStatus, latency, sendInput, sendResize } = useWebSocket({
     sessionId: tab.sessionId || '',
     onMessage: handleWSMessage,
     onOpen: () => {
@@ -110,6 +110,13 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     sendInputRef.current = sendInput
     sendResizeRef.current = sendResize
   }, [wsStatus, sendInput, sendResize])
+
+  // Sync latency to session store
+  useEffect(() => {
+    if (latency !== null) {
+      updateTabLatency(tab.id, latency)
+    }
+  }, [latency, tab.id, updateTabLatency])
 
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect */

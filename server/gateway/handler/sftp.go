@@ -222,6 +222,18 @@ func (h *SftpHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetSessionBackend returns the FileBackend for a session, if it exists and
+// is connected. Used by EditHandler for unified file editing.
+func (h *SftpHandler) GetSessionBackend(sessionID string) (fileutil.FileBackend, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	session, ok := h.sessions[sessionID]
+	if !ok || session.Status != "connected" || session.Backend == nil {
+		return nil, false
+	}
+	return session.Backend, true
+}
+
 func (h *SftpHandler) CloseSession(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	h.mu.Lock()

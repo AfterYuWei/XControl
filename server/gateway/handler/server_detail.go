@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/yuweinfo/sshx/connpool"
+	"github.com/yuweinfo/sshx/fileutil"
 	"github.com/yuweinfo/sshx/model"
 	"github.com/yuweinfo/sshx/protocol"
 	"github.com/yuweinfo/sshx/store"
@@ -338,6 +339,18 @@ func writeWSJSON(ctx context.Context, conn *websocket.Conn, v any) error {
 		return err
 	}
 	return conn.Write(ctx, websocket.MessageText, b)
+}
+
+// GetSessionBackend returns the FileBackend for a session, if it exists and
+// is connected. Used by EditHandler for unified file editing.
+func (h *ServerDetailHandler) GetSessionBackend(sessionID string) (fileutil.FileBackend, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	session, ok := h.sessions[sessionID]
+	if !ok || session.Status != "connected" || session.Entry == nil || session.Entry.Backend == nil {
+		return nil, false
+	}
+	return session.Entry.Backend, true
 }
 
 // --- Internal helpers ---

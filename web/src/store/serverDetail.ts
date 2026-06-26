@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { serverDetailApi } from '@/api/serverDetail'
+import { useEditorStore } from '@/store/editor'
 import type { ServerInfo, ServerMetrics } from '@/api/serverDetail'
 
 // --- File tree node (supports lazy-loaded children) ---
@@ -40,6 +41,7 @@ interface ServerDetailStore {
   getInfo: (profileId: string) => Promise<void>
   listFiles: (profileId: string, path: string) => Promise<void>
   toggleDir: (profileId: string, path: string) => void
+  openEditor: (profileId: string, path: string) => void
   updateMetrics: (profileId: string, metrics: ServerMetrics) => void
   updateInfo: (profileId: string, info: ServerInfo) => void
   setWsConnected: (profileId: string, connected: boolean) => void
@@ -206,6 +208,13 @@ export const useServerDetailStore = create<ServerDetailStore>((set, get) => ({
         },
       },
     }))
+  },
+
+  openEditor: (profileId: string, path: string) => {
+    const detail = get().details[profileId]
+    if (!detail?.sessionId) return
+    // Delegate to the unified editor store
+    useEditorStore.getState().openFile(detail.sessionId!, 'serverDetail', path)
   },
 
   updateMetrics: (profileId: string, metrics: ServerMetrics) => {

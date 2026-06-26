@@ -1,8 +1,8 @@
-# SSHX 开发文档
+# XControl 开发文档
 
 ## 1. 项目概述
 
-SSHX 是一个基于浏览器的 SSH 终端工具，参考 [Tabby](https://github.com/Eugeny/tabby)（原 Terminus）和 [Termius](https://termius.com) 的设计理念，构建一个**模块化、可扩展**的终端平台。
+XControl 是一个基于浏览器的 SSH 终端工具，参考 [Tabby](https://github.com/Eugeny/tabby)（原 Terminus）和 [Termius](https://termius.com) 的设计理念，构建一个**模块化、可扩展**的终端平台。
 
 ### 1.1 设计原则
 
@@ -141,7 +141,7 @@ Phase 1 (当前)         Phase 2                Phase 3
 
 ### 2.3 参考设计对比
 
-| 特性 | Tabby | Termius | SSHX (目标) |
+| 特性 | Tabby | Termius | XControl (目标) |
 |------|-------|---------|-------------|
 | 连接管理 | Profile + Group | Host + Tag + Group | Profile + Group + Tag |
 | 凭据管理 | OS Keychain Vault | 加密 Vault | 加密 Vault |
@@ -597,7 +597,7 @@ GET    /ws?session_id={id}           # 终端 WebSocket 连接
 ## 7. 项目结构
 
 ```
-sshx/
+xcontrol/
 ├── server/                              # Go 后端
 │   ├── main.go                          # 入口
 │   ├── go.mod

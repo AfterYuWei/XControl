@@ -61,13 +61,13 @@ jobs:
             VERSION="${TAG#v}"
             echo "version=$VERSION" >> $GITHUB_OUTPUT
             echo "tag=$TAG" >> $GITHUB_OUTPUT
-            echo "release_name=SSHX $VERSION" >> $GITHUB_OUTPUT
+            echo "release_name=XControl $VERSION" >> $GITHUB_OUTPUT
           else
             DATE=$(date -u +%Y%m%d)
             VERSION="0.0.0-dev.${DATE}.${SHORT_SHA}"
             echo "version=$VERSION" >> $GITHUB_OUTPUT
             echo "tag=$SHORT_SHA" >> $GITHUB_OUTPUT
-            echo "release_name=SSHX Carry $SHORT_SHA" >> $GITHUB_OUTPUT
+            echo "release_name=XControl Carry $SHORT_SHA" >> $GITHUB_OUTPUT
           fi
 
   # 三平台并行构建
@@ -83,21 +83,21 @@ jobs:
             goarch: amd64
             ext: .exe
             dist_script: dist:win
-            artifact_glob: "SSHX-Setup-*"
+            artifact_glob: "XControl-Setup-*"
           - os: macos-latest
             platform: mac-arm64
             goos: darwin
             goarch: arm64
             ext: ""
             dist_script: dist:mac
-            artifact_glob: "SSHX-*.dmg"
+            artifact_glob: "XControl-*.dmg"
           - os: ubuntu-latest
             platform: linux
             goos: linux
             goarch: amd64
             ext: ""
             dist_script: dist:linux
-            artifact_glob: "SSHX-*.deb,SSHX-*.rpm"
+            artifact_glob: "XControl-*.deb,XControl-*.rpm"
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -138,7 +138,7 @@ jobs:
           CGO_ENABLED: '0'
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-        run: go build -tags prod -o "sshx-server${{ matrix.ext }}" .
+        run: go build -tags prod -o "xcontrol-server${{ matrix.ext }}" .
 
       - name: Install electron dependencies
         working-directory: electron
@@ -208,12 +208,12 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: sshx-${{ matrix.platform }}-${{ needs.prepare.outputs.version }}
+          name: xcontrol-${{ matrix.platform }}-${{ needs.prepare.outputs.version }}
           path: |
-            electron/release/SSHX-Setup-*
-            electron/release/SSHX-*.dmg
-            electron/release/SSHX-*.deb
-            electron/release/SSHX-*.rpm
+            electron/release/XControl-Setup-*
+            electron/release/XControl-*.dmg
+            electron/release/XControl-*.deb
+            electron/release/XControl-*.rpm
           if-no-files-found: error
           retention-days: 30
 
@@ -242,7 +242,7 @@ jobs:
           tag_name: ${{ needs.prepare.outputs.tag }}
           name: ${{ needs.prepare.outputs.release_name }}
           body: |
-            ## SSHX ${{ needs.prepare.outputs.version }}
+            ## XControl ${{ needs.prepare.outputs.version }}
 
             ${{ needs.prepare.outputs.is_release == 'true' && '### ✅ 正式版' || '### 🔄 Carry 版（基于最新 main 分支构建）' }}
 
@@ -250,21 +250,21 @@ jobs:
 
             | 平台 | 文件 | 说明 |
             |------|------|------|
-            | Windows | `SSHX-Setup-*-x64.exe` | NSIS 安装程序 |
-            | macOS (Apple Silicon) | `SSHX-*-arm64.dmg` | DMG 镜像 |
-            | Linux (Debian/Ubuntu) | `SSHX-*-x64.deb` | deb 安装包 |
-            | Linux (Fedora/RHEL) | `SSHX-*-x64.rpm` | rpm 安装包 |
+            | Windows | `XControl-Setup-*-x64.exe` | NSIS 安装程序 |
+            | macOS (Apple Silicon) | `XControl-*-arm64.dmg` | DMG 镜像 |
+            | Linux (Debian/Ubuntu) | `XControl-*-x64.deb` | deb 安装包 |
+            | Linux (Fedora/RHEL) | `XControl-*-x64.rpm` | rpm 安装包 |
 
             ### 安装说明
 
             - **Windows**: 双击 `.exe` 安装，支持自定义安装路径
-            - **macOS**: 打开 `.dmg`，拖拽 SSHX 到 Applications 文件夹
-            - **Linux**: `sudo dpkg -i SSHX-*.deb` 或 `sudo rpm -i SSHX-*.rpm`
+            - **macOS**: 打开 `.dmg`，拖拽 XControl 到 Applications 文件夹
+            - **Linux**: `sudo dpkg -i XControl-*.deb` 或 `sudo rpm -i XControl-*.rpm`
           files: |
-            artifacts/SSHX-Setup-*
-            artifacts/SSHX-*.dmg
-            artifacts/SSHX-*.deb
-            artifacts/SSHX-*.rpm
+            artifacts/XControl-Setup-*
+            artifacts/XControl-*.dmg
+            artifacts/XControl-*.deb
+            artifacts/XControl-*.rpm
           draft: false
           # carry 版标记为预发布，正式版为正式发布
           prerelease: ${{ needs.prepare.outputs.is_release != 'true' }}

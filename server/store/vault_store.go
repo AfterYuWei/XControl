@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/yuweinfo/sshx/crypto"
-	"github.com/yuweinfo/sshx/model"
+	"github.com/yuweinfo/xcontrol/crypto"
+	"github.com/yuweinfo/xcontrol/model"
 )
 
 type sqliteVaultStore struct {

@@ -8,7 +8,7 @@ import (
 
 	gossh "golang.org/x/crypto/ssh"
 
-	"github.com/yuweinfo/sshx/protocol"
+	"github.com/yuweinfo/xcontrol/protocol"
 )
 
 // BuildSSHConfig constructs a gossh.ClientConfig from DriverOpts. Exported so

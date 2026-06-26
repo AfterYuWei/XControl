@@ -197,17 +197,17 @@
   /* Smooth theme transition for all chrome elements — terminal container
      (.term-wrap and its descendants) is excluded to avoid animating the
      xterm canvas, which must stay fixed. */
-  .sshx-header,
-  .sshx-header *,
-  .sshx-sidebar,
-  .sshx-sidebar *,
+  .xcontrol-header,
+  .xcontrol-header *,
+  .xcontrol-sidebar,
+  .xcontrol-sidebar *,
   .tabbar,
   .tabbar *,
   .statusbar,
   .statusbar *,
   .pal-overlay,
   .pal-overlay *,
-  .sshx-toast,
+  .xcontrol-toast,
   .expand-btn,
   body {
     transition: background-color 0.2s ease, border-color 0.2s ease,
@@ -226,7 +226,7 @@
 }
 
 /* ═══════════════════ APP SHELL ═══════════════════ */
-.sshx-app {
+.xcontrol-app {
   display: flex;
   flex-direction: column;
   height: 100vh;
@@ -234,7 +234,7 @@
 }
 
 /* ===== HEADER (full width, left/center/right) ===== */
-.sshx-header {
+.xcontrol-header {
   height: var(--tabbar-h);
   display: flex;
   align-items: center;
@@ -251,7 +251,7 @@
    - 深色模式(.dark)：标题栏深暗色，复用 --bg-panel / --fg
    - 浅色模式(:root/.light)：标题栏浅亮色，复用 --bg-panel / --fg
    关闭按钮悬停保留 Windows 原生红色 #E81123（见 .tb-close）。 */
-.sshx-header.titlebar.is-desktop {
+.xcontrol-header.titlebar.is-desktop {
   -webkit-app-region: drag;
   background: var(--bg-panel);
   border-bottom-color: var(--border);
@@ -261,19 +261,19 @@
 }
 /* 标题栏内可交互元素重新声明 no-drag，恢复点击与输入。
    容器空白区域仍为 drag，整个标题栏除按钮/搜索框外均可拖拽。 */
-.sshx-header.titlebar.is-desktop .hdr-icon-btn,
-.sshx-header.titlebar.is-desktop .tab-act,
-.sshx-header.titlebar.is-desktop .header-search,
-.sshx-header.titlebar.is-desktop .header-search input,
-.sshx-header.titlebar.is-desktop .header-search-clear,
-.sshx-header.titlebar.is-desktop .titlebar-controls,
-.sshx-header.titlebar.is-desktop .tb-btn {
+.xcontrol-header.titlebar.is-desktop .hdr-icon-btn,
+.xcontrol-header.titlebar.is-desktop .tab-act,
+.xcontrol-header.titlebar.is-desktop .header-search,
+.xcontrol-header.titlebar.is-desktop .header-search input,
+.xcontrol-header.titlebar.is-desktop .header-search-clear,
+.xcontrol-header.titlebar.is-desktop .titlebar-controls,
+.xcontrol-header.titlebar.is-desktop .tb-btn {
   -webkit-app-region: no-drag;
 }
 /* macOS：使用系统原生交通灯（左侧红黄绿圆形按钮），不自绘控制按钮。
    标题栏左侧需留出交通灯空间（约 78px），避免按钮被交通灯遮挡。
    header-left 此时承载侧边栏/SFTP/主题按钮，整体右移避让交通灯。 */
-.sshx-header.titlebar.is-desktop.is-mac {
+.xcontrol-header.titlebar.is-desktop.is-mac {
   padding-left: 78px;
 }
 
@@ -390,7 +390,7 @@
 }
 
 /* ===== BODY (sidebar + content) ===== */
-.sshx-body {
+.xcontrol-body {
   flex: 1;
   display: flex;
   overflow: hidden;
@@ -403,7 +403,7 @@
 }
 
 /* ===== SIDEBAR — Tabby / Warp inspired layout ===== */
-.sshx-sidebar {
+.xcontrol-sidebar {
   width: var(--sidebar-w);
   flex-shrink: 0;
   display: flex;
@@ -417,7 +417,7 @@
   align-self: stretch;
   min-height: 0;
 }
-.sshx-sidebar.collapsed {
+.xcontrol-sidebar.collapsed {
   width: 0;
   opacity: 0;
   border-right: none;
@@ -923,7 +923,7 @@
   min-width: 0;
   flex-shrink: 0;
 }
-.sshx-tab {
+.xcontrol-tab {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -936,14 +936,14 @@
   user-select: none;
   position: relative;
 }
-.sshx-tab:hover {
+.xcontrol-tab:hover {
   background: var(--bg-hover);
 }
-.sshx-tab.active {
+.xcontrol-tab.active {
   background: var(--bg-active);
   position: relative;
 }
-.sshx-tab.active::after {
+.xcontrol-tab.active::after {
   content: '';
   position: absolute;
   left: 0;
@@ -973,7 +973,7 @@
   white-space: nowrap;
   letter-spacing: 0.01em;
 }
-.sshx-tab.active .tab-name {
+.xcontrol-tab.active .tab-name {
   color: var(--fg-2);
   font-weight: 500;
 }
@@ -995,7 +995,7 @@
   padding: 0;
   margin-left: 2px;
 }
-.sshx-tab:hover .tab-x {
+.xcontrol-tab:hover .tab-x {
   opacity: 1;
 }
 .tab-x:hover {
@@ -1090,7 +1090,7 @@
   overflow: hidden;
   position: relative;
   background: var(--term-bg);
-  /* Top/bottom margin removed: the vertical gap is provided by .sshx-body's
+  /* Top/bottom margin removed: the vertical gap is provided by .xcontrol-body's
      padding so the sidebar and panel share the same spacing. */
   margin: 0 8px;
   min-height: 0;
@@ -2027,7 +2027,7 @@
 }
 
 /* ===== TOAST ===== */
-.sshx-toast {
+.xcontrol-toast {
   position: fixed;
   bottom: 56px;
   left: 50%;
@@ -2046,7 +2046,7 @@
   white-space: nowrap;
   backdrop-filter: blur(8px);
 }
-.sshx-toast.show {
+.xcontrol-toast.show {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
@@ -2057,7 +2057,7 @@
   outline-offset: 1px;
   border-radius: var(--r-sm);
 }
-.sshx-tab:focus-visible,
+.xcontrol-tab:focus-visible,
 .srv:focus-visible,
 .tab-act:focus-visible {
   outline: 1px solid var(--accent);

@@ -93,7 +93,7 @@ export function detectLanguage(path: string): string {
   // Dockerfile variants: Dockerfile.dev, Dockerfile.production, etc.
   if (lower.startsWith('dockerfile.')) return 'dockerfile'
 
-  // *.conf → nginx (common on SSHX target hosts)
+  // *.conf → nginx (common on XControl target hosts)
   if (lower.endsWith('.conf')) return 'nginx'
 
   const dot = lower.lastIndexOf('.')

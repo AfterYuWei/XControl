@@ -9,8 +9,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/yuweinfo/sshx/fileutil"
-	"github.com/yuweinfo/sshx/model"
+	"github.com/yuweinfo/xcontrol/fileutil"
+	"github.com/yuweinfo/xcontrol/model"
 )
 
 // --- SFTP built-in editor handlers ---

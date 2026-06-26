@@ -1,4 +1,4 @@
-module github.com/yuweinfo/sshx
+module github.com/yuweinfo/xcontrol
 
 go 1.26.1
 

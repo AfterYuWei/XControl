@@ -78,7 +78,7 @@ export const useSettingsStore = create<SettingsStore>()(
       setSidebarWidth: (sidebarWidth) => set({ sidebarWidth }),
     }),
     {
-      name: 'sshx-settings',
+      name: 'xcontrol-settings',
     }
   )
 )

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 跨平台构建 SSHX 桌面应用
+# 跨平台构建 XControl 桌面应用
 # 用法：
 #   ./build.sh              # 默认打包当前平台
 #   ./build.sh win          # 交叉打包 Windows NSIS（Linux/macOS 上需 wine）
@@ -39,7 +39,7 @@ npm run build
 
 echo "==> [2/3] 编译后端 (${GOOS}/${GOARCH}, embed 前端)"
 cd "$ROOT/server"
-CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -tags prod -o "sshx-server${EXT}" .
+CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -tags prod -o "xcontrol-server${EXT}" .
 
 echo "==> [3/3] 打包 Electron 应用 ($PLATFORM_DESC)"
 cd "$ROOT/electron"

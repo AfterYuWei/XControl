@@ -14,7 +14,7 @@ Pop-Location
 Write-Host "==> [2/3] 编译后端 (windows/amd64, embed 前端)" -ForegroundColor Cyan
 Push-Location "$root/server"
 $env:CGO_ENABLED = "0"
-go build -tags prod -o sshx-server.exe .
+go build -tags prod -o xcontrol-server.exe .
 Pop-Location
 
 Write-Host "==> [3/3] 打包 Electron 应用 (NSIS)" -ForegroundColor Cyan

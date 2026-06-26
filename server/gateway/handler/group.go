@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/yuweinfo/sshx/model"
-	"github.com/yuweinfo/sshx/store"
+	"github.com/yuweinfo/xcontrol/model"
+	"github.com/yuweinfo/xcontrol/store"
 )
 
 type GroupHandler struct {

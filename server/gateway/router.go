@@ -6,15 +6,15 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/yuweinfo/sshx/connpool"
-	"github.com/yuweinfo/sshx/crypto"
-	"github.com/yuweinfo/sshx/gateway/handler"
-	"github.com/yuweinfo/sshx/gateway/middleware"
-	"github.com/yuweinfo/sshx/protocol"
-	sshdriver "github.com/yuweinfo/sshx/protocol/ssh"
-	sftpdriver "github.com/yuweinfo/sshx/protocol/sftp"
-	"github.com/yuweinfo/sshx/store"
-	"github.com/yuweinfo/sshx/ws"
+	"github.com/yuweinfo/xcontrol/connpool"
+	"github.com/yuweinfo/xcontrol/crypto"
+	"github.com/yuweinfo/xcontrol/gateway/handler"
+	"github.com/yuweinfo/xcontrol/gateway/middleware"
+	"github.com/yuweinfo/xcontrol/protocol"
+	sshdriver "github.com/yuweinfo/xcontrol/protocol/ssh"
+	sftpdriver "github.com/yuweinfo/xcontrol/protocol/sftp"
+	"github.com/yuweinfo/xcontrol/store"
+	"github.com/yuweinfo/xcontrol/ws"
 )
 
 func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS) http.Handler {

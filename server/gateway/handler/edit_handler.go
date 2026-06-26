@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/yuweinfo/sshx/fileutil"
-	"github.com/yuweinfo/sshx/model"
+	"github.com/yuweinfo/xcontrol/fileutil"
+	"github.com/yuweinfo/xcontrol/model"
 )
 
 // EditHandler provides a unified API for file editing across different

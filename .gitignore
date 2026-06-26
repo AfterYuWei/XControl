@@ -2,8 +2,8 @@
 server/web_dist/
 
 # 后端二进制
-server/sshx-server
-server/sshx-server.exe
+server/xcontrol-server
+server/xcontrol-server.exe
 
 # 运行时数据（数据库、密钥）
 server/data/

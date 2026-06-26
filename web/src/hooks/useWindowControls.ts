@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react'
 
-// 是否运行在 Electron 桌面环境。浏览器下 window.sshx 为 undefined。
+// 是否运行在 Electron 桌面环境。浏览器下 window.xcontrol 为 undefined。
 export function isDesktop(): boolean {
-  return typeof window !== 'undefined' && !!window.sshx?.desktop
+  return typeof window !== 'undefined' && !!window.xcontrol?.desktop
 }
 
 // 当前平台：darwin / win32 / linux。浏览器下为空串。
 // 用于决定窗口控制按钮的布局：macOS 用系统交通灯，Windows/Linux 自绘右侧按钮。
 export function getPlatform(): string {
-  return typeof window !== 'undefined' ? window.sshx?.platform ?? '' : ''
+  return typeof window !== 'undefined' ? window.xcontrol?.platform ?? '' : ''
 }
 
 // 是否为 macOS（使用系统原生交通灯，不自绘控制按钮）
@@ -27,13 +27,13 @@ export function useWindowControls() {
   const [maximized, setMaximized] = useState(false)
 
   useEffect(() => {
-    if (!desktop || mac || !window.sshx?.window) return
+    if (!desktop || mac || !window.xcontrol?.window) return
 
     // 初始查询当前最大化状态
-    window.sshx.window.isMaximized().then(setMaximized).catch(() => {})
+    window.xcontrol.window.isMaximized().then(setMaximized).catch(() => {})
 
     // 订阅后续状态变化
-    const unsubscribe = window.sshx.window.onMaximizeChange((isMaximized) => {
+    const unsubscribe = window.xcontrol.window.onMaximizeChange((isMaximized) => {
       setMaximized(isMaximized)
     })
 
@@ -41,13 +41,13 @@ export function useWindowControls() {
   }, [desktop, mac])
 
   const minimize = () => {
-    window.sshx?.window?.minimize()
+    window.xcontrol?.window?.minimize()
   }
   const toggleMaximize = () => {
-    window.sshx?.window?.toggleMaximize()
+    window.xcontrol?.window?.toggleMaximize()
   }
   const close = () => {
-    window.sshx?.window?.close()
+    window.xcontrol?.window?.close()
   }
 
   // macOS 用系统交通灯，showControls=false；Windows/Linux 自绘按钮

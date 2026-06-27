@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Search, X, FolderUp, Settings } from 'lucide-react'
 import { Sidebar } from '@/components/Sidebar'
 import { TerminalView } from '@/components/Terminal'
@@ -9,13 +9,40 @@ import { ThemeToggle } from '@/components/ThemeToggle'
 import { SettingsDialog } from '@/components/SettingsDialog'
 import { useProfileStore } from '@/store/profile'
 import { useSessionStore } from '@/store/session'
+import { useSettingsStore } from '@/store/settings'
 import { useWindowControls } from '@/hooks/useWindowControls'
 
 export function Layout() {
   const { tabs, openSftpTab } = useSessionStore()
+  const { sidebarWidth, setSidebarWidth } = useSettingsStore()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [resizing, setResizing] = useState(false)
+  const sidebarRef = useRef<HTMLElement>(null)
+
+  // Sidebar drag resize
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    setResizing(true)
+    const startX = e.clientX
+    const startWidth = sidebarWidth
+
+    const onMouseMove = (e: MouseEvent) => {
+      const delta = e.clientX - startX
+      const newWidth = Math.min(480, Math.max(160, startWidth + delta))
+      setSidebarWidth(newWidth)
+    }
+
+    const onMouseUp = () => {
+      setResizing(false)
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+    }
+
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }, [sidebarWidth, setSidebarWidth])
 
   const { fetchProfiles, fetchGroups, searchQuery, setSearchQuery } = useProfileStore()
 
@@ -174,12 +201,21 @@ export function Layout() {
       <div className="xcontrol-body">
         {/* Sidebar */}
         <aside
+          ref={sidebarRef}
           className={`xcontrol-sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}
           role="navigation"
           aria-label="Server list"
         >
           <Sidebar />
         </aside>
+
+        {/* Resize handle */}
+        {!sidebarCollapsed && (
+          <div
+            className={`sidebar-resizer ${resizing ? 'active' : ''}`}
+            onMouseDown={handleResizeStart}
+          />
+        )}
 
         {/* Content */}
         <div className="cnt-wrap">

@@ -39,6 +39,10 @@ function applyAppFont(appFontSize: number, appFontFamily: string) {
   root.style.setProperty('--font-sans', appFontFamily)
 }
 
+function applySidebarWidth(sidebarWidth: number) {
+  document.documentElement.style.setProperty('--sidebar-w', `${sidebarWidth}px`)
+}
+
 function applyTheme(theme: Theme) {
   const resolved = resolveTheme(theme)
   const root = document.documentElement
@@ -91,7 +95,10 @@ export const useSettingsStore = create<SettingsStore>()(
       },
       setFontSize: (fontSize) => set({ fontSize }),
       setFontFamily: (fontFamily) => set({ fontFamily }),
-      setSidebarWidth: (sidebarWidth) => set({ sidebarWidth }),
+      setSidebarWidth: (sidebarWidth) => {
+        set({ sidebarWidth })
+        applySidebarWidth(sidebarWidth)
+      },
       setAppFontSize: (appFontSize) => {
         set({ appFontSize })
         applyAppFont(appFontSize, get().appFontFamily)
@@ -112,5 +119,6 @@ export function initTheme() {
   const state = useSettingsStore.getState()
   applyTheme(state.theme)
   applyAppFont(state.appFontSize, state.appFontFamily)
+  applySidebarWidth(state.sidebarWidth)
   ensureSystemWatcher()
 }

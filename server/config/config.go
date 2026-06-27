@@ -15,8 +15,8 @@ type Config struct {
 func Load() *Config {
 	return &Config{
 		Port:     getEnvInt("XCONTROL_PORT", 9090),
-		DBPath:   getEnvStr("XCONTROL_DB_PATH", "./data/xcontrol.db"),
-		KeyPath:  getEnvStr("XCONTROL_KEY_PATH", "./data/key"),
+		DBPath:   getEnvStr("XCONTROL_DB_PATH", defaultDBPath),
+		KeyPath:  getEnvStr("XCONTROL_KEY_PATH", defaultKeyPath),
 		LogLevel: getEnvStr("XCONTROL_LOG_LEVEL", "info"),
 	}
 }

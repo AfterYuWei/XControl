@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Search, X, FolderUp } from 'lucide-react'
+import { Search, X, FolderUp, Settings } from 'lucide-react'
 import { Sidebar } from '@/components/Sidebar'
 import { TerminalView } from '@/components/Terminal'
 import { StatusBar } from '@/components/StatusBar'
 import { CommandPalette } from '@/components/CommandPalette'
 import { Toast } from '@/components/Toast'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import { SettingsDialog } from '@/components/SettingsDialog'
 import { useProfileStore } from '@/store/profile'
 import { useSessionStore } from '@/store/session'
 import { useWindowControls } from '@/hooks/useWindowControls'
@@ -14,6 +15,7 @@ export function Layout() {
   const { tabs, openSftpTab } = useSessionStore()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const { fetchProfiles, fetchGroups, searchQuery, setSearchQuery } = useProfileStore()
 
@@ -107,8 +109,16 @@ export function Layout() {
           </div>
         </div>
 
-        {/* 右：主题切换按钮 */}
+        {/* 右：设置 + 主题切换 */}
         <div className="header-right">
+          <button
+            className="tab-act"
+            data-tip="设置"
+            aria-label="设置"
+            onClick={() => setSettingsOpen(true)}
+          >
+            <Settings size={13} />
+          </button>
           <ThemeToggle className="tab-act" />
         </div>
 
@@ -186,6 +196,9 @@ export function Layout() {
         onClose={() => setPaletteOpen(false)}
         onToggleSidebar={() => setSidebarCollapsed((v) => !v)}
       />
+
+      {/* 设置面板 */}
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
 
       {/* Toast */}
       <Toast />

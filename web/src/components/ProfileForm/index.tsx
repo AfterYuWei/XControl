@@ -227,7 +227,7 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
               <Select
                 options={authOptions}
                 value={form.auth_type}
-                onChange={(e) => setForm({ ...form, auth_type: e.target.value as 'password' | 'key' })}
+                onChange={(v) => setForm({ ...form, auth_type: v as 'password' | 'key' })}
               />
             </div>
           </div>
@@ -264,7 +264,7 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
             <Select
               options={groupOptions}
               value={form.group_id || ''}
-              onChange={(e) => setForm({ ...form, group_id: e.target.value })}
+              onChange={(v) => setForm({ ...form, group_id: v })}
             />
           </div>
 

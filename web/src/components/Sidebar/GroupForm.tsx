@@ -95,7 +95,7 @@ export function GroupForm({ open, onOpenChange, group, defaultParentId }: GroupF
             <Select
               options={parentOptions}
               value={parentId}
-              onChange={(e) => setParentId(e.target.value)}
+              onChange={setParentId}
             />
           </div>
 

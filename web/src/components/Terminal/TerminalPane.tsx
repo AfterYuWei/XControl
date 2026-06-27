@@ -5,7 +5,9 @@ import { useSessionStore } from '@/store/session'
 import { useProfileStore } from '@/store/profile'
 import { useSettingsStore } from '@/store/settings'
 import { ConnectionDialog } from '@/components/ConnectionDialog'
-import type { WSMessage, MetaPayload, ErrorPayload, CwdPayload } from '@/types/ws'
+import { useCompletion } from '@/hooks/useCompletion'
+import { CompletionPanel } from '@/components/Terminal/CompletionPanel'
+import type { WSMessage, MetaPayload, ErrorPayload, CwdPayload, CompleteResponsePayload } from '@/types/ws'
 
 type WSStatus = 'connecting' | 'connected' | 'disconnected'
 
@@ -27,7 +29,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const { updateTabStatus, updateTabCwd, updateTabLatency } = useSessionStore()
   const { profiles } = useProfileStore()
-  const { fontSize, fontFamily, fontFamilyCN, terminalTheme } = useSettingsStore()
+  const { fontSize, fontFamily, fontFamilyCN, terminalTheme, terminalPopupMenu } = useSettingsStore()
   const [showDialog, setShowDialog] = useState(false)
   const [connectionError, setConnectionError] = useState('')
   const [dialogStatus, setDialogStatus] = useState<'connecting' | 'connected' | 'error'>('connecting')
@@ -36,8 +38,17 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   const wsStatusRef = useRef<WSStatus>('connecting')
   const sendInputRef = useRef<(data: string) => void>(() => {})
   const sendResizeRef = useRef<(cols: number, rows: number) => void>(() => {})
+  const handleDataRef = useRef<(data: string) => boolean>(() => false)
+  const handleCompleteResponseRef = useRef<(payload: CompleteResponsePayload) => void>(() => {})
+  const handleOutputDataRef = useRef<(data: string) => void>(() => {})
 
-  const { write, writeln, clear, reset, fit, getSize } = useTerminal({
+  // 从 session store 读取 OSC7 追踪到的 cwd,供动态补全解析相对路径
+  const cwd = useSessionStore((state) => state.tabs.find((t) => t.id === tab.id)?.cwd)
+  const cwdRef = useRef(cwd)
+  useEffect(() => { cwdRef.current = cwd }, [cwd])
+  const getCwd = useCallback(() => cwdRef.current, [])
+
+  const { write, writeln, clear, reset, fit, getSize, getTerminal } = useTerminal({
     containerRef,
     fontSize,
     fontFamily,
@@ -45,7 +56,8 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     terminalTheme,
     onData: (data) => {
       if (tab.sessionId && wsStatusRef.current === 'connected') {
-        sendInputRef.current(data)
+        const consumed = handleDataRef.current(data)
+        if (!consumed) sendInputRef.current(data)
       }
     },
   })
@@ -56,6 +68,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
         case 'output':
           if (msg.data) {
             write(msg.data)
+            handleOutputDataRef.current(msg.data)
           }
           break
         case 'metadata': {
@@ -71,6 +84,13 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
           const cwd = msg.payload as CwdPayload
           if (cwd?.path) {
             updateTabCwd(tab.id, cwd.path)
+          }
+          break
+        }
+        case 'complete_response': {
+          const resp = msg.payload as CompleteResponsePayload
+          if (resp) {
+            handleCompleteResponseRef.current(resp)
           }
           break
         }
@@ -91,7 +111,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     [tab.id, updateTabStatus, updateTabCwd, write, writeln, clear, reset]
   )
 
-  const { status: wsStatus, latency, sendInput, sendResize } = useWebSocket({
+  const { status: wsStatus, latency, sendInput, sendResize, sendComplete } = useWebSocket({
     sessionId: tab.sessionId || '',
     onMessage: handleWSMessage,
     onOpen: () => {
@@ -109,11 +129,28 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     },
   })
 
+  const { popup, handleData, reset: resetCompletion, handleCompleteResponse, handleOutputData } = useCompletion({
+    getTerminal,
+    sendInput,
+    sendComplete,
+    getCwd,
+    enabled: terminalPopupMenu,
+  })
+
   useEffect(() => {
     wsStatusRef.current = wsStatus
     sendInputRef.current = sendInput
     sendResizeRef.current = sendResize
-  }, [wsStatus, sendInput, sendResize])
+    handleDataRef.current = handleData
+    handleCompleteResponseRef.current = handleCompleteResponse
+    handleOutputDataRef.current = handleOutputData
+  }, [wsStatus, sendInput, sendResize, handleData, handleCompleteResponse, handleOutputData])
+
+  useEffect(() => {
+    if (wsStatus === 'disconnected') {
+      resetCompletion()
+    }
+  }, [wsStatus, resetCompletion])
 
   // Sync latency to session store
   useEffect(() => {
@@ -173,6 +210,8 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   return (
     <div className="h-full w-full relative" style={{ background: 'var(--term-bg)' }}>
       <div ref={containerRef} className="h-full w-full" />
+
+      <CompletionPanel popup={popup} getTerminal={getTerminal} containerRef={containerRef} />
 
       <ConnectionDialog
         key={showDialog ? tab.id : 'closed'}

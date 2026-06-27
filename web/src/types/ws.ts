@@ -9,6 +9,8 @@ export type WSMessageType =
   | 'auth'
   | 'metadata'
   | 'cwd'
+  | 'complete_request'
+  | 'complete_response'
 
 export interface WSMessage {
   type: WSMessageType
@@ -39,4 +41,19 @@ export interface MetaPayload {
 
 export interface CwdPayload {
   path: string
+}
+
+// 动态补全:客户端请求远端执行只读脚本
+export interface CompleteRequestPayload {
+  request_id: string
+  script: string
+  cwd?: string
+}
+
+// 动态补全:服务端返回脚本执行结果
+export interface CompleteResponsePayload {
+  request_id: string
+  output: string
+  error: string
+  exit_code: number
 }

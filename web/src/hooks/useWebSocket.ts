@@ -100,11 +100,17 @@ export function useWebSocket(options: UseWebSocketOptions) {
     send({ type: 'resize', payload: { cols, rows } })
   }, [send])
 
+  // 动态补全:请求远端执行只读脚本,独立 SSH exec,不影响 PTY
+  const sendComplete = useCallback((requestId: string, script: string, cwd?: string) => {
+    send({ type: 'complete_request', payload: { request_id: requestId, script, cwd } })
+  }, [send])
+
   return {
     status,
     latency,
     send,
     sendInput,
     sendResize,
+    sendComplete,
   }
 }

@@ -18,6 +18,10 @@ const (
 	// Terminal current working directory (detected via OSC 7)
 	MsgCwd MessageType = "cwd"
 
+	// Terminal autocomplete dynamic query (只读远程 exec,不影响 PTY)
+	MsgCompleteRequest  MessageType = "complete_request"
+	MsgCompleteResponse MessageType = "complete_response"
+
 	// SFTP transfer progress messages
 	MsgTransferProgress MessageType = "transfer_progress"
 	MsgTransferComplete MessageType = "transfer_complete"
@@ -54,6 +58,23 @@ type MetaPayload struct {
 
 type CwdPayload struct {
 	Path string `json:"path"`
+}
+
+// --- Autocomplete dynamic query payloads ---
+
+// CompleteRequestPayload 客户端请求执行只读脚本获取动态补全候选
+type CompleteRequestPayload struct {
+	RequestID string `json:"request_id"`
+	Script    string `json:"script"` // 只读脚本,如 "git branch --list"
+	Cwd       string `json:"cwd"`    // 可选,OSC7 追踪到的当前工作目录
+}
+
+// CompleteResponsePayload 服务端返回脚本执行结果
+type CompleteResponsePayload struct {
+	RequestID string `json:"request_id"`
+	Output    string `json:"output"`     // 脚本 stdout
+	Error     string `json:"error"`      // 错误信息(超时/执行失败)
+	ExitCode  int    `json:"exit_code"`  // 退出码,-1 表示未执行/超时
 }
 
 // --- SFTP transfer payloads ---

@@ -110,8 +110,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     fontSize, setFontSize, fontFamily, setFontFamily, fontFamilyCN, setFontFamilyCN,
     appFontSize, setAppFontSize, appFontFamily, setAppFontFamily,
     terminalTheme, setTerminalTheme,
-    terminalAutocomplete, setTerminalAutocomplete,
-    terminalInlineSuggestion, setTerminalInlineSuggestion,
     terminalPopupMenu, setTerminalPopupMenu,
   } = useSettingsStore()
 
@@ -298,40 +296,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 {/* 自动补全分隔线 */}
                 <div className="settings-divider" />
 
-                {/* 自动补全标题 */}
-                <div className="settings-subsection-title">
-                  <span>自动补全</span>
-                </div>
-
-                {/* 启用自动补全 */}
+                {/* 弹出菜单补全 */}
                 <div className="settings-field">
                   <div className="settings-field-info">
-                    <Label className="settings-field-label">启用自动补全</Label>
-                    <span className="settings-field-desc">输入时根据历史命令和命令规范显示补全建议。</span>
-                  </div>
-                  <Switch
-                    checked={terminalAutocomplete}
-                    onCheckedChange={setTerminalAutocomplete}
-                  />
-                </div>
-
-                {/* 行内建议 */}
-                <div className="settings-field">
-                  <div className="settings-field-info">
-                    <Label className="settings-field-label">行内建议</Label>
-                    <span className="settings-field-desc">在光标后显示灰色的建议文本（类似 fish shell）。</span>
-                  </div>
-                  <Switch
-                    checked={terminalInlineSuggestion}
-                    onCheckedChange={setTerminalInlineSuggestion}
-                  />
-                </div>
-
-                {/* 弹出菜单 */}
-                <div className="settings-field">
-                  <div className="settings-field-info">
-                    <Label className="settings-field-label">弹出菜单</Label>
-                    <span className="settings-field-desc">显示包含多个建议的浮动列表。</span>
+                    <Label className="settings-field-label">自动补全</Label>
+                    <span className="settings-field-desc">输入时显示浮动补全面板，↑/↓ 选择，Enter 应用，Tab 透传给远端 shell。</span>
                   </div>
                   <Switch
                     checked={terminalPopupMenu}

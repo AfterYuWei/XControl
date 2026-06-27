@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
-import { Monitor, Terminal, Palette, Type, Ruler } from 'lucide-react'
+import { Monitor, Terminal, Palette, Type } from 'lucide-react'
 
 interface SettingsDialogProps {
   open: boolean
@@ -45,7 +45,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const {
     theme, setTheme,
     fontSize, setFontSize, fontFamily, setFontFamily,
-    sidebarWidth, setSidebarWidth,
     appFontSize, setAppFontSize, appFontFamily, setAppFontFamily,
   } = useSettingsStore()
 
@@ -129,31 +128,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                       onChange={(e) => {
                         const v = Number(e.target.value)
                         if (!isNaN(v)) setAppFontSize(v)
-                      }}
-                      className="settings-number-input"
-                    />
-                    <span className="settings-number-unit">px</span>
-                  </div>
-                </div>
-
-                {/* 侧边栏宽度 */}
-                <div className="settings-field">
-                  <div className="settings-field-info">
-                    <Label className="settings-field-label">
-                      <Ruler size={13} className="settings-field-icon" />
-                      侧边栏宽度
-                    </Label>
-                    <span className="settings-field-desc">左侧服务器列表的宽度</span>
-                  </div>
-                  <div className="settings-number-group">
-                    <Input
-                      type="number"
-                      min={160}
-                      max={480}
-                      value={sidebarWidth}
-                      onChange={(e) => {
-                        const v = Number(e.target.value)
-                        if (!isNaN(v)) setSidebarWidth(v)
                       }}
                       className="settings-number-input"
                     />

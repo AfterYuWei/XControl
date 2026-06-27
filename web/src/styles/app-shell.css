@@ -196,6 +196,42 @@
   border-right: none;
   overflow: hidden;
 }
+
+/* Sidebar resize handle — thin vertical bar between sidebar and content */
+.sidebar-resizer {
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 31;
+  transition: background 0.15s;
+  margin: 0 -2px;
+}
+.sidebar-resizer:hover,
+.sidebar-resizer.active {
+  background: var(--accent);
+}
+/* Wider hit area for easier grabbing (invisible) */
+.sidebar-resizer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+}
+/* Disable text selection during resize */
+.xcontrol-body:has(.sidebar-resizer.active) {
+  user-select: none;
+  -webkit-user-select: none;
+}
+.xcontrol-body:has(.sidebar-resizer.active) * {
+  pointer-events: none;
+}
+.sidebar-resizer.active {
+  pointer-events: auto;
+}
 .sidebar-hdr {
   height: var(--tabbar-h);
   padding: 0 8px;

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Loader2, CheckCircle2, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
+import { resolveServerIcon } from '@/lib/serverIcons'
 
 interface ConnectionStep {
   id: string
@@ -17,6 +18,7 @@ interface ConnectionDialogProps {
   host: string
   port: number
   username: string
+  icon?: string
   status: 'connecting' | 'connected' | 'error'
   errorMessage?: string
   onCancel?: () => void
@@ -29,6 +31,7 @@ export function ConnectionDialog({
   host,
   port,
   username,
+  icon,
   status,
   errorMessage,
   onCancel,
@@ -61,6 +64,7 @@ export function ConnectionDialog({
 
   if (!open) return null
 
+  const ServerIcon = resolveServerIcon(icon)
   const timeout = 120
   const remaining = Math.max(0, timeout - elapsed)
 
@@ -111,8 +115,8 @@ export function ConnectionDialog({
         <div className="p-4">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-lg">
-                {profileName.charAt(0).toUpperCase()}
+              <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white">
+                <ServerIcon size={20} />
               </div>
               <div>
                 <h3 className="font-semibold text-base">{profileName}</h3>

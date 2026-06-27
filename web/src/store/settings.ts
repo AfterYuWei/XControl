@@ -7,9 +7,15 @@ interface SettingsStore {
   theme: Theme
   fontSize: number
   fontFamily: string
+  fontFamilyCN: string
   sidebarWidth: number
   appFontSize: number
   appFontFamily: string
+  terminalTheme: string
+  // 自动补全设置
+  terminalAutocomplete: boolean
+  terminalInlineSuggestion: boolean
+  terminalPopupMenu: boolean
   // system 模式下系统主题变化时自增，用于触发组件重渲染（theme 仍为 'system'）
   systemRevision: number
 
@@ -17,9 +23,14 @@ interface SettingsStore {
   toggleTheme: () => void
   setFontSize: (size: number) => void
   setFontFamily: (family: string) => void
+  setFontFamilyCN: (family: string) => void
   setSidebarWidth: (width: number) => void
   setAppFontSize: (size: number) => void
   setAppFontFamily: (family: string) => void
+  setTerminalTheme: (id: string) => void
+  setTerminalAutocomplete: (enabled: boolean) => void
+  setTerminalInlineSuggestion: (enabled: boolean) => void
+  setTerminalPopupMenu: (enabled: boolean) => void
 }
 
 function resolveTheme(theme: Theme): 'light' | 'dark' {
@@ -77,10 +88,15 @@ export const useSettingsStore = create<SettingsStore>()(
     (set, get) => ({
       theme: 'dark',
       fontSize: 13,
-      fontFamily: "'JetBrains Mono', 'Fira Code', ui-monospace, monospace",
+      fontFamily: "'JetBrains Mono'",
+      fontFamilyCN: "'Noto Sans SC'",
       sidebarWidth: 240,
       appFontSize: 12,
       appFontFamily: DEFAULT_APP_FONT_FAMILY,
+      terminalTheme: 'default',
+      terminalAutocomplete: true,
+      terminalInlineSuggestion: false,
+      terminalPopupMenu: true,
       systemRevision: 0,
 
       setTheme: (theme) => {
@@ -95,6 +111,7 @@ export const useSettingsStore = create<SettingsStore>()(
       },
       setFontSize: (fontSize) => set({ fontSize }),
       setFontFamily: (fontFamily) => set({ fontFamily }),
+      setFontFamilyCN: (fontFamilyCN) => set({ fontFamilyCN }),
       setSidebarWidth: (sidebarWidth) => {
         set({ sidebarWidth })
         applySidebarWidth(sidebarWidth)
@@ -107,6 +124,10 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ appFontFamily })
         applyAppFont(get().appFontSize, appFontFamily)
       },
+      setTerminalTheme: (terminalTheme) => set({ terminalTheme }),
+      setTerminalAutocomplete: (terminalAutocomplete) => set({ terminalAutocomplete }),
+      setTerminalInlineSuggestion: (terminalInlineSuggestion) => set({ terminalInlineSuggestion }),
+      setTerminalPopupMenu: (terminalPopupMenu) => set({ terminalPopupMenu }),
     }),
     {
       name: 'xcontrol-settings',

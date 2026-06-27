@@ -1,10 +1,13 @@
 import { useState } from 'react'
 import { useSettingsStore } from '@/store/settings'
+import { terminalThemes } from '@/lib/terminalThemes'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
-import { Monitor, Terminal, Palette, Type } from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
+import { Monitor, Terminal, Palette, Type, ChevronRight } from 'lucide-react'
+import { TerminalThemePicker } from './TerminalThemePicker'
 
 interface SettingsDialogProps {
   open: boolean
@@ -18,19 +21,78 @@ const themeOptions = [
 ]
 
 const appFontFamilyOptions = [
+  // ── 系统默认 ──
   { value: "-apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif", label: '系统默认' },
+  // ── 西文 Web 字体 ──
   { value: "'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif", label: 'Inter' },
+  { value: "'Manrope', -apple-system, BlinkMacSystemFont, system-ui, sans-serif", label: 'Manrope' },
+  { value: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif", label: 'Plus Jakarta Sans' },
+  { value: "'IBM Plex Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif", label: 'IBM Plex Sans' },
+  { value: "'Roboto', -apple-system, BlinkMacSystemFont, system-ui, sans-serif", label: 'Roboto' },
+  { value: "'Open Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif", label: 'Open Sans' },
+  { value: "'Lato', -apple-system, BlinkMacSystemFont, system-ui, sans-serif", label: 'Lato' },
+  { value: "'Montserrat', -apple-system, BlinkMacSystemFont, system-ui, sans-serif", label: 'Montserrat' },
+  { value: "'Poppins', -apple-system, BlinkMacSystemFont, system-ui, sans-serif", label: 'Poppins' },
+  { value: "'Outfit', -apple-system, BlinkMacSystemFont, system-ui, sans-serif", label: 'Outfit' },
+  { value: "'DM Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif", label: 'DM Sans' },
+  { value: "'Noto Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif", label: 'Noto Sans' },
+  { value: "'Geist', -apple-system, BlinkMacSystemFont, system-ui, sans-serif", label: 'Geist (Vercel)' },
+  // ── 系统西文字体 ──
+  { value: "'SF Pro Text', -apple-system, BlinkMacSystemFont, system-ui, sans-serif", label: 'SF Pro (Apple)' },
+  { value: "'Segoe UI', system-ui, sans-serif", label: 'Segoe UI (Windows)' },
+  { value: "'Helvetica Neue', -apple-system, BlinkMacSystemFont, system-ui, sans-serif", label: 'Helvetica Neue' },
+  { value: "'Arial', -apple-system, BlinkMacSystemFont, system-ui, sans-serif", label: 'Arial' },
+  // ── 中文字体 ──
   { value: "'Noto Sans SC', -apple-system, BlinkMacSystemFont, system-ui, sans-serif", label: 'Noto Sans SC（思源黑体）' },
+  { value: "'Source Han Sans SC', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, system-ui, sans-serif", label: 'Source Han Sans（思源黑体）' },
+  { value: "'PingFang SC', -apple-system, BlinkMacSystemFont, system-ui, sans-serif", label: 'PingFang SC（苹方）' },
+  { value: "'Microsoft YaHei', -apple-system, BlinkMacSystemFont, system-ui, sans-serif", label: 'Microsoft YaHei（微软雅黑）' },
   { value: "'HarmonyOS Sans', 'Noto Sans SC', system-ui, sans-serif", label: '鸿蒙黑体' },
+  { value: "'MiSans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif", label: '小米 (MiSans)' },
+  { value: "'OPPO Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif", label: 'OPPO Sans' },
+  { value: "'Alibaba PuHuiTi 2.0', 'Noto Sans SC', system-ui, sans-serif", label: '阿里巴巴普惠体' },
+  { value: "'LXGW WenKai', 'Noto Sans SC', system-ui, sans-serif", label: '霞鹜文楷' },
+  { value: "'Noto Serif SC', -apple-system, BlinkMacSystemFont, system-ui, sans-serif", label: '思源宋体 (Noto Serif SC)' },
+  { value: "'WenQuanYi Micro Hei', -apple-system, BlinkMacSystemFont, system-ui, sans-serif", label: '文泉驿微米黑' },
+  { value: "'STHeiti', -apple-system, BlinkMacSystemFont, system-ui, sans-serif", label: '华文黑体' },
+  // ── 通用 ──
   { value: "system-ui, sans-serif", label: 'System UI' },
 ]
 
 const terminalFontFamilyOptions = [
-  { value: "'JetBrains Mono', 'Fira Code', ui-monospace, monospace", label: 'JetBrains Mono' },
-  { value: "'Fira Code', 'JetBrains Mono', ui-monospace, monospace", label: 'Fira Code' },
-  { value: "'Cascadia Code', 'JetBrains Mono', ui-monospace, monospace", label: 'Cascadia Code' },
-  { value: "'Source Code Pro', 'JetBrains Mono', ui-monospace, monospace", label: 'Source Code Pro' },
-  { value: "ui-monospace, monospace", label: '系统默认' },
+  { value: "'JetBrains Mono'", label: 'JetBrains Mono' },
+  { value: "'Fira Code'", label: 'Fira Code' },
+  { value: "'Cascadia Code'", label: 'Cascadia Code' },
+  { value: "'Source Code Pro'", label: 'Source Code Pro' },
+  { value: "'Consolas'", label: 'Consolas' },
+  { value: "'Monaco'", label: 'Monaco' },
+  { value: "'Hack'", label: 'Hack' },
+  { value: "'Ubuntu Mono'", label: 'Ubuntu Mono' },
+  { value: "'Menlo'", label: 'Menlo' },
+  { value: "'DejaVu Sans Mono'", label: 'DejaVu Sans Mono' },
+  { value: "'Courier New'", label: 'Courier New' },
+  { value: "'Inconsolata'", label: 'Inconsolata' },
+  { value: "'Roboto Mono'", label: 'Roboto Mono' },
+  { value: "'IBM Plex Mono'", label: 'IBM Plex Mono' },
+  { value: "'Space Mono'", label: 'Space Mono' },
+  { value: "'Liberation Mono'", label: 'Liberation Mono' },
+  { value: "ui-monospace", label: '系统默认' },
+]
+
+const terminalFontFamilyCNOptions = [
+  { value: "'Noto Sans SC'", label: '思源黑体 (Noto Sans SC)' },
+  { value: "'PingFang SC'", label: '苹方 (PingFang SC)' },
+  { value: "'Microsoft YaHei'", label: '微软雅黑 (Microsoft YaHei)' },
+  { value: "'HarmonyOS Sans'", label: '鸿蒙黑体 (HarmonyOS Sans)' },
+  { value: "'MiSans'", label: '小米 (MiSans)' },
+  { value: "'OPPO Sans'", label: 'OPPO Sans' },
+  { value: "'Alibaba PuHuiTi 2.0'", label: '阿里巴巴普惠体 (Alibaba PuHuiTi)' },
+  { value: "'LXGW WenKai'", label: '霞鹜文楷 (LXGW WenKai)' },
+  { value: "'Source Han Sans SC'", label: '思源黑体 (Source Han Sans)' },
+  { value: "'WenQuanYi Micro Hei'", label: '文泉驿微米黑 (WenQuanYi)' },
+  { value: "'Noto Serif SC'", label: '思源宋体 (Noto Serif SC)' },
+  { value: "'STHeiti'", label: '华文黑体 (STHeiti)' },
+  { value: "sans-serif", label: '系统默认' },
 ]
 
 type SettingsTab = 'appearance' | 'terminal'
@@ -42,11 +104,18 @@ const tabs: { key: SettingsTab; label: string; icon: typeof Monitor }[] = [
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>('appearance')
+  const [themePickerOpen, setThemePickerOpen] = useState(false)
   const {
     theme, setTheme,
-    fontSize, setFontSize, fontFamily, setFontFamily,
+    fontSize, setFontSize, fontFamily, setFontFamily, fontFamilyCN, setFontFamilyCN,
     appFontSize, setAppFontSize, appFontFamily, setAppFontFamily,
+    terminalTheme, setTerminalTheme,
+    terminalAutocomplete, setTerminalAutocomplete,
+    terminalInlineSuggestion, setTerminalInlineSuggestion,
+    terminalPopupMenu, setTerminalPopupMenu,
   } = useSettingsStore()
+
+  const currentThemeLabel = terminalThemes.find((t) => t.id === terminalTheme)?.label ?? '默认深色'
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -144,19 +213,62 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   <span>终端设置</span>
                 </div>
 
-                {/* 终端字体 */}
+                {/* 终端主题 */}
+                <div className="settings-field">
+                  <div className="settings-field-info">
+                    <Label className="settings-field-label">
+                      <Palette size={13} className="settings-field-icon" />
+                      终端主题
+                    </Label>
+                    <span className="settings-field-desc">终端颜色方案</span>
+                  </div>
+                  <button
+                    className="settings-theme-btn"
+                    onClick={() => setThemePickerOpen(true)}
+                  >
+                    <span>{currentThemeLabel}</span>
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+
+                {/* 终端主题选择器 Dialog */}
+                <TerminalThemePicker
+                  open={themePickerOpen}
+                  onOpenChange={setThemePickerOpen}
+                  value={terminalTheme}
+                  onChange={setTerminalTheme}
+                />
+
+                {/* 终端字体（英文） */}
                 <div className="settings-field">
                   <div className="settings-field-info">
                     <Label className="settings-field-label">
                       <Type size={13} className="settings-field-icon" />
-                      终端字体
+                      终端字体（英文）
                     </Label>
-                    <span className="settings-field-desc">终端使用的等宽字体</span>
+                    <span className="settings-field-desc">等宽字体，用于显示代码和英文字符</span>
                   </div>
                   <Select
                     options={terminalFontFamilyOptions}
                     value={fontFamily}
                     onChange={setFontFamily}
+                    className="settings-select"
+                  />
+                </div>
+
+                {/* 终端字体（中文） */}
+                <div className="settings-field">
+                  <div className="settings-field-info">
+                    <Label className="settings-field-label">
+                      <Type size={13} className="settings-field-icon" />
+                      终端字体（中文）
+                    </Label>
+                    <span className="settings-field-desc">中文字体，用于显示中文字符</span>
+                  </div>
+                  <Select
+                    options={terminalFontFamilyCNOptions}
+                    value={fontFamilyCN}
+                    onChange={setFontFamilyCN}
                     className="settings-select"
                   />
                 </div>
@@ -181,6 +293,50 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     />
                     <span className="settings-number-unit">px</span>
                   </div>
+                </div>
+
+                {/* 自动补全分隔线 */}
+                <div className="settings-divider" />
+
+                {/* 自动补全标题 */}
+                <div className="settings-subsection-title">
+                  <span>自动补全</span>
+                </div>
+
+                {/* 启用自动补全 */}
+                <div className="settings-field">
+                  <div className="settings-field-info">
+                    <Label className="settings-field-label">启用自动补全</Label>
+                    <span className="settings-field-desc">输入时根据历史命令和命令规范显示补全建议。</span>
+                  </div>
+                  <Switch
+                    checked={terminalAutocomplete}
+                    onCheckedChange={setTerminalAutocomplete}
+                  />
+                </div>
+
+                {/* 行内建议 */}
+                <div className="settings-field">
+                  <div className="settings-field-info">
+                    <Label className="settings-field-label">行内建议</Label>
+                    <span className="settings-field-desc">在光标后显示灰色的建议文本（类似 fish shell）。</span>
+                  </div>
+                  <Switch
+                    checked={terminalInlineSuggestion}
+                    onCheckedChange={setTerminalInlineSuggestion}
+                  />
+                </div>
+
+                {/* 弹出菜单 */}
+                <div className="settings-field">
+                  <div className="settings-field-info">
+                    <Label className="settings-field-label">弹出菜单</Label>
+                    <span className="settings-field-desc">显示包含多个建议的浮动列表。</span>
+                  </div>
+                  <Switch
+                    checked={terminalPopupMenu}
+                    onCheckedChange={setTerminalPopupMenu}
+                  />
                 </div>
               </div>
             )}

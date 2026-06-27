@@ -27,7 +27,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const { updateTabStatus, updateTabCwd, updateTabLatency } = useSessionStore()
   const { profiles } = useProfileStore()
-  const { fontSize, fontFamily } = useSettingsStore()
+  const { fontSize, fontFamily, fontFamilyCN, terminalTheme } = useSettingsStore()
   const [showDialog, setShowDialog] = useState(false)
   const [connectionError, setConnectionError] = useState('')
   const [dialogStatus, setDialogStatus] = useState<'connecting' | 'connected' | 'error'>('connecting')
@@ -41,6 +41,8 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     containerRef,
     fontSize,
     fontFamily,
+    fontFamilyCN,
+    terminalTheme,
     onData: (data) => {
       if (tab.sessionId && wsStatusRef.current === 'connected') {
         sendInputRef.current(data)

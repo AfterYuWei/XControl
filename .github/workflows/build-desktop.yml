@@ -1,15 +1,12 @@
 name: Build Desktop Apps
 
 # 触发条件：
-# - 推送 tag (v*):  正式发布，版本号=tag名，上传到正式 GitHub Release
-# - 推送 main:      carry 发布，版本号=short commit，上传到 prerelease GitHub Release
+# - 推送 tag (v*):  自动构建并发布正式 GitHub Release（版本号=tag名）
 # - 手动触发:       可选择 release / nightly 模式
 on:
   push:
     tags:
       - 'v*'
-    branches:
-      - main
   workflow_dispatch:
     inputs:
       release_type:

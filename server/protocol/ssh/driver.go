@@ -56,8 +56,14 @@ func (d *Driver) RequestShell(opts protocol.ShellOptions) (protocol.Shell, error
 		term = "xterm-256color"
 	}
 
+	// IUTF8 (42) tells the remote kernel's line discipline that the terminal
+	// uses UTF-8 encoding, ensuring correct cursor movement and line wrapping
+	// for multi-byte characters.
+	const IUTF8 uint8 = 42
+
 	modes := gossh.TerminalModes{
 		gossh.ECHO:          1,
+		IUTF8:               1,
 		gossh.TTY_OP_ISPEED: 115200,
 		gossh.TTY_OP_OSPEED: 115200,
 	}

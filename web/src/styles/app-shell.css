@@ -411,6 +411,8 @@
   transition: background 0.08s;
   margin: 0 4px;
   border-radius: var(--r-sm);
+  user-select: none;
+  -webkit-user-select: none;
 }
 .srv[draggable="true"] {
   cursor: grab;
@@ -453,30 +455,26 @@
 .srv.offline .srv-icon {
   color: var(--fg-4);
 }
-/* Small status dot at bottom-right of icon */
-.srv-dot {
-  position: absolute;
-  bottom: -1px;
-  right: -1px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  border: 1.5px solid var(--bg-panel);
-  box-sizing: content-box;
+.srv-edit-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--fg-3);
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  flex-shrink: 0;
+  padding: 0;
 }
-.srv-dot.on { background: var(--green); }
-.srv-dot.off { background: var(--red); }
-.srv-dot.loading { background: var(--yellow); animation: pulse-dot 1s ease infinite; }
-@keyframes pulse-dot {
-  0%,
-  100% {
-    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.08);
-    opacity: 0.7;
-  }
-  50% {
-    box-shadow: 0 0 0 5px rgba(245, 158, 11, 0.2);
-    opacity: 1;
-  }
+.srv-edit-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-2);
+}
+.srv:hover .srv-edit-btn {
+  display: flex;
 }
 .srv-info {
   display: flex;

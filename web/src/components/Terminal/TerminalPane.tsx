@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useState } from 'react'
 import { useTerminal } from '@/hooks/useTerminal'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { useSessionStore } from '@/store/session'
+import { useProfileStore } from '@/store/profile'
 import { useSettingsStore } from '@/store/settings'
 import { ConnectionDialog } from '@/components/ConnectionDialog'
 import type { WSMessage, MetaPayload, ErrorPayload, CwdPayload } from '@/types/ws'
@@ -25,6 +26,7 @@ interface TerminalPaneProps {
 export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const { updateTabStatus, updateTabCwd, updateTabLatency } = useSessionStore()
+  const { profiles } = useProfileStore()
   const { fontSize, fontFamily } = useSettingsStore()
   const [showDialog, setShowDialog] = useState(false)
   const [connectionError, setConnectionError] = useState('')
@@ -164,6 +166,8 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     updateTabStatus(tab.id, 'disconnected')
   }
 
+  const profileIcon = profiles.find((p) => p.id === tab.profileId)?.icon
+
   return (
     <div className="h-full w-full relative" style={{ background: 'var(--term-bg)' }}>
       <div ref={containerRef} className="h-full w-full" />
@@ -176,6 +180,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
         host={tab.host || '未知'}
         port={tab.port || 22}
         username={tab.username || 'root'}
+        icon={profileIcon}
         status={dialogStatus}
         errorMessage={connectionError}
         onCancel={handleCancel}

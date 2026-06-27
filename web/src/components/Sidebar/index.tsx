@@ -236,8 +236,6 @@ export function Sidebar() {
     const isActive = profile.id === activeProfileId
     const tab = tabs.find((t) => t.profileId === profile.id)
     const status = tab?.status ?? 'disconnected'
-    const dotClass =
-      status === 'connected' ? 'on' : status === 'connecting' ? 'loading' : 'off'
     const Icon = resolveServerIcon(profile.icon)
     const meta =
       profile.port && profile.port !== 22
@@ -256,7 +254,10 @@ export function Sidebar() {
           e.dataTransfer.effectAllowed = 'move'
         }}
         aria-label={`选择 ${profile.name} (${profile.host}:${profile.port})，双击连接`}
-        onClick={() => setSelectedProfileId(profile.id)}
+        onClick={(e) => {
+          e.stopPropagation()
+          setSelectedProfileId(profile.id)
+        }}
         onDoubleClick={() => handleConnect(profile)}
         onContextMenu={(e) => handleProfileContextMenu(e, profile)}
         onKeyDown={(e) => {
@@ -272,12 +273,22 @@ export function Sidebar() {
       >
         <div className="srv-icon">
           <Icon size={14} />
-          <span className={`srv-dot ${dotClass}`} aria-hidden="true" />
         </div>
         <div className="srv-info">
           <span className="srv-nm">{profile.name}</span>
           <span className="srv-meta">{meta}</span>
         </div>
+        <button
+          className="srv-edit-btn"
+          title="编辑服务器"
+          aria-label="编辑服务器"
+          onClick={(e) => {
+            e.stopPropagation()
+            handleEditProfile(profile)
+          }}
+        >
+          <Edit size={12} />
+        </button>
       </div>
     )
   }
@@ -305,7 +316,7 @@ export function Sidebar() {
             </button>
           </div>
 
-          <div className="sidebar-body" onContextMenu={handleBlankContextMenu}>
+          <div className="sidebar-body" onContextMenu={handleBlankContextMenu} onClick={() => setSelectedProfileId(null)}>
             {loading ? (
               <div className="sidebar-empty">
                 <span>Loading…</span>

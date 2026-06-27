@@ -149,6 +149,11 @@ func (h *WSHandler) readPump(ctx context.Context, conn *ws.Conn, session *Sessio
 
 		case ws.MsgPing:
 			h.sendWSMessage(wsConn.WS(), ws.MsgPong, "", nil)
+
+		case ws.MsgCompleteRequest:
+			// 异步处理:避免 400ms 超时阻塞 readPump 读取后续 input/resize
+			// coder/websocket 的 Conn.Write 线程安全,可并发写响应
+			go h.handleComplete(wsConn.WS(), session, msg.Payload)
 		}
 	}
 }

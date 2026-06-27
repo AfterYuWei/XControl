@@ -256,6 +256,9 @@ export function useTerminal(options: UseTerminalOptions) {
     return { cols: terminal.cols, rows: terminal.rows }
   }, [])
 
+  // 暴露 terminal 实例供补全等外部逻辑读取 buffer/光标
+  const getTerminal = useCallback(() => terminalRef.current, [])
+
   return {
     write,
     writeln,
@@ -263,5 +266,6 @@ export function useTerminal(options: UseTerminalOptions) {
     reset,
     fit,
     getSize,
+    getTerminal,
   }
 }

@@ -197,20 +197,15 @@
   overflow: hidden;
 }
 
-/* Sidebar resize handle — thin vertical bar between sidebar and content */
+/* Sidebar resize handle */
 .sidebar-resizer {
-  width: 4px;
+  width: 1px;
   cursor: col-resize;
   background: transparent;
   flex-shrink: 0;
   position: relative;
   z-index: 31;
-  transition: background 0.15s;
-  margin: 0 -2px;
-}
-.sidebar-resizer:hover,
-.sidebar-resizer.active {
-  background: var(--accent);
+  margin: 0;
 }
 /* Wider hit area for easier grabbing (invisible) */
 .sidebar-resizer::before {

@@ -7,6 +7,7 @@ server/xcontrol-server.exe
 
 # 运行时数据（数据库、密钥）
 server/data/
+data/
 
 # Electron 构建产物（electron/.gitignore 已忽略 node_modules/release）
 

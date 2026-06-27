@@ -8,6 +8,8 @@ interface SettingsStore {
   fontSize: number
   fontFamily: string
   sidebarWidth: number
+  appFontSize: number
+  appFontFamily: string
   // system 模式下系统主题变化时自增，用于触发组件重渲染（theme 仍为 'system'）
   systemRevision: number
 
@@ -16,6 +18,8 @@ interface SettingsStore {
   setFontSize: (size: number) => void
   setFontFamily: (family: string) => void
   setSidebarWidth: (width: number) => void
+  setAppFontSize: (size: number) => void
+  setAppFontFamily: (family: string) => void
 }
 
 function resolveTheme(theme: Theme): 'light' | 'dark' {
@@ -23,6 +27,16 @@ function resolveTheme(theme: Theme): 'light' | 'dark' {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
   }
   return theme
+}
+
+const DEFAULT_APP_FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif"
+
+function applyAppFont(appFontSize: number, appFontFamily: string) {
+  const root = document.documentElement
+  root.style.setProperty('--sans-size', `${appFontSize}px`)
+  root.style.setProperty('--sans', appFontFamily)
+  // 同步 Tailwind @theme 变量
+  root.style.setProperty('--font-sans', appFontFamily)
 }
 
 function applyTheme(theme: Theme) {
@@ -61,6 +75,8 @@ export const useSettingsStore = create<SettingsStore>()(
       fontSize: 13,
       fontFamily: "'JetBrains Mono', 'Fira Code', ui-monospace, monospace",
       sidebarWidth: 240,
+      appFontSize: 12,
+      appFontFamily: DEFAULT_APP_FONT_FAMILY,
       systemRevision: 0,
 
       setTheme: (theme) => {
@@ -76,6 +92,14 @@ export const useSettingsStore = create<SettingsStore>()(
       setFontSize: (fontSize) => set({ fontSize }),
       setFontFamily: (fontFamily) => set({ fontFamily }),
       setSidebarWidth: (sidebarWidth) => set({ sidebarWidth }),
+      setAppFontSize: (appFontSize) => {
+        set({ appFontSize })
+        applyAppFont(appFontSize, get().appFontFamily)
+      },
+      setAppFontFamily: (appFontFamily) => {
+        set({ appFontFamily })
+        applyAppFont(get().appFontSize, appFontFamily)
+      },
     }),
     {
       name: 'xcontrol-settings',
@@ -85,7 +109,8 @@ export const useSettingsStore = create<SettingsStore>()(
 
 // Apply theme on load
 export function initTheme() {
-  const theme = useSettingsStore.getState().theme
-  applyTheme(theme)
+  const state = useSettingsStore.getState()
+  applyTheme(state.theme)
+  applyAppFont(state.appFontSize, state.appFontFamily)
   ensureSystemWatcher()
 }

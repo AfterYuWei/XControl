@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/coder/websocket"
 	"github.com/yuweinfo/xcontrol/ws"
@@ -164,6 +165,7 @@ func (h *WSHandler) writePump(ctx context.Context, conn *ws.Conn, session *Sessi
 
 	buf := make([]byte, 4096)
 	var osc7Buffer []byte
+	var utf8Carry []byte // Incomplete UTF-8 trailing bytes from previous read
 
 	// Filter control for injected OSC 7 config command
 	// Uses a buffer to handle network packet fragmentation
@@ -195,7 +197,13 @@ func (h *WSHandler) writePump(ctx context.Context, conn *ws.Conn, session *Sessi
 				}
 			}
 			if n > 0 {
-				data := buf[:n]
+				// Carry over incomplete UTF-8 trailing bytes from previous read
+				// to prevent splitting multi-byte characters at buffer boundaries
+				data := append(utf8Carry, buf[:n]...)
+				utf8Carry = trimIncompleteUTF8(data)
+				if len(utf8Carry) > 0 {
+					data = data[:len(data)-len(utf8Carry)]
+				}
 
 				// Surgical filter for injected OSC 7 config command
 				// Handles network packet fragmentation gracefully
@@ -322,6 +330,32 @@ func extractOSC7(buf *[]byte) string {
 	}
 
 	return result
+}
+
+// trimIncompleteUTF8 returns trailing bytes from buf that form an incomplete
+// UTF-8 sequence. These bytes should be prepended to the next read to avoid
+// splitting multi-byte characters at buffer boundaries.
+func trimIncompleteUTF8(buf []byte) []byte {
+	if len(buf) == 0 {
+		return nil
+	}
+	// Scan backwards up to utf8.UTFMax (4) bytes to find a valid rune boundary
+	for i := 1; i <= utf8.UTFMax && i <= len(buf); i++ {
+		r, size := utf8.DecodeRune(buf[len(buf)-i:])
+		if r != utf8.RuneError || size != 1 {
+			// Valid rune found at this position — everything after it is incomplete
+			if i > 1 {
+				return buf[len(buf)-(i-1):]
+			}
+			return nil
+		}
+	}
+	// All trailing bytes (up to 4) are invalid/incomplete
+	n := utf8.UTFMax
+	if n > len(buf) {
+		n = len(buf)
+	}
+	return buf[len(buf)-n:]
 }
 
 // injectOSC7Config injects OSC 7 terminal directory tracking configuration

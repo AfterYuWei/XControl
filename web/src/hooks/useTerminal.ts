@@ -2,19 +2,29 @@ import { useEffect, useRef, useCallback } from 'react'
 import { Terminal, type IBufferRange } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
+import { getTerminalTheme } from '@/lib/terminalThemes'
 
 interface UseTerminalOptions {
   containerRef: React.RefObject<HTMLDivElement | null>
   fontSize?: number
   fontFamily?: string
+  fontFamilyCN?: string
+  terminalTheme?: string
   onData?: (data: string) => void
 }
 
 export function useTerminal(options: UseTerminalOptions) {
-  const { containerRef, fontSize = 14, fontFamily, onData } = options
+  const { containerRef, fontSize = 14, fontFamily, fontFamilyCN, terminalTheme = 'default', onData } = options
   const terminalRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const onDataRef = useRef(onData)
+
+  // Build combined font-family string (EN first, then CN fallback)
+  const buildFontFamily = useCallback(() => {
+    const en = fontFamily || "'JetBrains Mono'"
+    const cn = fontFamilyCN || "'Noto Sans SC'"
+    return `${en}, ${cn}, ui-monospace, monospace`
+  }, [fontFamily, fontFamilyCN])
 
   useEffect(() => {
     onDataRef.current = onData
@@ -26,30 +36,8 @@ export function useTerminal(options: UseTerminalOptions) {
 
     const terminal = new Terminal({
       fontSize,
-      fontFamily: fontFamily || "'JetBrains Mono', 'Fira Code', ui-monospace, monospace",
-      theme: {
-        background: '#0A0A0A',
-        foreground: '#A3A3A3',
-        cursor: '#E5E5E5',
-        selectionBackground: '#0070f3',
-        selectionForeground: '#0A0A0A',
-        black: '#333333',
-        red: '#EF4444',
-        green: '#22C55E',
-        yellow: '#f5a623',
-        blue: '#0070f3',
-        magenta: '#eb367f',
-        cyan: '#50e3c2',
-        white: '#A3A3A3',
-        brightBlack: '#525252',
-        brightRed: '#EF4444',
-        brightGreen: '#22C55E',
-        brightYellow: '#f5a623',
-        brightBlue: '#3291ff',
-        brightMagenta: '#eb367f',
-        brightCyan: '#50e3c2',
-        brightWhite: '#EDEDED',
-      },
+      fontFamily: buildFontFamily(),
+      theme: getTerminalTheme(terminalTheme),
       allowProposedApi: true,
       // We handle right-click copy/paste ourselves (Termius-style), so disable
       // xterm's built-in right-click word selection (defaults to true on macOS).
@@ -231,9 +219,16 @@ export function useTerminal(options: UseTerminalOptions) {
     const terminal = terminalRef.current
     if (!terminal) return
     terminal.options.fontSize = fontSize
-    terminal.options.fontFamily = fontFamily || "'JetBrains Mono', 'Fira Code', ui-monospace, monospace"
+    terminal.options.fontFamily = buildFontFamily()
     fitAddonRef.current?.fit()
-  }, [fontSize, fontFamily])
+  }, [fontSize, fontFamily, fontFamilyCN])
+
+  // Update terminal theme without recreating terminal
+  useEffect(() => {
+    const terminal = terminalRef.current
+    if (!terminal) return
+    terminal.options.theme = getTerminalTheme(terminalTheme)
+  }, [terminalTheme])
 
   const write = useCallback((data: string) => {
     terminalRef.current?.write(data)

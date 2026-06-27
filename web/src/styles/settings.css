@@ -126,3 +126,118 @@
   flex-shrink: 0;
 }
 
+/* 终端主题按钮 */
+.settings-theme-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 180px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-input);
+  color: var(--fg);
+  font: 500 var(--sans-size) / 1.3 var(--sans);
+  cursor: pointer;
+  transition: border-color 0.1s, background 0.1s;
+  flex-shrink: 0;
+}
+.settings-theme-btn:hover {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+
+/* 终端主题选择器列表 */
+.terminal-theme-list {
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 8px;
+}
+.terminal-theme-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.1s;
+  text-align: left;
+}
+.terminal-theme-item:hover {
+  background: var(--bg-hover);
+}
+.terminal-theme-item.selected {
+  background: var(--accent-bg);
+}
+
+/* 缩略图预览 */
+.terminal-theme-preview {
+  width: 64px;
+  height: 40px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 4px 6px;
+  flex-shrink: 0;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+.terminal-theme-lines {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-family: monospace;
+  font-size: 10px;
+  line-height: 1;
+}
+.terminal-theme-swatches {
+  display: flex;
+  gap: 2px;
+}
+.terminal-theme-swatches span {
+  flex: 1;
+  height: 4px;
+  border-radius: 1px;
+}
+
+/* 文字信息 */
+.terminal-theme-info {
+  flex: 1;
+  min-width: 0;
+}
+.terminal-theme-name {
+  font: 500 14px / 1.3 var(--sans);
+  color: var(--fg);
+}
+.terminal-theme-category {
+  font: 400 11px / 1.3 var(--sans);
+  color: var(--fg-4);
+  margin-top: 2px;
+}
+
+/* 勾选标记 */
+.terminal-theme-check {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+/* 分隔线 */
+.settings-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 20px 0 16px;
+}
+
+/* 子标题 */
+.settings-subsection-title {
+  font: 600 13px / 1 var(--sans);
+  color: var(--fg-2);
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+}
+

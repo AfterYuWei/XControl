@@ -170,8 +170,10 @@ func (h *WSHandler) writePump(ctx context.Context, conn *ws.Conn, session *Sessi
 	// Filter control for injected OSC 7 config command
 	// Uses a buffer to handle network packet fragmentation
 	isFilteringInit := true
-	initTarget := []byte(` __osc7_cwd()`) // Leading space to match the command with space prefix
+	initTarget := []byte(`__osc7_cwd`) // Match unique function name (robust against ANSI color codes)
 	var initFilterBuf []byte
+	var totalInitSeen int // Total bytes seen by the init filter (for safety fallback)
+	var readCount int     // Read counter for debugging
 
 	for {
 		select {
@@ -197,6 +199,9 @@ func (h *WSHandler) writePump(ctx context.Context, conn *ws.Conn, session *Sessi
 				}
 			}
 			if n > 0 {
+				readCount++
+				hasCmdInRead := bytes.Contains(buf[:n], []byte("__osc7_cwd"))
+				slog.Debug("writePump: shell read", "read_count", readCount, "n", n, "is_filtering", isFilteringInit, "contains_osc7_cmd", hasCmdInRead)
 				// Carry over incomplete UTF-8 trailing bytes from previous read
 				// to prevent splitting multi-byte characters at buffer boundaries
 				data := append(utf8Carry, buf[:n]...)
@@ -209,33 +214,64 @@ func (h *WSHandler) writePump(ctx context.Context, conn *ws.Conn, session *Sessi
 				// Handles network packet fragmentation gracefully
 				if isFilteringInit {
 					initFilterBuf = append(initFilterBuf, data...)
+					totalInitSeen += len(data)
 
-					if idx := bytes.Index(initFilterBuf, initTarget); idx != -1 {
-						// Found command start, safely find line end (\n)
-						endIdx := bytes.Index(initFilterBuf[idx:], []byte("\n"))
+					if firstIdx := bytes.Index(initFilterBuf, initTarget); firstIdx != -1 {
+						lastIdx := bytes.LastIndex(initFilterBuf, initTarget)
+						slog.Debug("init filter: target found", "first_idx", firstIdx, "last_idx", lastIdx, "buf_len", len(initFilterBuf), "total_seen", totalInitSeen)
+						// Find the start of the line containing the FIRST target (search backwards for \n)
+						lineStart := firstIdx
+						for lineStart > 0 && initFilterBuf[lineStart-1] != '\n' {
+							lineStart--
+						}
+						// Find the end of the line containing the LAST target (search forwards for \n, include it).
+						// The injected command contains __osc7_cwd 4 times (func def, zsh hook, bash pattern,
+						// bash assignment) and may span multiple lines due to terminal width wrapping.
+						endIdx := bytes.Index(initFilterBuf[lastIdx:], []byte("\n"))
 
 						if endIdx != -1 {
-							actualEnd := idx + endIdx + 1
-							// Precise removal: keep data before command (Banner/MOTD) and after (Prompt)
-							cleanedData := append([]byte{}, initFilterBuf[:idx]...)
-							cleanedData = append(cleanedData, initFilterBuf[actualEnd:]...)
+							lineEnd := lastIdx + endIdx + 1 // +1 to include the \n
+							// Remove all lines containing __osc7_cwd occurrences in one operation.
+							// This is robust against ANSI color codes and shell prompt prefixes
+							// because we remove whole lines, not just the exact target bytes.
+							cleanedData := append([]byte{}, initFilterBuf[:lineStart]...)
+							cleanedData = append(cleanedData, initFilterBuf[lineEnd:]...)
 							data = cleanedData
 							isFilteringInit = false // Done, disable filter
 							initFilterBuf = nil     // Release memory
+							slog.Debug("init filter: command echo lines removed", "line_start", lineStart, "line_end", lineEnd, "removed_bytes", lineEnd-lineStart, "data_len", len(data))
 						} else {
-							// Found start but no newline (truncated by network)
-							// Send data before command start, hold the rest
-							data = append([]byte{}, initFilterBuf[:idx]...)
-							initFilterBuf = initFilterBuf[idx:]
+							// Found target but no newline after the last occurrence yet (truncated by network)
+							// Send data before line start, hold the rest
+							data = append([]byte{}, initFilterBuf[:lineStart]...)
+							initFilterBuf = append([]byte{}, initFilterBuf[lineStart:]...)
 						}
 					} else {
-						// Command not seen yet (Banner may be split across packets)
-						data = initFilterBuf
-						initFilterBuf = nil
+						// Command not seen yet — target may be split across reads.
+						// Hold back the last len(initTarget)-1 bytes to avoid sending
+						// a partial target to the frontend.
+						preview := initFilterBuf
+						if len(preview) > 300 {
+							preview = preview[:300]
+						}
+						slog.Debug("init filter: target not found", "buf_len", len(initFilterBuf), "total_seen", totalInitSeen, "buf_preview", string(preview))
+						keepLen := len(initTarget) - 1
+						if len(initFilterBuf) > keepLen {
+							data = append([]byte{}, initFilterBuf[:len(initFilterBuf)-keepLen]...)
+							initFilterBuf = append([]byte{}, initFilterBuf[len(initFilterBuf)-keepLen:]...)
+						} else {
+							// Buffer is smaller than keepLen, hold everything
+							data = nil
+						}
 
-						// Safety fallback: disable filter if no command found after 10KB
-						if len(data) > 10240 {
+						// Safety fallback: if we've seen a lot of data without finding
+						// the command, the shell probably didn't echo it (or the command
+						// was lost). Disable the filter and release any held-back data.
+						if totalInitSeen > 10240 {
+							slog.Debug("init filter: safety fallback triggered, disabling filter", "total_seen", totalInitSeen, "buf_len", len(initFilterBuf))
 							isFilteringInit = false
+							data = append(data, initFilterBuf...)
+							initFilterBuf = nil
 						}
 					}
 				}
@@ -253,6 +289,8 @@ func (h *WSHandler) writePump(ctx context.Context, conn *ws.Conn, session *Sessi
 
 				// Send to frontend (clean data with command filtered out)
 				if len(data) > 0 {
+					hasCmd := bytes.Contains(data, []byte("__osc7_cwd"))
+					slog.Debug("writePump: sending data to frontend", "data_len", len(data), "contains_osc7_cmd", hasCmd)
 					h.sendWSMessage(wsConn.WS(), ws.MsgOutput, string(data), nil)
 				}
 			}
@@ -372,6 +410,7 @@ func (h *WSHandler) injectOSC7Config(session *Session) {
 	osc7Cmd += `elif [ -n "$BASH_VERSION" ]; then `
 	osc7Cmd += `[[ "$PROMPT_COMMAND" != *__osc7_cwd* ]] && PROMPT_COMMAND="__osc7_cwd${PROMPT_COMMAND:+;$PROMPT_COMMAND}"; fi`
 	session.Shell.Write([]byte(osc7Cmd + "\n"))
+	slog.Debug("osc7 config command injected", "cmd_len", len(osc7Cmd)+1)
 
 	// Wait for the command to execute before frontend starts receiving
 	time.Sleep(200 * time.Millisecond)

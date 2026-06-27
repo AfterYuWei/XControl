@@ -1,0 +1,428 @@
+/* ===== SERVER DETAIL (sidebar secondary page) ===== */
+/* Stack of per-tab detail panes — all mounted, toggled via display:none so
+   switching tabs never remounts DOM or re-requests data. */
+.sdetail-stack {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+}
+.sdetail-slot {
+  position: absolute;
+  inset: 0;
+  flex-direction: column;
+  min-height: 0;
+}
+.sdetail-pane {
+  min-height: 0;
+}
+.sdetail-hdr {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+.sdetail-hdr-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  flex: 1;
+}
+.sdetail-hdr-name {
+  font: 600 var(--sans-size) / 1.25 var(--sans);
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sdetail-hdr-meta {
+  font: 400 10px / 1.2 var(--mono);
+  color: var(--fg-4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sdetail-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2px 0;
+}
+/* File browser — fills remaining space, scrolls independently above the
+   pinned bottom panels. */
+.sdetail-file-area {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 2px 8px;
+}
+/* Bottom panels container — pinned at the bottom of the detail pane. */
+.sdetail-bottom {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border-subtle);
+  max-height: 55%;
+  overflow-y: auto;
+}
+.sdetail-bottom-sec {
+  padding: 8px 12px;
+}
+.sdetail-bottom-sec + .sdetail-bottom-sec {
+  border-top: 1px solid var(--border-subtle);
+}
+/* Collapsible section header — clickable button styled as a section title. */
+.sdetail-collapse-hdr {
+  width: 100%;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  justify-content: flex-start;
+}
+.sdetail-collapse-hdr .psec-title-text {
+  flex: 1;
+}
+.sdetail-collapse-chev {
+  flex-shrink: 0;
+  color: var(--fg-4);
+  transition: transform 0.15s ease;
+}
+.sdetail-collapse-chev.collapsed {
+  transform: rotate(-90deg);
+}
+/* Section body shown when expanded. */
+.psec-body {
+  margin-top: 6px;
+}
+/* Section title with icon */
+.psec-title-icon {
+  flex-shrink: 0;
+  margin-right: 4px;
+  vertical-align: middle;
+  color: var(--fg-4);
+}
+/* File listing inside server detail */
+.sdetail-file-list {
+  display: flex;
+  flex-direction: column;
+}
+.sdetail-file-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 4px;
+  border-radius: var(--r-xs);
+  cursor: default;
+  transition: background 0.08s;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.sdetail-file-row:hover {
+  background: var(--bg-hover);
+}
+.sdetail-file-row.selected {
+  background: var(--accent-bg);
+}
+.sdetail-file-row.selected:hover {
+  background: var(--accent-bg2);
+}
+.sdetail-file-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+.sdetail-file-icon {
+  flex-shrink: 0;
+}
+.sdetail-file-icon.dir {
+  color: var(--accent);
+}
+.sdetail-file-icon.file {
+  color: var(--fg-4);
+}
+.sdetail-file-name {
+  font: 400 11.5px / 1.3 var(--mono);
+  color: var(--fg-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sdetail-file-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+.sdetail-file-size {
+  font: 400 10px / 1 var(--mono);
+  color: var(--fg-4);
+  font-variant-numeric: tabular-nums;
+  min-width: 44px;
+  text-align: right;
+}
+.sdetail-file-date {
+  font: 400 10px / 1 var(--mono);
+  color: var(--fg-4);
+  min-width: 56px;
+  text-align: right;
+}
+/* Expand chevron for directories */
+.sdetail-chev {
+  flex-shrink: 0;
+  color: var(--fg-4);
+  transition: transform 0.12s ease;
+}
+.sdetail-chev.open {
+  transform: rotate(90deg);
+}
+.sdetail-chev-placeholder {
+  width: 12px;
+  flex-shrink: 0;
+}
+.sdetail-file-children {
+  display: flex;
+  flex-direction: column;
+}
+.sdetail-file-loading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font: 400 var(--sans-size)/1 var(--sans);
+  color: var(--fg-4);
+}
+.sdetail-file-loading .animate-spin {
+  animation: spin 1s linear infinite;
+}
+.sdetail-file-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font: 400 var(--sans-size)/1 var(--sans);
+  color: var(--red);
+}
+
+/* Server detail file header with action buttons */
+.sdetail-file-hdr {
+  display: flex;
+  align-items: center;
+}
+.sdetail-file-hdr .psec-title {
+  margin-bottom: 0;
+  border-bottom: none;
+}
+.sdetail-file-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 8px;
+}
+.sdetail-act-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  color: var(--fg-3);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.sdetail-act-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-1);
+}
+.sdetail-act-btn:active {
+  transform: scale(0.95);
+}
+
+/* Current path display */
+.sdetail-file-path {
+  padding: 4px 12px;
+  font: 400 11px/1.4 var(--mono);
+  color: var(--fg-3);
+  background: var(--bg-2, rgba(0, 0, 0, 0.05));
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: text;
+  transition: background 0.15s ease;
+}
+.sdetail-file-path:hover {
+  background: var(--bg-hover);
+}
+.sdetail-file-path.editing {
+  padding: 2px 8px;
+}
+.sdetail-path-input {
+  width: 100%;
+  padding: 2px 4px;
+  font: 400 11px/1.4 var(--mono);
+  color: var(--fg-1);
+  background: var(--bg-1);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  outline: none;
+}
+
+.sdetail-act-btn-danger {
+  color: var(--red);
+}
+.sdetail-act-btn-danger:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--red);
+}
+
+/* Dropdown wrapper */
+.sdetail-dropdown-wrapper {
+  position: relative;
+}
+
+/* Dropdown menu */
+.sdetail-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 100;
+  min-width: 120px;
+  padding: 4px;
+  background: var(--bg-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.sdetail-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  font: 400 var(--sans-size)/1 var(--sans);
+  color: var(--fg-2);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sdetail-dropdown-item:hover {
+  background: var(--bg-hover);
+  color: var(--fg-1);
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ===== SHARED SECTIONS (used by ServerDetail) ===== */
+.psec {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.psec:last-child {
+  border-bottom: none;
+}
+.psec-title {
+  font: 600 var(--sans-size) / 1 var(--sans);
+  color: var(--fg-4);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.metric {
+  margin-bottom: 8px;
+}
+.metric:last-child {
+  margin-bottom: 0;
+}
+.m-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+.m-label {
+  font: 400 11px / 1 var(--mono);
+  color: var(--fg-4);
+}
+.m-val {
+  font: 500 11px / 1 var(--mono);
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+.m-bar {
+  height: 4px;
+  background: var(--bg-elevated);
+  border-radius: var(--r-xs);
+  overflow: hidden;
+}
+.m-fill {
+  height: 100%;
+  border-radius: var(--r-xs);
+  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1) 0.2s;
+}
+.m-fill.cpu {
+  background: var(--accent);
+}
+.m-fill.mem {
+  background: var(--cyan);
+}
+.m-fill.disk {
+  background: var(--magenta);
+}
+.m-fill.net {
+  background: var(--yellow);
+}
+.m-sub {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2px;
+}
+.m-sub span {
+  font: 400 9.5px / 1 var(--mono);
+  color: var(--fg-4);
+}
+.info-row {
+  display: flex;
+  align-items: center;
+  padding: 3px 0;
+  gap: 8px;
+}
+.info-label {
+  font: 400 var(--sans-size) / 1 var(--sans);
+  color: var(--fg-4);
+  flex-shrink: 0;
+  width: 56px;
+  text-align: justify;
+  text-align-last: justify;
+}
+.info-val {
+  font: 500 11px / 1.4 var(--mono);
+  color: var(--fg-2);
+  text-align: right;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+}
+.info-val[title]:not([title=""]):hover {
+  position: relative;
+}

@@ -1,0 +1,203 @@
+/* ===== TAB BAR ===== */
+.tabbar {
+  height: var(--tabbar-h);
+  display: flex;
+  align-items: center;
+  background: var(--bg-panel);
+  /* Shares the same border-bottom as .sidebar-hdr so the top toolbar band
+     reads as one continuous bar across the whole window. */
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  padding: 0 6px;
+  gap: 2px;
+}
+.tabs-scroll {
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+  display: flex;
+  align-items: center;
+  padding: 4px 0;
+  position: relative;
+}
+.tabs-scroll::-webkit-scrollbar {
+  height: 0;
+}
+.tabs-scroll::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 24px;
+  background: linear-gradient(90deg, transparent, var(--bg-panel));
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.tabs-scroll.has-overflow::after {
+  opacity: 1;
+}
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  min-width: 0;
+  flex-shrink: 0;
+}
+.xcontrol-tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 6px 0 9px;
+  border-radius: var(--r-xs);
+  cursor: pointer;
+  transition: background 0.1s;
+  flex-shrink: 0;
+  user-select: none;
+  position: relative;
+}
+.xcontrol-tab:hover {
+  background: var(--bg-hover);
+}
+.xcontrol-tab.active {
+  background: var(--bg-active);
+  position: relative;
+}
+.xcontrol-tab.active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--accent);
+}
+.tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.tab-dot.on {
+  background: var(--green);
+}
+.tab-dot.off {
+  background: var(--red);
+}
+.tab-dot.loading {
+  background: var(--yellow);
+}
+.tab-name {
+  font: 400 11.5px / 1 var(--mono);
+  color: var(--fg-4);
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+.xcontrol-tab.active .tab-name {
+  color: var(--fg-2);
+  font-weight: 500;
+}
+.tab-x {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  border: none;
+  background: transparent;
+  color: var(--fg-4);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s, color 0.1s;
+  padding: 0;
+  margin-left: 2px;
+}
+.xcontrol-tab:hover .tab-x {
+  opacity: 1;
+}
+.tab-x:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--fg-2);
+}
+.tab-add {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r);
+  border: none;
+  background: transparent;
+  color: var(--fg-4);
+  cursor: pointer;
+  font-size: 15px;
+  transition: background 0.1s, color 0.1s;
+  flex-shrink: 0;
+}
+.tab-add:hover {
+  background: var(--bg-hover);
+  color: var(--fg-2);
+}
+.tab-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+.tab-act {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r);
+  border: none;
+  background: transparent;
+  color: var(--fg-4);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.tab-act:hover {
+  background: var(--bg-hover);
+  color: var(--fg-2);
+}
+.tab-act:active {
+  background: var(--bg-active);
+}
+.tab-act.on {
+  color: var(--accent);
+}
+.tab-act.on:hover {
+  background: var(--accent-bg);
+}
+[data-tip] {
+  position: relative;
+}
+[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  background: var(--bg-elevated);
+  border-radius: var(--r-xs);
+  box-shadow: var(--shadow-floating);
+  font: 400 var(--sans-size) / 1 var(--sans);
+  color: var(--fg-2);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease 0.5s;
+  z-index: 50;
+}
+[data-tip]:hover::after {
+  opacity: 1;
+}
+

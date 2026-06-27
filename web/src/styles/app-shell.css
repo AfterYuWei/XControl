@@ -1,0 +1,651 @@
+/* ═══════════════════ APP SHELL ═══════════════════ */
+.xcontrol-app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ===== HEADER (full width, left/center/right) ===== */
+.xcontrol-header {
+  height: var(--tabbar-h);
+  display: flex;
+  align-items: center;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  padding: 0 8px;
+  gap: 4px;
+  position: relative;
+  z-index: 30;
+}
+/* 桌面环境：自定义标题栏。整条 header 作为窗口拖拽区(-webkit-app-region:drag)。
+   配色完全由前端 CSS 主题变量控制，不继承任何系统原生样式，跟随应用深浅主题切换。
+   - 深色模式(.dark)：标题栏深暗色，复用 --bg-panel / --fg
+   - 浅色模式(:root/.light)：标题栏浅亮色，复用 --bg-panel / --fg
+   关闭按钮悬停保留 Windows 原生红色 #E81123（见 .tb-close）。 */
+.xcontrol-header.titlebar.is-desktop {
+  -webkit-app-region: drag;
+  background: var(--bg-panel);
+  border-bottom-color: var(--border);
+  color: var(--fg);
+  /* 右侧留出窗口控制按钮的空间，避免遮挡 */
+  padding-right: 0;
+}
+/* 标题栏内可交互元素重新声明 no-drag，恢复点击与输入。
+   容器空白区域仍为 drag，整个标题栏除按钮/搜索框外均可拖拽。 */
+.xcontrol-header.titlebar.is-desktop .hdr-icon-btn,
+.xcontrol-header.titlebar.is-desktop .tab-act,
+.xcontrol-header.titlebar.is-desktop .header-search,
+.xcontrol-header.titlebar.is-desktop .header-search input,
+.xcontrol-header.titlebar.is-desktop .header-search-clear,
+.xcontrol-header.titlebar.is-desktop .titlebar-controls,
+.xcontrol-header.titlebar.is-desktop .tb-btn {
+  -webkit-app-region: no-drag;
+}
+/* macOS：使用系统原生交通灯（左侧红黄绿圆形按钮），不自绘控制按钮。
+   标题栏左侧需留出交通灯空间（约 78px），避免按钮被交通灯遮挡。
+   header-left 此时承载侧边栏/SFTP/主题按钮，整体右移避让交通灯。 */
+.xcontrol-header.titlebar.is-desktop.is-mac {
+  padding-left: 78px;
+}
+
+/* ===== 窗口控制按钮（Windows 原生风格） ===== */
+/* 仅桌面环境渲染。三个按钮高度与标题栏等高，宽度对齐 Win10/11 caption button。
+   配色用主题变量跟随深浅主题；关闭按钮悬停保留 Windows 原生红色 #E81123。 */
+.titlebar-controls {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  margin-left: 4px;
+}
+.tb-btn {
+  width: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--fg-2);
+  cursor: default;
+  transition: background-color 0.12s, color 0.12s;
+}
+.tb-btn:hover {
+  background: var(--bg-hover);
+}
+.tb-btn:active {
+  background: var(--bg-active);
+}
+/* 关闭按钮：悬停红色背景 + 白色图标，与 Windows 原生一致（红色不随主题变化） */
+.tb-close:hover {
+  background: #E81123;
+  color: #FFFFFF;
+}
+.tb-close:active {
+  background: #C42B1C;
+  color: #FFFFFF;
+}
+/* Left & right columns are flex:1 and symmetric so the center search box
+   stays visually centered regardless of how many buttons each side holds. */
+.header-left {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  justify-content: flex-start;
+  min-width: 0;
+}
+.header-center {
+  flex: 0 0 auto;
+  width: 440px;
+  max-width: 40vw;
+}
+.header-right {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+.header-search {
+  position: relative;
+  width: 100%;
+  max-width: 440px;
+  display: flex;
+  align-items: center;
+}
+.header-search-icon {
+  position: absolute;
+  left: 10px;
+  color: var(--fg-3);
+  pointer-events: none;
+}
+.header-search input {
+  width: 100%;
+  height: 28px;
+  padding: 0 28px 0 30px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-pill);
+  color: var(--fg);
+  font: 400 var(--sans-size) / 1 var(--sans);
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+.header-search input::placeholder {
+  color: var(--fg-4);
+}
+.header-search input:focus {
+  border-color: var(--accent);
+  background: var(--bg-panel);
+}
+.header-search-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--fg-4);
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  transition: background 0.1s, color 0.1s;
+}
+.header-search-clear:hover {
+  background: var(--bg-hover);
+  color: var(--fg-2);
+}
+
+/* ===== BODY (sidebar + content) ===== */
+.xcontrol-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+  /* Vertical padding creates a gap between the header toolbar above and the
+     status bar below, for both the left sidebar and the right info panel.
+     The terminal area compensates by removing its own top/bottom margin. */
+  padding: 8px 0;
+  align-items: stretch;
+}
+
+/* ===== SIDEBAR — Tabby / Warp inspired layout ===== */
+.xcontrol-sidebar {
+  width: var(--sidebar-w);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  z-index: 30;
+  transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.15s ease;
+  overflow: hidden;
+  border-radius: 0 var(--r-lg) var(--r-lg) 0;
+  align-self: stretch;
+  min-height: 0;
+}
+.xcontrol-sidebar.collapsed {
+  width: 0;
+  opacity: 0;
+  border-right: none;
+  overflow: hidden;
+}
+.sidebar-hdr {
+  height: var(--tabbar-h);
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+/* Shared icon button used in the sidebar header (collapse / new connection).
+   Matches the tabbar .tab-act sizing for visual consistency. */
+.hdr-icon-btn {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--fg-4);
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  transition: background 0.1s, color 0.1s;
+}
+.hdr-icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-2);
+}
+.hdr-icon-btn:active {
+  background: var(--bg-active);
+}
+.hdr-icon-btn.active {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+.hdr-icon-btn.active:hover {
+  background: var(--accent-bg);
+  color: var(--accent-hi);
+}
+.search-wrap {
+  position: relative;
+  padding: 0 10px;
+  flex-shrink: 0;
+  /* Collapsed by default — expands on .open. The height transition pushes
+     the list below (Ungrouped etc.) down smoothly. */
+  height: 0;
+  overflow: hidden;
+  border-bottom: 1px solid transparent;
+  transition: height 0.22s cubic-bezier(0.4, 0, 0.2, 1), padding 0.22s, border-color 0.22s;
+}
+.search-wrap.open {
+  height: 40px;
+  padding: 6px 10px;
+  border-bottom-color: var(--border-subtle);
+}
+.search-wrap-icon {
+  position: absolute;
+  left: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--fg-3);
+  pointer-events: none;
+  z-index: 1;
+}
+.search-wrap input {
+  width: 100%;
+  height: 28px;
+  padding: 0 28px 0 30px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  color: var(--fg);
+  font: 400 var(--sans-size) / 1 var(--sans);
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+.search-wrap input::placeholder {
+  color: var(--fg-4);
+}
+.search-wrap input:focus {
+  border-color: var(--accent);
+  background: var(--bg-panel);
+}
+.search-wrap-close {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--fg-4);
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  z-index: 1;
+  transition: background 0.1s, color 0.1s;
+}
+.search-wrap-close:hover {
+  background: var(--bg-hover);
+  color: var(--fg-2);
+}
+.sidebar-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 8px 6px 12px;
+  font: 600 var(--sans-size) / 1 var(--sans);
+  color: var(--fg-2);
+  letter-spacing: 0.02em;
+  user-select: none;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.sidebar-title-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.sidebar-title-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sidebar-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2px 0 0;
+}
+.srv-group {
+  margin-bottom: 0;
+  border-radius: var(--r-xs);
+  transition: background 0.12s;
+}
+/* Drop target highlight when dragging a server over a group */
+.srv-group.grp-drop-target {
+  background: var(--accent-bg);
+  outline: 1px dashed var(--accent);
+  outline-offset: -1px;
+}
+.grp-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 8px 4px 12px;
+  font: 600 var(--sans-size) / 1 var(--sans);
+  color: var(--fg-3);
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+.grp-label-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+.grp-label-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.grp-label-icon {
+  flex-shrink: 0;
+  color: var(--fg-3);
+}
+.grp-label-muted {
+  color: var(--fg-4);
+  font-weight: 500;
+}
+.grp-cnt {
+  font-size: 9px;
+  color: var(--fg-4);
+  background: var(--bg-elevated);
+  padding: 2px 6px;
+  border-radius: var(--r-pill);
+  font-weight: 500;
+  min-width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+/* Add-server button on the right of each group header */
+.grp-add-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  color: var(--fg-4);
+  border-radius: var(--r-xs);
+  cursor: pointer;
+  opacity: 0.55;
+  transition: background 0.1s, color 0.1s, opacity 0.1s;
+}
+.grp-add-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-2);
+  opacity: 1;
+}
+/* Server list item — single-row, compact, Tabby-style */
+.srv {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: background 0.08s;
+  margin: 0 4px;
+  border-radius: var(--r-sm);
+}
+.srv[draggable="true"] {
+  cursor: grab;
+}
+.srv[draggable="true"]:active {
+  cursor: grabbing;
+}
+.srv.dragging {
+  opacity: 0.4;
+}
+.srv:hover {
+  background: var(--bg-hover);
+}
+.srv.active {
+  background: var(--accent-bg);
+}
+.srv.active .srv-nm {
+  color: var(--fg);
+  font-weight: 500;
+}
+/* Line-style server icon — inherits theme color via currentColor */
+.srv-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  color: var(--fg-3);
+}
+.srv-icon svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.6;
+}
+.srv.active .srv-icon {
+  color: var(--fg);
+}
+.srv.offline .srv-icon {
+  color: var(--fg-4);
+}
+/* Small status dot at bottom-right of icon */
+.srv-dot {
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1.5px solid var(--bg-panel);
+  box-sizing: content-box;
+}
+.srv-dot.on { background: var(--green); }
+.srv-dot.off { background: var(--red); }
+.srv-dot.loading { background: var(--yellow); animation: pulse-dot 1s ease infinite; }
+@keyframes pulse-dot {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.08);
+    opacity: 0.7;
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(245, 158, 11, 0.2);
+    opacity: 1;
+  }
+}
+.srv-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  min-width: 0;
+  flex: 1;
+}
+.srv-nm {
+  font: 500 12.5px / 1.25 var(--mono);
+  color: var(--fg-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.srv-meta {
+  font: 400 10px / 1.2 var(--mono);
+  color: var(--fg-4);
+}
+.srv.offline .srv-nm {
+  color: var(--fg-4);
+}
+/* Segmented page indicator at the sidebar bottom — two equal rounded
+   line segments; the active one is solid dark, the inactive is light gray.
+   Each segment is a tall transparent hit area (.pager-hit) wrapping a thin
+   line (.pager-line). The visible stroke stays delicate while the click
+   target is generous (28px tall). */
+.sidebar-pager {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px 10px;
+}
+/* Transparent hit area — tall, centered, no visible chrome. */
+.pager-hit {
+  flex: 1;
+  max-width: 64px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  opacity: 0;
+  animation: pager-fade-in 0.4s ease forwards;
+}
+.pager-hit:nth-child(1) { animation-delay: 0.04s; }
+.pager-hit:nth-child(2) { animation-delay: 0.12s; }
+@keyframes pager-fade-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* The actual visible line — thin, pill-rounded, centered in the hit area. */
+.pager-line {
+  width: 100%;
+  height: 2px;
+  border-radius: var(--r-pill);
+  background: var(--fg-5);
+  transition:
+    background 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+    height 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.18s ease;
+}
+/* Hover — inactive segments get slightly bolder + darker; active subtly deepens. */
+.pager-hit:hover .pager-line {
+  background: var(--fg-3);
+  height: 2.5px;
+}
+/* Active segment — solid dark. */
+.pager-hit.active .pager-line {
+  background: var(--fg-2);
+  height: 2.5px;
+}
+.pager-hit.active:hover .pager-line {
+  background: var(--fg);
+}
+/* Press feedback — line briefly thins then springs back. */
+.pager-hit:active .pager-line {
+  height: 1.5px;
+  opacity: 0.7;
+  transition: height 0.08s ease, opacity 0.08s ease;
+}
+.sidebar-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 16px;
+  color: var(--fg-4);
+  font: 400 var(--sans-size) / 1.4 var(--sans);
+  text-align: center;
+}
+.sidebar-empty svg {
+  opacity: 0.4;
+}
+/* Context menu (servers & groups) — themed via CSS variables */
+.ctx-menu {
+  background: var(--bg-elevated);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-floating);
+  padding: 4px;
+  min-width: 160px;
+}
+.ctx-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font: 400 var(--sans-size) / 1 var(--sans);
+  color: var(--fg-2);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--r-xs);
+  text-align: left;
+}
+.ctx-item:hover {
+  background: var(--bg-hover);
+}
+.ctx-item.ctx-danger {
+  color: var(--red);
+}
+.ctx-item.ctx-danger:hover {
+  background: var(--red-bg);
+}
+.ctx-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 4px 0;
+}
+.sidebar-ft {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.kbd-hint {
+  font-size: 10px;
+  color: var(--fg-4);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.kbd-hint kbd {
+  font: 500 9px / 1 var(--mono);
+  padding: 2px 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--fg-3);
+}
+
+/* ===== CONTENT ===== */
+.cnt-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+  align-self: stretch;
+}
+

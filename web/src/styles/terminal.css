@@ -1,0 +1,62 @@
+/* ===== TERMINAL ===== */
+/* Terminal container uses fixed dark variables (--term-*) so it stays dark
+   regardless of the global light/dark theme. The xterm instance inside is
+   themed via useTerminal.ts and is also pinned to a dark palette. */
+.term-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  background: var(--term-bg);
+  /* Top/bottom margin removed: the vertical gap is provided by .xcontrol-body's
+     padding so the sidebar and panel share the same spacing. */
+  margin: 0 8px;
+  min-height: 0;
+  align-self: stretch;
+  /* Inner padding keeps xterm content clear of the 12px rounded corners so
+     text and the scrollbar never overlap the curved border. The padding area
+     shows var(--term-bg), matching the xterm background seamlessly. */
+  padding: 10px;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--term-border);
+  box-shadow: var(--term-shadow);
+}
+.term-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 32px 20px;
+  text-align: center;
+  background: var(--bg-panel);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-surface);
+  margin: 24px;
+}
+.term-empty-icon {
+  color: var(--fg-4);
+  margin-bottom: 10px;
+  opacity: 0.6;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+}
+.term-empty-title {
+  font: 500 var(--sans-size) / 1.3 var(--sans);
+  color: var(--fg-3);
+  margin-bottom: 4px;
+}
+.term-empty-desc {
+  font: 400 var(--sans-size) / 1.4 var(--sans);
+  color: var(--fg-4);
+  max-width: 260px;
+}
+
+/* ===== STATUS BAR ===== */

@@ -72,7 +72,7 @@ export function Tooltip({ children, content, side = "top", hideWhenEmpty = true 
           }}
           className={cn(
             "fixed z-[9999] pointer-events-none",
-            "rounded-md px-3 py-2 text-xs shadow-lg border",
+            "rounded-sm px-3 py-2 text-xs shadow-lg border",
             "animate-in fade-in-0 zoom-in-95",
           )}
         >

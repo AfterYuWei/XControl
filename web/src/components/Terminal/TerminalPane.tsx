@@ -92,7 +92,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   // On each attempt it creates a new SSH session via the REST API and updates
   // tab.sessionId, which triggers useWebSocket to establish a fresh WS.
   // After MAX_RECONNECT_ATTEMPTS, the dialog switches to manual reconnect.
-  const startAutoReconnect = useCallback((tabId: string, profileId: string, reason: string, message: string) => {
+  const startAutoReconnect = useCallback((tabId: string, profileId: string, reason: string) => {
     // Don't start a second loop if one is already running
     if (isReconnectingRef.current) return
     isReconnectingRef.current = true
@@ -138,12 +138,11 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   const reconnectNow = useCallback(() => {
     clearReconnectTimer()
     const reason = tab.errorReason || 'unknown'
-    const message = tab.errorMessage || '正在重新连接...'
     // Reset attempt counter and start fresh from attempt 1
     isReconnectingRef.current = false
     reconnectAttemptRef.current = 0
-    startAutoReconnect(tab.id, tab.profileId, reason, message)
-  }, [clearReconnectTimer, startAutoReconnect, tab.id, tab.profileId, tab.errorReason, tab.errorMessage])
+    startAutoReconnect(tab.id, tab.profileId, reason)
+  }, [clearReconnectTimer, startAutoReconnect, tab.id, tab.profileId, tab.errorReason])
 
   const handleWSMessage = useCallback(
     (msg: WSMessage) => {
@@ -199,7 +198,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
           setDialogStatus('reconnecting')
           setShowDialog(true)
           writeln(`\r\n\x1b[31m[连接已断开: ${message}]\x1b[0m`)
-          startAutoReconnect(tab.id, tab.profileId, reason, message)
+          startAutoReconnect(tab.id, tab.profileId, reason)
           break
         }
         case 'error': {
@@ -239,7 +238,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
         setDialogStatus('reconnecting')
         setShowDialog(true)
         writeln('\r\n\x1b[31m[连接已断开]\x1b[0m')
-        startAutoReconnect(tab.id, tab.profileId, 'network_error', '连接已断开')
+        startAutoReconnect(tab.id, tab.profileId, 'network_error')
       }
     },
     onError: () => {

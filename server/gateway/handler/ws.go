@@ -187,9 +187,32 @@ func (h *WSHandler) writePump(ctx context.Context, conn *ws.Conn, session *Sessi
 		case <-conn.Done():
 			return
 		case <-session.Shell.Done():
-			h.sendWSMessage(wsConn.WS(), ws.MsgExit, "", ws.ExitPayload{
-				Code: session.Shell.ExitCode(),
-			})
+			// Brief grace period to let the driver's OnDead callback fire and
+			// set session.Status = "error" with a reason. The driver's watch
+			// goroutine (client.Wait) and the shell's Wait goroutine both
+			// detect the same connection close, but the driver callback may
+			// lag by a few microseconds. 50ms is imperceptible to users yet
+			// ample for the callback to complete.
+			select {
+			case <-time.After(50 * time.Millisecond):
+			case <-ctx.Done():
+				return
+			}
+			reason, message := session.DisconnectInfo()
+			if reason != "" {
+				// Abnormal disconnect: SSH connection died (remote shutdown,
+				// keepalive timeout, network error). Notify frontend so it can
+				// show a status dialog and trigger auto-reconnect.
+				h.sendWSMessage(wsConn.WS(), ws.MsgDisconnect, "", ws.DisconnectPayload{
+					Reason:  reason,
+					Message: message,
+				})
+			} else {
+				// Normal shell exit (user typed "exit" or remote shell ended).
+				h.sendWSMessage(wsConn.WS(), ws.MsgExit, "", ws.ExitPayload{
+					Code: session.Shell.ExitCode(),
+				})
+			}
 			wsConn.WS().Close(websocket.StatusNormalClosure, "session ended")
 			return
 		default:

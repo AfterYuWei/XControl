@@ -10,7 +10,10 @@ export function StatusBar() {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const activeTab = tabs.find((t) => t.id === activeTabId)
-  const connected = activeTab?.status === 'connected'
+  const activeStatus = activeTab?.status
+  const connected = activeStatus === 'connected'
+  const reconnecting = activeStatus === 'reconnecting'
+  const errored = activeStatus === 'error'
   const latency = activeTab?.latency ?? null
 
   // Clock
@@ -30,15 +33,32 @@ export function StatusBar() {
     return () => clearInterval(timer)
   }, [])
 
-  // Latency-driven color: green < 100ms, yellow 100–300ms, red > 300ms / offline
+  // Latency-driven color: green < 100ms, yellow 100–300ms, red > 300ms / offline.
+  // Reconnecting takes precedence (yellow pulse); error forces off (red/gray).
   const dotClass =
-    !connected || latency === null
+    errored ? 'off'
+    : reconnecting ? 'loading'
+    : !connected || latency === null
       ? 'off'
       : latency < 100
         ? 'on'
         : latency < 300
           ? 'loading'
           : 'off'
+
+  // Right-side status label: prefers lifecycle state over latency.
+  const statusLabel =
+    errored ? '已断开'
+    : reconnecting
+      ? (activeTab?.reconnectAttempt ? `重连中(${activeTab.reconnectAttempt})` : '重连中')
+    : connected && latency !== null ? `${latency}ms`
+    : '—'
+
+  const statusTitle =
+    errored ? (activeTab?.errorMessage || '已断开')
+    : reconnecting ? '正在重连…'
+    : connected ? (latency !== null ? `延迟 ${latency}ms` : '已连接')
+    : '未连接'
 
   // Check scroll overflow and update arrow visibility
   const updateScrollState = useCallback(() => {
@@ -94,7 +114,11 @@ export function StatusBar() {
         <div className="status-tabs" ref={scrollRef}>
           {tabs.map((tab) => {
           const s = tab.status
-          const dc = s === 'connected' ? 'on' : s === 'connecting' ? 'loading' : 'off'
+          const dc =
+            s === 'connected' ? 'on'
+            : s === 'connecting' ? 'loading'
+            : s === 'reconnecting' ? 'loading'
+            : 'off'
           const isSftp = tab.kind === 'sftp'
           return (
             <div
@@ -139,9 +163,9 @@ export function StatusBar() {
 
       {/* Right: status dot (latency-driven) + latency + encoding + time */}
       <div className="status-right">
-        <div className="status-item" title={connected ? `延迟 ${latency}ms` : '未连接'}>
+        <div className="status-item" title={statusTitle}>
           <span className={`status-dot-sm ${dotClass}`} />
-          <span>{connected && latency !== null ? `${latency}ms` : '—'}</span>
+          <span>{statusLabel}</span>
         </div>
         <div className="status-item">
           <span>UTF-8</span>

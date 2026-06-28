@@ -5,15 +5,15 @@ import "encoding/json"
 type MessageType string
 
 const (
-	MsgInput   MessageType = "input"
-	MsgOutput  MessageType = "output"
-	MsgResize  MessageType = "resize"
-	MsgExit    MessageType = "exit"
-	MsgError   MessageType = "error"
-	MsgPing    MessageType = "ping"
-	MsgPong    MessageType = "pong"
-	MsgAuth    MessageType = "auth"
-	MsgMeta    MessageType = "metadata"
+	MsgInput  MessageType = "input"
+	MsgOutput MessageType = "output"
+	MsgResize MessageType = "resize"
+	MsgExit   MessageType = "exit"
+	MsgError  MessageType = "error"
+	MsgPing   MessageType = "ping"
+	MsgPong   MessageType = "pong"
+	MsgAuth   MessageType = "auth"
+	MsgMeta   MessageType = "metadata"
 
 	// Terminal current working directory (detected via OSC 7)
 	MsgCwd MessageType = "cwd"
@@ -23,10 +23,15 @@ const (
 	MsgCompleteResponse MessageType = "complete_response"
 
 	// SFTP transfer progress messages
-	MsgTransferProgress MessageType = "transfer_progress"
-	MsgTransferComplete MessageType = "transfer_complete"
-	MsgTransferFailed   MessageType = "transfer_failed"
+	MsgTransferProgress  MessageType = "transfer_progress"
+	MsgTransferComplete  MessageType = "transfer_complete"
+	MsgTransferFailed    MessageType = "transfer_failed"
 	MsgSftpSessionStatus MessageType = "sftp_session_status"
+
+	// Abnormal disconnect: the underlying SSH connection died (remote shutdown,
+	// network error, keepalive timeout). Carries a reason code and human-readable
+	// message so the frontend can show a status dialog and trigger auto-reconnect.
+	MsgDisconnect MessageType = "disconnect"
 )
 
 type Message struct {
@@ -60,6 +65,15 @@ type CwdPayload struct {
 	Path string `json:"path"`
 }
 
+// DisconnectPayload is sent when the SSH connection dies abnormally.
+// Reason is a machine-readable code: remote_shutdown | network_error |
+// keepalive_timeout | auth_failed | unknown. Message is a human-readable
+// description suitable for display in a status dialog.
+type DisconnectPayload struct {
+	Reason  string `json:"reason"`
+	Message string `json:"message"`
+}
+
 // --- Autocomplete dynamic query payloads ---
 
 // CompleteRequestPayload 客户端请求执行只读脚本获取动态补全候选
@@ -72,9 +86,9 @@ type CompleteRequestPayload struct {
 // CompleteResponsePayload 服务端返回脚本执行结果
 type CompleteResponsePayload struct {
 	RequestID string `json:"request_id"`
-	Output    string `json:"output"`     // 脚本 stdout
-	Error     string `json:"error"`      // 错误信息(超时/执行失败)
-	ExitCode  int    `json:"exit_code"`  // 退出码,-1 表示未执行/超时
+	Output    string `json:"output"`    // 脚本 stdout
+	Error     string `json:"error"`     // 错误信息(超时/执行失败)
+	ExitCode  int    `json:"exit_code"` // 退出码,-1 表示未执行/超时
 }
 
 // --- SFTP transfer payloads ---

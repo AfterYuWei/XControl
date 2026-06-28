@@ -11,7 +11,7 @@ import type {
   ConflictResolution,
   SftpConflictInfo,
 } from '@/types/sftp'
-import { toast } from '@/store/toast'
+import { toast } from '@/store/notify'
 
 /* ────────────────────────────────────────────────────────────────
  * The local machine, modelled as a server so both panes are symmetric.

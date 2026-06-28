@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { Search, Plus, X as XIcon, PanelLeft, Server, RefreshCw, FolderTree, Copy } from 'lucide-react'
 import { useProfileStore } from '@/store/profile'
 import { useSessionStore } from '@/store/session'
-import { toast } from '@/store/toast'
+import { toast } from '@/store/notify'
 import type { Profile } from '@/types/profile'
 
 interface CommandPaletteProps {

@@ -102,7 +102,7 @@ export function useCompletion({ getTerminal, sendInput, sendComplete, getCwd, en
     const cached = cacheRef.current!.get(gen.script, getCwdRef.current(), gen.cacheTtl)
     if (cached) {
       // 缓存命中:合并静态 + 动态
-      const dynamicSuggestions = parseDynamicOutputByParser(cached.join('\n'), ctx.currentToken, gen.parser)
+      const dynamicSuggestions = parseDynamicOutputByParser(cached.join('\n'), ctx.currentToken, gen.parser, gen.dirsOnly)
       const all = [...staticSuggestions, ...dynamicSuggestions]
       if (all.length === 0) {
         closePopup()
@@ -160,8 +160,10 @@ export function useCompletion({ getTerminal, sendInput, sendComplete, getCwd, en
         setPopup((p) => {
           if (!p.open || p.suggestions.length === 0) return p
           const delta = data === '\x1b[A' ? -1 : 1
-          const len = p.suggestions.length
-          const idx = (p.selectedIndex + delta + len) % len
+          // 非循环:到边界停止,不回绕
+          const next = p.selectedIndex + delta
+          const idx = Math.max(0, Math.min(p.suggestions.length - 1, next))
+          if (idx === p.selectedIndex) return p
           return { ...p, selectedIndex: idx }
         })
         return true

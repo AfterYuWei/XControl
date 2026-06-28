@@ -188,6 +188,12 @@ interface Arg {
   generator?: {
     script: string                   // 如 "git branch --list"
     cacheTtl?: number                // ms,默认 10000
+    parser?: 'git-branch' | 'docker-ps' | 'kubectl-name'
+  }
+  // 文件路径补全:根据当前输入前缀动态构造 ls 脚本
+  fileGenerator?: {
+    dirsOnly?: boolean               // true 只补全目录(如 cd/find/mkdir)
+    cacheTtl?: number                // ms,默认 3000
   }
   // 静态候选
   suggestions?: { name: string; description?: string }[]
@@ -227,16 +233,18 @@ interface Arg {
 
 ## 5. POC 范围(当前阶段)
 
-POC 目标:验证核心闭环可行性,不包含动态查询。
+POC 目标:验证核心闭环可行性。动态查询、文件路径补全、Spec 扩充均已实现。
 
 | 包含 | 不包含(后续阶段) |
 |---|---|
-| 自建 git spec(子命令+选项) | 远程 dynamic generator |
-| onData 输入缓冲区追踪 | WebSocket complete 协议 |
-| 分词 + Spec 树匹配 | 缓存、shell 检测 |
-| 浮动面板(光标下方定位) | Settings UI、Profile shell_type |
-| ↑/↓ 导航 + Enter 应用 | 多 spec 懒加载、Fig 导入 |
-| Tab 透传、stale 降级 | 文件路径补全 |
+| 自建 git/docker/kubectl/npm/systemctl spec | 多 spec 懒加载、Fig 导入 |
+| 文件路径补全(cd/ls/vi/cat/grep 等 20+ 命令) | Settings UI 的 Profile shell_type |
+| onData 输入缓冲区追踪 + TUI 禁用 | shell 检测 |
+| 分词 + Spec 树匹配 + 动态 generator | |
+| 浮动面板(光标下方定位) | |
+| ↑/↓ 导航 + Enter 应用 | |
+| Tab 透传、stale 降级、prompt 剥离 | |
+| 远程动态查询(分支/容器/pod/文件) + TTL 缓存 | |
 
 ### POC 验收标准
 

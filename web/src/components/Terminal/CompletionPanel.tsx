@@ -1,6 +1,6 @@
-// 补全浮动面板:光标下方/上方定位,↑/↓ 高亮选中项
+// 补全浮动面板:光标下方/上方定位,↑/↓ 高亮选中项,选中项自动滚动到可见区域
 
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { Terminal } from '@xterm/xterm'
 import type { CompletionPopupState } from '@/hooks/useCompletion'
 
@@ -16,8 +16,18 @@ interface PixelPos {
   maxVisible: number
 }
 
+// 平台检测:Mac 用 ⌘,其他平台用 ❯ 避免平台专属符号
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent)
+const ICONS = {
+  command: isMac ? '⌘' : '❯',
+  subcommand: '▸',
+  option: '–',
+  arg: '•',
+}
+
 export function CompletionPanel({ popup, getTerminal, containerRef }: CompletionPanelProps) {
   const [pos, setPos] = useState<PixelPos | null>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!popup.open) {
@@ -71,6 +81,17 @@ export function CompletionPanel({ popup, getTerminal, containerRef }: Completion
     setPos({ left, top, maxVisible })
   }, [popup.open, popup.suggestions, popup.selectedIndex, getTerminal, containerRef])
 
+  // 选中项变化时,自动滚动到可见区域(键盘 ↓/↓ 导航时保持选中项可见)
+  useEffect(() => {
+    if (!popup.open) return
+    const panel = panelRef.current
+    if (!panel) return
+    const selected = panel.querySelector('[data-selected="true"]') as HTMLElement | null
+    if (selected) {
+      selected.scrollIntoView({ block: 'nearest' })
+    }
+  }, [popup.open, popup.selectedIndex])
+
   if (!popup.open || popup.suggestions.length === 0 || !pos) return null
 
   const panelStyle: CSSProperties = {
@@ -81,10 +102,10 @@ export function CompletionPanel({ popup, getTerminal, containerRef }: Completion
     maxHeight: pos.maxVisible * ( /* cellH approx */ 20 + 6) + 8,
     overflowY: 'auto',
     zIndex: 100,
-    background: 'var(--bg-panel, #1e1e2e)',
-    border: '1px solid var(--border, #313244)',
+    background: 'var(--bg-panel)',
+    border: '1px solid var(--border)',
     borderRadius: 6,
-    boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+    boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
     fontFamily: "'JetBrains Mono', ui-monospace, monospace",
     fontSize: 13,
     padding: 4,
@@ -92,27 +113,29 @@ export function CompletionPanel({ popup, getTerminal, containerRef }: Completion
   }
 
   return (
-    <div style={panelStyle} className="xctrl-completion-panel">
+    <div ref={panelRef} style={panelStyle} className="xctrl-completion-panel">
       {popup.suggestions.map((sug, i) => {
         const selected = i === popup.selectedIndex
-        const icon = sug.type === 'command' ? '⌘' : sug.type === 'subcommand' ? '▸' : sug.type === 'option' ? '–' : '•'
+        const icon = ICONS[sug.type]
         return (
           <div
             key={sug.name + i}
+            data-selected={selected ? 'true' : 'false'}
+            data-idx={i}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: 8,
               padding: '3px 8px',
               borderRadius: 4,
-              background: selected ? 'var(--accent, rgba(137,180,250,0.18))' : 'transparent',
-              color: 'var(--term-fg, #cdd6f4)',
+              background: selected ? 'color-mix(in srgb, var(--accent) 20%, transparent)' : 'transparent',
+              color: 'var(--fg)',
             }}
           >
-            <span style={{ opacity: 0.5, width: 16, fontSize: 11, flexShrink: 0 }}>{icon}</span>
-            <span style={{ fontWeight: selected ? 600 : 400, flexShrink: 0 }}>{sug.name}</span>
+            <span style={{ color: selected ? 'var(--accent)' : 'var(--fg-4)', width: 16, fontSize: 11, flexShrink: 0 }}>{icon}</span>
+            <span style={{ fontWeight: selected ? 600 : 400, flexShrink: 0, color: selected ? 'var(--accent)' : 'var(--fg-2)' }}>{sug.name}</span>
             {sug.description && (
-              <span style={{ opacity: 0.5, marginLeft: 'auto', fontSize: 11, fontFamily: 'ui-sans-serif, system-ui', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <span style={{ color: 'var(--fg-4)', marginLeft: 'auto', fontSize: 11, fontFamily: 'ui-sans-serif, system-ui', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {sug.description}
               </span>
             )}

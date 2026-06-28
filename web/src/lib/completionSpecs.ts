@@ -17,6 +17,11 @@ export interface Arg {
     cacheTtl?: number
     parser?: 'git-branch' | 'docker-ps' | 'kubectl-name'
   }
+  // 文件路径补全:根据当前输入的路径前缀,动态构造 ls 脚本列出目录内容
+  fileGenerator?: {
+    dirsOnly?: boolean  // true 只补全目录(如 cd/find/mkdir)
+    cacheTtl?: number   // 默认 3000ms
+  }
   suggestions?: { name: string; description?: string }[]
 }
 
@@ -434,7 +439,62 @@ const commandIndex: { name: string; description: string }[] = [
   { name: 'ssh', description: '远程登录' },
   { name: 'systemctl', description: '服务管理' },
   { name: 'vim', description: '编辑器' },
+  { name: 'vi', description: '编辑器' },
+  { name: 'nano', description: '编辑器' },
+  { name: 'less', description: '分页查看' },
+  { name: 'tail', description: '查看文件末尾' },
+  { name: 'head', description: '查看文件开头' },
+  { name: 'cp', description: '复制文件' },
+  { name: 'mv', description: '移动文件' },
+  { name: 'rm', description: '删除文件' },
+  { name: 'touch', description: '创建空文件' },
+  { name: 'mkdir', description: '创建目录' },
+  { name: 'chmod', description: '修改权限' },
+  { name: 'chown', description: '修改属主' },
+  { name: 'tar', description: '归档' },
+  { name: 'source', description: '执行脚本' },
+  { name: 'bash', description: '执行脚本' },
 ]
+
+// 文件路径补全命令:args 位置补全当前目录下的文件/文件夹
+// dirsOnly=true 的命令只补全目录(cd/find/mkdir/rmdir)
+function makeFileCommandSpec(name: string, description: string, dirsOnly = false): Spec {
+  return {
+    name,
+    description,
+    args: {
+      fileGenerator: { dirsOnly, cacheTtl: 3000 },
+    },
+  }
+}
+
+const fileCommandSpecs: Record<string, Spec> = {
+  cd: makeFileCommandSpec('cd', '切换目录', true),
+  ls: makeFileCommandSpec('ls', '列出目录'),
+  cat: makeFileCommandSpec('cat', '查看文件'),
+  less: makeFileCommandSpec('less', '分页查看'),
+  more: makeFileCommandSpec('more', '分页查看'),
+  head: makeFileCommandSpec('head', '查看文件开头'),
+  tail: makeFileCommandSpec('tail', '查看文件末尾'),
+  vi: makeFileCommandSpec('vi', '编辑器'),
+  vim: makeFileCommandSpec('vim', '编辑器'),
+  nano: makeFileCommandSpec('nano', '编辑器'),
+  rm: makeFileCommandSpec('rm', '删除文件'),
+  cp: makeFileCommandSpec('cp', '复制文件'),
+  mv: makeFileCommandSpec('mv', '移动文件'),
+  touch: makeFileCommandSpec('touch', '创建空文件'),
+  chmod: makeFileCommandSpec('chmod', '修改权限'),
+  chown: makeFileCommandSpec('chown', '修改属主'),
+  find: makeFileCommandSpec('find', '查找文件', true),
+  grep: makeFileCommandSpec('grep', '文本搜索'),
+  mkdir: makeFileCommandSpec('mkdir', '创建目录', true),
+  rmdir: makeFileCommandSpec('rmdir', '删除目录', true),
+  tar: makeFileCommandSpec('tar', '归档'),
+  unzip: makeFileCommandSpec('unzip', '解压 zip'),
+  source: makeFileCommandSpec('source', '执行脚本'),
+  bash: makeFileCommandSpec('bash', '执行脚本'),
+  sh: makeFileCommandSpec('sh', '执行脚本'),
+}
 
 const specMap: Record<string, Spec> = {
   git: gitSpec,
@@ -442,6 +502,7 @@ const specMap: Record<string, Spec> = {
   kubectl: kubectlSpec,
   npm: npmSpec,
   systemctl: systemctlSpec,
+  ...fileCommandSpecs,
 }
 
 export function getSpec(command: string): Spec | undefined {

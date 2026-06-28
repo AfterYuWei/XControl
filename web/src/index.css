@@ -307,6 +307,15 @@
 }
 
 /* ═══════════════════ COMPONENT STYLES ═══════════════════ */
+
+/* 补全面板:隐藏滚动条但保留滚动功能(键盘导航时 scrollIntoView 仍生效) */
+.xctrl-completion-panel {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.xctrl-completion-panel::-webkit-scrollbar {
+  display: none;
+}
 @import "./styles/app-shell.css";
 @import "./styles/tabbar.css";
 @import "./styles/terminal.css";

@@ -16,12 +16,13 @@ export interface CompletionResult {
   suggestions: Suggestion[]
 }
 
-export type ParserKey = 'git-branch' | 'docker-ps' | 'kubectl-name'
+export type ParserKey = 'git-branch' | 'docker-ps' | 'kubectl-name' | 'file-list'
 
 export interface DynamicGenerator {
   script: string
   cacheTtl: number
   parser: ParserKey
+  dirsOnly?: boolean  // file-list parser 专用:只保留目录
 }
 
 // 分词:按空格分割。POC 仅处理光标在行尾的情况
@@ -112,8 +113,23 @@ function renderScript(script: string, ctx: CompletionContext, cwd?: string): str
     .replace(/\{\{cwd\}\}/g, cwd ?? '')
 }
 
+// 根据用户输入的路径前缀构造 ls 脚本
+// 如 "sr" → ls 当前目录; "src/" → ls src/; "/tmp/f" → ls /tmp/
+function buildFileListScript(currentToken: string): string {
+  const lastSlash = currentToken.lastIndexOf('/')
+  let dir: string
+  if (lastSlash >= 0) {
+    dir = currentToken.slice(0, lastSlash + 1) // 保留尾部 /
+  } else {
+    dir = '.'
+  }
+  // 单引号转义:' → '\''
+  const escapedDir = dir.replace(/'/g, "'\\''")
+  return `ls -1 -A -F '${escapedDir}' 2>/dev/null`
+}
+
 // 定位当前位置的动态 generator(若有)
-// 规则:沿 tokens 路径定位层级,若 currentToken 不以 "-" 开头且 level.args.generator 存在,返回 generator
+// 规则:沿 tokens 路径定位层级,若 currentToken 不以 "-" 开头且 level.args 有 generator/fileGenerator,返回 generator
 export function getDynamicGenerator(ctx: CompletionContext, cwd?: string): DynamicGenerator | null {
   const { tokens, currentToken, cursorTokenIndex } = ctx
   if (cursorTokenIndex === 0) return null // 命令名位置不做动态
@@ -132,10 +148,24 @@ export function getDynamicGenerator(ctx: CompletionContext, cwd?: string): Dynam
     if (sub) {
       level = sub
     } else {
+      // 找不到子命令:文件命令(fileGenerator)的多参数位置仍可补全
+      if (level.args?.fileGenerator) break
       return null
     }
   }
 
+  // 优先检查 fileGenerator(文件路径补全)
+  const fileGen = level.args?.fileGenerator
+  if (fileGen) {
+    return {
+      script: buildFileListScript(currentToken),
+      cacheTtl: fileGen.cacheTtl ?? 3000,
+      parser: 'file-list',
+      dirsOnly: fileGen.dirsOnly ?? false,
+    }
+  }
+
+  // 普通 generator(分支/容器/pod 等)
   const gen = level.args?.generator
   if (!gen) return null
   return {
@@ -146,15 +176,21 @@ export function getDynamicGenerator(ctx: CompletionContext, cwd?: string): Dynam
 }
 
 // 根据 generator.parser 把脚本输出解析成候选
-const parsers: Record<ParserKey, (output: string, currentToken: string) => Suggestion[]> = {
+const parsers: Record<ParserKey, (output: string, currentToken: string, dirsOnly?: boolean) => Suggestion[]> = {
   'git-branch': parseDynamicOutput,
   'docker-ps': parseDockerContainerOutput,
   'kubectl-name': parseKubectlNameOutput,
+  'file-list': parseFileListOutput,
 }
 
-export function parseDynamicOutputByParser(output: string, currentToken: string, parser: ParserKey): Suggestion[] {
+export function parseDynamicOutputByParser(
+  output: string,
+  currentToken: string,
+  parser: ParserKey,
+  dirsOnly?: boolean
+): Suggestion[] {
   const fn = parsers[parser] ?? parseDynamicOutput
-  return fn(output, currentToken)
+  return fn(output, currentToken, dirsOnly)
 }
 
 // 把脚本 stdout 解析成 Suggestion[]
@@ -193,11 +229,10 @@ export function parseDockerContainerOutput(output: string, currentToken: string)
     const id = parts[0] ?? ''
     const name = parts[parts.length - 1] ?? ''
     if (!id || !name) continue
-    for (const value of [id, name]) {
-      if (!value.startsWith(currentToken)) continue
-      if (seen.has(value)) continue
-      seen.add(value)
-      result.push({ name: value, type: 'arg' })
+    // 只显示容器名,描述显示容器 ID,便于用户按名称选择同时看到对应 ID
+    if (name.startsWith(currentToken) && !seen.has(name)) {
+      seen.add(name)
+      result.push({ name, type: 'arg', description: id })
     }
   }
   return result
@@ -208,14 +243,51 @@ export function parseKubectlNameOutput(output: string, currentToken: string): Su
   const seen = new Set<string>()
   const result: Suggestion[] = []
   for (const rawLine of output.split('\n')) {
-    let name = rawLine.trim()
-    if (!name) continue
-    const slashIdx = name.indexOf('/')
-    if (slashIdx !== -1) name = name.slice(slashIdx + 1)
+    const rawName = rawLine.trim()
+    if (!rawName) continue
+    const slashIdx = rawName.indexOf('/')
+    let name = slashIdx !== -1 ? rawName.slice(slashIdx + 1) : rawName
     if (!name.startsWith(currentToken)) continue
     if (seen.has(name)) continue
     seen.add(name)
-    result.push({ name, type: 'arg' })
+    // 保留资源类型前缀作为描述,如 pod/deployment/service
+    const kind = slashIdx !== -1 ? rawName.slice(0, slashIdx) : ''
+    result.push({ name, type: 'arg', description: kind })
+  }
+  return result
+}
+
+// 解析 ls -1 -A -F 输出,区分目录(/)和文件,按 base 前缀过滤
+// sug.name 包含完整路径前缀(目录部分+文件名),便于 applySelection 统一计算 insertText
+export function parseFileListOutput(output: string, currentToken: string, dirsOnly?: boolean): Suggestion[] {
+  const seen = new Set<string>()
+  const result: Suggestion[] = []
+  // 拆分目录前缀和文件名前缀
+  const lastSlash = currentToken.lastIndexOf('/')
+  const dirPrefix = lastSlash >= 0 ? currentToken.slice(0, lastSlash + 1) : ''
+  const base = lastSlash >= 0 ? currentToken.slice(lastSlash + 1) : currentToken
+
+  for (const rawLine of output.split('\n')) {
+    const line = rawLine.trim()
+    if (!line) continue
+    // ls -F 后缀:/ 目录、* 可执行、@ 链接、| FIFO、= socket
+    const lastChar = line[line.length - 1]
+    let fileName: string
+    let isDir = false
+    if (lastChar === '/') {
+      fileName = line // 保留 / 后缀,补全时插入方便继续下一级
+      isDir = true
+    } else if (lastChar === '*' || lastChar === '@' || lastChar === '|' || lastChar === '=') {
+      fileName = line.slice(0, -1) // 去掉类型标记
+    } else {
+      fileName = line
+    }
+    if (!fileName.startsWith(base)) continue
+    if (dirsOnly && !isDir) continue
+    const fullName = dirPrefix + fileName
+    if (seen.has(fullName)) continue
+    seen.add(fullName)
+    result.push({ name: fullName, type: 'arg', description: isDir ? '目录' : undefined })
   }
   return result
 }

@@ -288,7 +288,8 @@
   .statusbar *,
   .pal-overlay,
   .pal-overlay *,
-  .xcontrol-toast,
+  .xctrl-notify-card,
+  .xctrl-notify-card *,
   .expand-btn,
   body {
     transition: background-color 0.2s ease, border-color 0.2s ease,
@@ -323,7 +324,7 @@
 @import "./styles/profile-form.css";
 @import "./styles/server-detail.css";
 @import "./styles/command-palette.css";
-@import "./styles/toast.css";
+@import "./styles/notify.css";
 @import "./styles/sftp.css";
 @import "./styles/sftp-editor.css";
 @import "./styles/editor.css";

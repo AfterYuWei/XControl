@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { editApi } from '@/api/edit'
 import type { LineEnding } from '@/types/sftp'
-import { toast } from '@/store/toast'
+import { toast } from '@/store/notify'
 
 /** Session type determines which API to use for file operations. */
 export type EditorSessionType = 'sftp' | 'serverDetail'

@@ -4,7 +4,7 @@ import { Sidebar } from '@/components/Sidebar'
 import { TerminalView } from '@/components/Terminal'
 import { StatusBar } from '@/components/StatusBar'
 import { CommandPalette } from '@/components/CommandPalette'
-import { Toast } from '@/components/Toast'
+import { Notify } from '@/components/Notify'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { SettingsDialog } from '@/components/SettingsDialog'
 import { useProfileStore } from '@/store/profile'
@@ -236,8 +236,8 @@ export function Layout() {
       {/* 设置面板 */}
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
 
-      {/* Toast */}
-      <Toast />
+      {/* Notify — 右上角统一通知中心 */}
+      <Notify />
     </div>
   )
 }

@@ -20,9 +20,51 @@ type Session struct {
 	ProfileID string
 	Driver    protocol.Driver
 	Shell     protocol.Shell
-	Status    string // connecting | connected | disconnected
+	Status    string // connecting | connected | disconnected | error
 	Error     string // error message when status is disconnected
 	CreatedAt time.Time
+
+	// DisconnectReason is set when the SSH connection dies abnormally
+	// (remote_shutdown | network_error | keepalive_timeout | auth_failed | unknown).
+	// Empty for normal shell exits. Protected by mu.
+	DisconnectReason string
+	mu               sync.Mutex
+}
+
+// IsAbnormalDisconnect reports whether the session ended due to an SSH
+// connection death (as opposed to a normal shell exit).
+func (s *Session) IsAbnormalDisconnect() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.Status == "error" && s.DisconnectReason != ""
+}
+
+// DisconnectInfo returns the reason code and human-readable message if the
+// session ended abnormally, empty strings otherwise.
+func (s *Session) DisconnectInfo() (reason, message string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Status != "error" || s.DisconnectReason == "" {
+		return "", ""
+	}
+	return s.DisconnectReason, humanizeDisconnectReason(s.DisconnectReason)
+}
+
+// humanizeDisconnectReason maps a machine-readable reason code to a
+// human-readable message suitable for display in a status dialog.
+func humanizeDisconnectReason(reason string) string {
+	switch reason {
+	case "remote_shutdown":
+		return "远端服务器已关闭或重启"
+	case "network_error":
+		return "网络连接中断"
+	case "keepalive_timeout":
+		return "连接无响应（保活超时）"
+	case "auth_failed":
+		return "认证失败（凭据可能已变更）"
+	default:
+		return "未知原因"
+	}
 }
 
 type SessionHandler struct {
@@ -126,6 +168,21 @@ func (h *SessionHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 		session.Driver = driver
 
+		// Register a death callback on the driver so that when the underlying
+		// SSH connection dies (keepalive timeout, remote shutdown, network error),
+		// the session status is updated to "error" with the reason. The WS
+		// handler reads this to decide whether to send MsgDisconnect (abnormal)
+		// or MsgExit (normal shell exit) to the frontend.
+		if lc, ok := driver.(protocol.ConnectionLifecycle); ok {
+			lc.OnDead(func(reason string) {
+				session.mu.Lock()
+				session.Status = "error"
+				session.DisconnectReason = reason
+				session.mu.Unlock()
+				slog.Warn("session driver died", "session_id", sessionID, "reason", reason)
+			})
+		}
+
 		shellOpts := protocol.ShellOptions{
 			Cols: req.Cols,
 			Rows: req.Rows,
@@ -153,10 +210,17 @@ func (h *SessionHandler) Create(w http.ResponseWriter, r *http.Request) {
 			Timestamp: time.Now(),
 		})
 
-		// Wait for session to end
+		// Wait for session to end. When the shell exits, check whether the
+		// driver was marked dead (abnormal) — if so, the status is already
+		// "error" and we leave it alone; otherwise this is a normal shell exit
+		// and we mark the session as "disconnected".
 		go func() {
 			<-shell.Done()
-			session.Status = "disconnected"
+			session.mu.Lock()
+			if session.Status != "error" {
+				session.Status = "disconnected"
+			}
+			session.mu.Unlock()
 			h.audit.Log(&model.AuditLog{
 				ID:        uuid.New().String(),
 				ProfileID: req.ProfileID,

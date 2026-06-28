@@ -7,6 +7,9 @@
 //
 // Each channel has its own reference count. The underlying SSH connection is
 // closed only when both counts reach zero.
+//
+// Dead connections (detected via keepalive or remote-close events) are
+// evicted automatically so callers never receive a stale entry.
 package connpool
 
 import (
@@ -86,6 +89,34 @@ func (p *Pool) acquire(ctx context.Context, opts protocol.DriverOpts, needSSH, n
 	entry, exists := p.entries[key]
 	if exists {
 		p.mu.Unlock()
+		// Check if the underlying driver has died; if so, evict and fall through
+		// to create a fresh connection. This prevents callers from receiving a
+		// stale entry that would fail on the next operation.
+		if isEntryDead(entry) {
+			slog.Info("connpool: evicting dead entry", "key", key, "reason", entryDeadReason(entry))
+			entry.closeAndRemove()
+			// Re-acquire the pool lock to create a new entry placeholder.
+			p.mu.Lock()
+			if _, stillExists := p.entries[key]; stillExists {
+				// Another goroutine already started recreating; reuse its entry.
+				entry = p.entries[key]
+				p.mu.Unlock()
+				entry.mu.Lock()
+				if needSSH {
+					entry.sshRef++
+				}
+				if needSFTP {
+					entry.sftpRef++
+				}
+				entry.mu.Unlock()
+				return entry, nil
+			}
+			// Fall through to create a new entry below.
+			entry = &Entry{key: key, pool: p}
+			p.entries[key] = entry
+			p.mu.Unlock()
+			return p.finishCreate(ctx, opts, entry, key, needSSH, needSFTP)
+		}
 		entry.mu.Lock()
 		if needSSH {
 			entry.sshRef++
@@ -102,7 +133,13 @@ func (p *Pool) acquire(ctx context.Context, opts protocol.DriverOpts, needSSH, n
 	entry = &Entry{key: key, pool: p}
 	p.entries[key] = entry
 	p.mu.Unlock()
+	return p.finishCreate(ctx, opts, entry, key, needSSH, needSFTP)
+}
 
+// finishCreate establishes the SSH connection for a placeholder entry and
+// registers a death callback so the entry is evicted automatically when the
+// connection dies.
+func (p *Pool) finishCreate(ctx context.Context, opts protocol.DriverOpts, entry *Entry, key string, needSSH, needSFTP bool) (*Entry, error) {
 	// Create SSH connection outside the pool lock.
 	driver, err := p.pm.Create("ssh", opts)
 	if err != nil {
@@ -136,6 +173,18 @@ func (p *Pool) acquire(ctx context.Context, opts protocol.DriverOpts, needSSH, n
 		}
 	}
 
+	// Register a death callback so the entry is evicted automatically when the
+	// underlying SSH connection dies (keepalive timeout or remote close).
+	// This fires once from the driver's keepalive/watch goroutine.
+	if lc, ok := driver.(protocol.ConnectionLifecycle); ok {
+		lc.OnDead(func(reason string) {
+			slog.Warn("connpool: connection died, evicting", "key", key, "reason", reason)
+			// Mark entry dead and close resources. closeAndRemove is idempotent
+			// via the pool map delete, so concurrent Release* calls are safe.
+			entry.closeAndRemove()
+		})
+	}
+
 	entry.mu.Lock()
 	if needSSH {
 		entry.sshRef = 1
@@ -147,6 +196,28 @@ func (p *Pool) acquire(ctx context.Context, opts protocol.DriverOpts, needSSH, n
 
 	slog.Info("connpool: new connection", "key", key)
 	return entry, nil
+}
+
+// isEntryDead reports whether the entry's driver has been marked dead.
+func isEntryDead(e *Entry) bool {
+	if e.Driver == nil {
+		return false
+	}
+	if lc, ok := e.Driver.(protocol.ConnectionLifecycle); ok {
+		return lc.IsDead()
+	}
+	return false
+}
+
+// entryDeadReason returns the death reason if the driver is dead, empty otherwise.
+func entryDeadReason(e *Entry) string {
+	if e.Driver == nil {
+		return ""
+	}
+	if lc, ok := e.Driver.(protocol.ConnectionLifecycle); ok {
+		return lc.DeadReason()
+	}
+	return ""
 }
 
 // AcquireSSHRef increments the CommandExecutor reference count. Use this when

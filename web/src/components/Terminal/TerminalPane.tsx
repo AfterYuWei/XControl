@@ -4,12 +4,18 @@ import { useWebSocket } from '@/hooks/useWebSocket'
 import { useSessionStore } from '@/store/session'
 import { useProfileStore } from '@/store/profile'
 import { useSettingsStore } from '@/store/settings'
+import { sessionApi } from '@/api/session'
 import { ConnectionDialog } from '@/components/ConnectionDialog'
 import { useCompletion } from '@/hooks/useCompletion'
 import { CompletionPanel } from '@/components/Terminal/CompletionPanel'
-import type { WSMessage, MetaPayload, ErrorPayload, CwdPayload, CompleteResponsePayload } from '@/types/ws'
+import type { WSMessage, MetaPayload, ErrorPayload, CwdPayload, CompleteResponsePayload, DisconnectPayload } from '@/types/ws'
 
 type WSStatus = 'connecting' | 'connected' | 'disconnected'
+
+// Auto-reconnect configuration: exponential backoff (ms), max attempts.
+// After MAX_RECONNECT_ATTEMPTS, the dialog switches to manual reconnect mode.
+const RECONNECT_BACKOFF = [1000, 2000, 4000, 8000, 16000, 30000, 30000, 30000, 30000, 30000]
+const MAX_RECONNECT_ATTEMPTS = RECONNECT_BACKOFF.length
 
 interface TerminalPaneProps {
   tab: {
@@ -17,22 +23,26 @@ interface TerminalPaneProps {
     profileId: string
     profileName: string
     sessionId: string | null
-    status: 'connecting' | 'connected' | 'disconnected'
+    status: 'connecting' | 'connected' | 'disconnected' | 'error' | 'reconnecting'
     host?: string
     port?: number
     username?: string
+    errorReason?: string
+    errorMessage?: string
+    reconnectAttempt?: number
+    nextRetryAt?: number
   }
   isActive: boolean
 }
 
 export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const { updateTabStatus, updateTabCwd, updateTabLatency } = useSessionStore()
+  const { updateTabStatus, updateTabCwd, updateTabLatency, markTabError, markTabReconnecting, clearTabError, closeTab } = useSessionStore()
   const { profiles } = useProfileStore()
   const { fontSize, fontFamily, fontFamilyCN, terminalTheme, terminalPopupMenu } = useSettingsStore()
   const [showDialog, setShowDialog] = useState(false)
   const [connectionError, setConnectionError] = useState('')
-  const [dialogStatus, setDialogStatus] = useState<'connecting' | 'connected' | 'error'>('connecting')
+  const [dialogStatus, setDialogStatus] = useState<'connecting' | 'connected' | 'error' | 'reconnecting'>('connecting')
   const hasSpecificError = useRef(false)
 
   const wsStatusRef = useRef<WSStatus>('connecting')
@@ -41,6 +51,12 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   const handleDataRef = useRef<(data: string) => boolean>(() => false)
   const handleCompleteResponseRef = useRef<(payload: CompleteResponsePayload) => void>(() => {})
   const handleOutputDataRef = useRef<(data: string) => void>(() => {})
+
+  // Auto-reconnect state: timer ref + attempt counter. The timer is cleared on
+  // unmount, manual cancel, or successful reconnection.
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const reconnectAttemptRef = useRef(0)
+  const isReconnectingRef = useRef(false)
 
   // 从 session store 读取 OSC7 追踪到的 cwd,供动态补全解析相对路径
   const cwd = useSessionStore((state) => state.tabs.find((t) => t.id === tab.id)?.cwd)
@@ -62,6 +78,73 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     },
   })
 
+  // clearReconnectTimer cancels any pending reconnect timer and resets the
+  // reconnecting flag. Safe to call multiple times.
+  const clearReconnectTimer = useCallback(() => {
+    if (reconnectTimerRef.current !== null) {
+      clearTimeout(reconnectTimerRef.current)
+      reconnectTimerRef.current = null
+    }
+    isReconnectingRef.current = false
+  }, [])
+
+  // startAutoReconnect begins an exponential-backoff reconnection loop.
+  // On each attempt it creates a new SSH session via the REST API and updates
+  // tab.sessionId, which triggers useWebSocket to establish a fresh WS.
+  // After MAX_RECONNECT_ATTEMPTS, the dialog switches to manual reconnect.
+  const startAutoReconnect = useCallback((tabId: string, profileId: string, reason: string, message: string) => {
+    // Don't start a second loop if one is already running
+    if (isReconnectingRef.current) return
+    isReconnectingRef.current = true
+    reconnectAttemptRef.current = 0
+
+    const attempt = (n: number) => {
+      if (n >= MAX_RECONNECT_ATTEMPTS) {
+        // Exhausted: switch to manual reconnect mode
+        isReconnectingRef.current = false
+        markTabError(tabId, reason, '自动重连失败，请手动重连')
+        setDialogStatus('error')
+        return
+      }
+      const delay = RECONNECT_BACKOFF[n]
+      const nextRetryAt = Date.now() + delay
+      reconnectAttemptRef.current = n + 1
+      markTabReconnecting(tabId, n + 1, nextRetryAt)
+
+      reconnectTimerRef.current = setTimeout(async () => {
+        reconnectTimerRef.current = null
+        try {
+          // Create a new SSH session. The backend reuses the profile's
+          // credentials to establish a fresh connection.
+          const resp = await sessionApi.create({ profile_id: profileId, cols: 80, rows: 24 })
+          // updateTabStatus with a new sessionId triggers useWebSocket's
+          // [sessionId] effect to close the old WS and open a new one.
+          updateTabStatus(tabId, 'connecting', resp.session_id)
+          // The dialog stays open in 'connecting' state until metadata arrives
+          setDialogStatus('connecting')
+          // Stop the reconnect loop; metadata handler will close the dialog
+          isReconnectingRef.current = false
+        } catch {
+          // Reconnect attempt failed; schedule the next attempt
+          attempt(n + 1)
+        }
+      }, delay)
+    }
+    attempt(0)
+  }, [markTabError, markTabReconnecting, updateTabStatus])
+
+  // reconnectNow is called when the user clicks "立即重连" or "重新连接".
+  // It cancels any pending timer and immediately attempts reconnection.
+  const reconnectNow = useCallback(() => {
+    clearReconnectTimer()
+    const reason = tab.errorReason || 'unknown'
+    const message = tab.errorMessage || '正在重新连接...'
+    // Reset attempt counter and start fresh from attempt 1
+    isReconnectingRef.current = false
+    reconnectAttemptRef.current = 0
+    startAutoReconnect(tab.id, tab.profileId, reason, message)
+  }, [clearReconnectTimer, startAutoReconnect, tab.id, tab.profileId, tab.errorReason, tab.errorMessage])
+
   const handleWSMessage = useCallback(
     (msg: WSMessage) => {
       switch (msg.type) {
@@ -76,6 +159,11 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
           reset()
           clear()
           updateTabStatus(tab.id, 'connected', meta.session_id)
+          // Clear any reconnect state from a successful reconnection
+          clearReconnectTimer()
+          clearTabError(tab.id)
+          hasSpecificError.current = false
+          setConnectionError('')
           setDialogStatus('connected')
           setTimeout(() => setShowDialog(false), 500)
           break
@@ -95,9 +183,25 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
           break
         }
         case 'exit':
+          // Normal shell exit (user typed "exit"). Stop any reconnect loop.
+          clearReconnectTimer()
           updateTabStatus(tab.id, 'disconnected')
           writeln('\r\n\x1b[33m[会话已结束]\x1b[0m')
           break
+        case 'disconnect': {
+          // Abnormal disconnect: SSH connection died (remote shutdown,
+          // keepalive timeout, network error). Trigger auto-reconnect.
+          const disc = msg.payload as DisconnectPayload
+          const reason = disc?.reason || 'unknown'
+          const message = disc?.message || '连接已断开'
+          hasSpecificError.current = true
+          setConnectionError(message)
+          setDialogStatus('reconnecting')
+          setShowDialog(true)
+          writeln(`\r\n\x1b[31m[连接已断开: ${message}]\x1b[0m`)
+          startAutoReconnect(tab.id, tab.profileId, reason, message)
+          break
+        }
         case 'error': {
           const err = msg.payload as ErrorPayload
           hasSpecificError.current = true
@@ -108,7 +212,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
         }
       }
     },
-    [tab.id, updateTabStatus, updateTabCwd, write, writeln, clear, reset]
+    [tab.id, tab.profileId, updateTabStatus, updateTabCwd, write, writeln, clear, reset, clearReconnectTimer, clearTabError, startAutoReconnect]
   )
 
   const { status: wsStatus, latency, sendInput, sendResize, sendComplete } = useWebSocket({
@@ -121,6 +225,22 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
         const { cols, rows } = getSize()
         sendResizeRef.current(cols, rows)
       }, 50)
+    },
+    onClose: () => {
+      // Fallback: if the WS closes unexpectedly while we were connected and
+      // no specific disconnect/error message was received, treat it as an
+      // abnormal disconnect and trigger auto-reconnect. This catches cases
+      // where the backend dies or the network drops between client and backend
+      // without the SSH-level death detection firing first.
+      // Guard: skip if already handling an error or already reconnecting.
+      if (wsStatusRef.current === 'connected' && !hasSpecificError.current && !isReconnectingRef.current) {
+        hasSpecificError.current = true
+        setConnectionError('连接已断开')
+        setDialogStatus('reconnecting')
+        setShowDialog(true)
+        writeln('\r\n\x1b[31m[连接已断开]\x1b[0m')
+        startAutoReconnect(tab.id, tab.profileId, 'network_error', '连接已断开')
+      }
     },
     onError: () => {
       if (!hasSpecificError.current) {
@@ -202,8 +322,20 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   }, [isActive, tab.sessionId, fit, getSize])
 
   const handleCancel = () => {
-    updateTabStatus(tab.id, 'disconnected')
+    // "关闭标签" button: stop any reconnect loop and close the tab.
+    clearReconnectTimer()
+    closeTab(tab.id)
   }
+
+  // Cleanup reconnect timer on unmount to prevent leaks and stray retries.
+  useEffect(() => {
+    return () => {
+      if (reconnectTimerRef.current !== null) {
+        clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = null
+      }
+    }
+  }, [])
 
   const profileIcon = profiles.find((p) => p.id === tab.profileId)?.icon
 
@@ -225,6 +357,9 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
         status={dialogStatus}
         errorMessage={connectionError}
         onCancel={handleCancel}
+        reconnectAttempt={tab.reconnectAttempt}
+        nextRetryAt={tab.nextRetryAt}
+        onReconnectNow={reconnectNow}
       />
     </div>
   )

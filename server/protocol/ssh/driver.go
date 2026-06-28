@@ -3,6 +3,10 @@ package ssh
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	gossh "golang.org/x/crypto/ssh"
 
@@ -13,14 +17,31 @@ func init() {
 	// Registration is done in main.go via protocolManager.Register("ssh", NewDriver)
 }
 
+// keepaliveInterval is the interval between keepalive requests.
+// keepaliveMaxFailures is the consecutive failure count that marks the connection dead.
+// keepaliveRequestTimeout is the max wait for a single keepalive reply.
+const (
+	keepaliveInterval        = 30 * time.Second
+	keepaliveMaxFailures     = 3
+	keepaliveRequestTimeout  = 10 * time.Second
+)
+
 type Driver struct {
 	opts   protocol.DriverOpts
 	client *gossh.Client
 	info   protocol.ConnectionInfo
+
+	// Lifecycle management: keepalive probing + connection death detection
+	doneCh     chan struct{}    // closed on Close() to signal goroutines to exit
+	closeOnce  sync.Once        // guards doneCh from being closed twice
+	dead       atomic.Bool      // set when the connection is detected dead
+	deadReason string           // reason code (remote_shutdown | keepalive_timeout | ...)
+	deadCbs    []func(reason string)
+	cbMu       sync.Mutex       // protects deadCbs and deadReason
 }
 
 func NewDriver(opts protocol.DriverOpts) (protocol.Driver, error) {
-	return &Driver{opts: opts}, nil
+	return &Driver{opts: opts, doneCh: make(chan struct{})}, nil
 }
 
 func (d *Driver) Connect(ctx context.Context) error {
@@ -38,7 +59,116 @@ func (d *Driver) Connect(ctx context.Context) error {
 		RemoteAddr: client.RemoteAddr().String(),
 	}
 
+	// Start keepalive probing and connection-close watch goroutines.
+	// These run for the lifetime of the connection and exit via doneCh on Close().
+	go d.startKeepalive()
+	go d.startWatch()
+
 	return nil
+}
+
+// startKeepalive sends keepalive@openssh.com requests every keepaliveInterval.
+// After keepaliveMaxFailures consecutive failures, the driver is marked dead.
+func (d *Driver) startKeepalive() {
+	ticker := time.NewTicker(keepaliveInterval)
+	defer ticker.Stop()
+	failures := 0
+	for {
+		select {
+		case <-d.doneCh:
+			return
+		case <-ticker.C:
+			if d.probeKeepalive() {
+				failures = 0
+				continue
+			}
+			failures++
+			slog.Warn("ssh keepalive failed", "host", d.opts.Host, "failures", failures)
+			if failures >= keepaliveMaxFailures {
+				d.markDead("keepalive_timeout")
+				return
+			}
+		}
+	}
+}
+
+// probeKeepalive sends a single keepalive request with a timeout. Returns true on success.
+func (d *Driver) probeKeepalive() bool {
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := d.client.SendRequest("keepalive@openssh.com", true, nil)
+		done <- err
+	}()
+	select {
+	case <-d.doneCh:
+		return true // closing, treat as success to avoid spurious dead marking
+	case err := <-done:
+		return err == nil
+	case <-time.After(keepaliveRequestTimeout):
+		slog.Warn("ssh keepalive request timed out", "host", d.opts.Host, "timeout", keepaliveRequestTimeout)
+		return false
+	}
+}
+
+// startWatch blocks on client.Wait() to detect connection closure initiated by
+// the remote side or network. When the connection closes unexpectedly (i.e. not
+// via our own Close()), the driver is marked dead with "remote_shutdown".
+func (d *Driver) startWatch() {
+	waitCh := make(chan struct{})
+	go func() {
+		_ = d.client.Wait()
+		close(waitCh)
+	}()
+	select {
+	case <-d.doneCh:
+		return // graceful close initiated by us
+	case <-waitCh:
+		d.markDead("remote_shutdown")
+	}
+}
+
+// markDead marks the driver as dead and invokes all registered OnDead callbacks
+// exactly once. Safe to call from multiple goroutines.
+func (d *Driver) markDead(reason string) {
+	if !d.dead.CompareAndSwap(false, true) {
+		return
+	}
+	d.cbMu.Lock()
+	d.deadReason = reason
+	cbs := make([]func(string), len(d.deadCbs))
+	copy(cbs, d.deadCbs)
+	d.deadCbs = nil
+	d.cbMu.Unlock()
+
+	slog.Warn("ssh connection marked dead", "host", d.opts.Host, "reason", reason)
+	for _, cb := range cbs {
+		cb(reason)
+	}
+}
+
+// IsDead reports whether the connection has been detected as dead.
+func (d *Driver) IsDead() bool {
+	return d.dead.Load()
+}
+
+// DeadReason returns the reason code if dead, empty string otherwise.
+func (d *Driver) DeadReason() string {
+	d.cbMu.Lock()
+	defer d.cbMu.Unlock()
+	return d.deadReason
+}
+
+// OnDead registers a callback invoked when the connection dies. If the driver
+// is already dead, the callback is invoked immediately. Multiple callbacks are
+// supported and invoked in registration order.
+func (d *Driver) OnDead(cb func(reason string)) {
+	d.cbMu.Lock()
+	defer d.cbMu.Unlock()
+	if d.dead.Load() {
+		cb(d.deadReason)
+		return
+	}
+	d.deadCbs = append(d.deadCbs, cb)
 }
 
 func (d *Driver) RequestShell(opts protocol.ShellOptions) (protocol.Shell, error) {
@@ -102,6 +232,12 @@ func (d *Driver) RequestShell(opts protocol.ShellOptions) (protocol.Shell, error
 }
 
 func (d *Driver) Close() error {
+	// Signal keepalive and watch goroutines to exit before closing the client.
+	// This prevents the watch goroutine from treating our own Close() as a
+	// "remote_shutdown" death event.
+	d.closeOnce.Do(func() {
+		close(d.doneCh)
+	})
 	if d.client != nil {
 		return d.client.Close()
 	}
@@ -143,3 +279,6 @@ func (d *Driver) SSHClient() *gossh.Client {
 
 // compile-time assertion that Driver implements CommandExecutor
 var _ protocol.CommandExecutor = (*Driver)(nil)
+
+// compile-time assertion that Driver implements ConnectionLifecycle
+var _ protocol.ConnectionLifecycle = (*Driver)(nil)

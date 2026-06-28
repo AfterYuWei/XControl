@@ -11,6 +11,7 @@ export type WSMessageType =
   | 'cwd'
   | 'complete_request'
   | 'complete_response'
+  | 'disconnect'
 
 export interface WSMessage {
   type: WSMessageType
@@ -41,6 +42,13 @@ export interface MetaPayload {
 
 export interface CwdPayload {
   path: string
+}
+
+// 异常断连:SSH 连接死亡(远端关机/网络中断/保活超时)
+// reason: remote_shutdown | network_error | keepalive_timeout | auth_failed | unknown
+export interface DisconnectPayload {
+  reason: string
+  message: string
 }
 
 // 动态补全:客户端请求远端执行只读脚本

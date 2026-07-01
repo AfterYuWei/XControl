@@ -63,9 +63,16 @@ func (h *ProfileHandler) Create(w http.ResponseWriter, r *http.Request) {
 		req.Icon = "server"
 	}
 
-	// Store credential in vault
+	// Store credential in vault: either reference an existing vault entry
+	// (vault_id) or create a new one from inline password/private_key.
 	var vaultID string
-	if req.Password != "" || req.PrivKey != "" {
+	if req.VaultID != "" {
+		if _, err := h.vault.Get(req.VaultID); err != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_VAULT", "vault entry not found")
+			return
+		}
+		vaultID = req.VaultID
+	} else if req.Password != "" || req.PrivKey != "" {
 		cred := &model.Credential{
 			Password:   req.Password,
 			PrivKey:    req.PrivKey,
@@ -76,7 +83,7 @@ func (h *ProfileHandler) Create(w http.ResponseWriter, r *http.Request) {
 			credType = "private_key"
 		}
 		var err error
-		vaultID, err = h.vault.Store(cred, credType)
+		vaultID, err = h.vault.Store(cred, credType, "", "", "")
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "VAULT_ERROR", err.Error())
 			return
@@ -139,7 +146,7 @@ func (h *ProfileHandler) Update(w http.ResponseWriter, r *http.Request) {
 			cred.Passphrase = *req.Passphrase
 		}
 
-		newVaultID, err := h.vault.Store(cred, credType)
+		newVaultID, err := h.vault.Store(cred, credType, "", "", "")
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "VAULT_ERROR", err.Error())
 			return

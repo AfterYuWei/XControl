@@ -25,11 +25,11 @@ type SftpSession struct {
 	ID        string
 	ProfileID string
 	Backend   fileutil.FileBackend
-	Driver    protocol.Driver  // nil for local sessions and pooled sessions
-	Entry     *connpool.Entry  // non-nil for pooled remote sessions
-	Status    string           // connecting | connected | disconnected
+	Driver    protocol.Driver // nil for local sessions and pooled sessions
+	Entry     *connpool.Entry // non-nil for pooled remote sessions
+	Status    string          // connecting | connected | disconnected
 	Error     string
-	HomeDir   string           // User's home directory
+	HomeDir   string // User's home directory
 	CreatedAt time.Time
 
 	// Connection info retained for direct server-to-server transfer (scp).
@@ -40,6 +40,7 @@ type SftpSession struct {
 	Password   string
 	PrivKey    string
 	Passphrase string
+	Cert       string
 
 	// cancel is the session-level context cancel function, used to cancel
 	// the background connection goroutine created in CreateSession.
@@ -136,7 +137,7 @@ func (h *SftpHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func() {
-		var password, privKey, passphrase string
+		var password, privKey, passphrase, cert string
 		if profile.VaultID != "" {
 			cred, err := h.vault.Retrieve(profile.VaultID)
 			if err != nil {
@@ -145,6 +146,7 @@ func (h *SftpHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 				password = cred.Password
 				privKey = cred.PrivKey
 				passphrase = cred.Passphrase
+				cert = cred.Cert
 			}
 		}
 
@@ -155,6 +157,7 @@ func (h *SftpHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 		session.Password = password
 		session.PrivKey = privKey
 		session.Passphrase = passphrase
+		session.Cert = cert
 
 		opts := protocol.DriverOpts{
 			Host:       profile.Host,
@@ -163,6 +166,7 @@ func (h *SftpHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 			Password:   password,
 			PrivKey:    privKey,
 			Passphrase: passphrase,
+			Cert:       cert,
 		}
 
 		// Use connection pool: acquire SFTP ref (SSH ref not needed for pure SFTP)
@@ -515,9 +519,9 @@ func (h *SftpHandler) resolveSession(w http.ResponseWriter, r *http.Request) (*S
 }
 
 // opCtx creates a context tied to three cancellation sources:
-//   1. A per-operation timeout (5 min) — ctx.Done()
-//   2. The HTTP request lifecycle — r.Context().Done()
-//   3. The session lifecycle — session.done (closed in CloseSession)
+//  1. A per-operation timeout (5 min) — ctx.Done()
+//  2. The HTTP request lifecycle — r.Context().Done()
+//  3. The session lifecycle — session.done (closed in CloseSession)
 //
 // Any of these firing cancels the operation context, so closing a session
 // aborts all in-flight file operations immediately.

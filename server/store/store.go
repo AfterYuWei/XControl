@@ -21,10 +21,14 @@ type GroupStore interface {
 }
 
 type VaultStore interface {
-	Store(cred *model.Credential, credType string) (string, error)
+	Store(cred *model.Credential, credType, name, username, remark string) (string, error)
 	Retrieve(id string) (*model.Credential, error)
+	Update(id string, cred *model.Credential, credType, name, username, remark string) error
 	Delete(id string) error
+	List(filter model.VaultListFilter) ([]*model.VaultItem, error)
+	Get(id string) (*model.VaultItem, error)
 	RefCount(id string) (int, error)
+	References(id string) ([]model.ProfileRef, error)
 }
 
 type SnippetStore interface {

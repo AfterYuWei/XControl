@@ -12,6 +12,7 @@ import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useProfileStore } from '@/store/profile'
 import { SERVER_ICONS, resolveServerIcon } from '@/lib/serverIcons'
+import { VaultSelectButton } from '@/components/Vault/VaultSelectButton'
 import type { Profile, ProfileCreateRequest } from '@/types/profile'
 
 interface ProfileFormProps {
@@ -33,8 +34,9 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
         host: profile.host,
         port: profile.port,
         username: profile.username,
-        auth_type: profile.auth_type as 'password' | 'key',
+        auth_type: profile.auth_type as 'password' | 'key' | 'vault',
         icon: profile.icon || 'server',
+        vault_id: profile.vault_id || '',
         password: '',
         private_key: '',
         group_id: profile.group_id || '',
@@ -49,6 +51,7 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
       username: 'root',
       auth_type: 'password',
       icon: 'server',
+      vault_id: '',
       password: '',
       private_key: '',
       group_id: presetGroupId || '',
@@ -94,10 +97,19 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
     setError('')
 
     try {
-      if (isEditing && profile) {
-        await updateProfile(profile.id, form)
+      // 根据认证方式清理对侧字段：vault 模式只发 vault_id，inline 模式清 vault_id
+      const payload: ProfileCreateRequest = { ...form }
+      if (payload.auth_type === 'vault') {
+        payload.password = ''
+        payload.private_key = ''
+        payload.passphrase = ''
       } else {
-        await createProfile(form)
+        payload.vault_id = ''
+      }
+      if (isEditing && profile) {
+        await updateProfile(profile.id, payload)
+      } else {
+        await createProfile(payload)
       }
       onOpenChange(false)
     } catch (err) {
@@ -115,6 +127,7 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
   const authOptions = [
     { value: 'password', label: '密码' },
     { value: 'key', label: '私钥' },
+    { value: 'vault', label: '从 Vault 选择' },
   ]
 
   const CurrentIcon = resolveServerIcon(form.icon)
@@ -227,34 +240,46 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
               <Select
                 options={authOptions}
                 value={form.auth_type}
-                onChange={(v) => setForm({ ...form, auth_type: v as 'password' | 'key' })}
+                onChange={(v) => setForm({ ...form, auth_type: v as 'password' | 'key' | 'vault' })}
               />
             </div>
           </div>
 
-          {/* ── 密码 / 私钥（通栏） ── */}
+          {/* ── 凭据（通栏）：vault 模式显示选择器，否则显示密码/私钥 ── */}
           <div className="pf-field">
-            <Label htmlFor="password" className="pf-label">
-              {form.auth_type === 'password' ? '密码' : '私钥'}
-            </Label>
-            {form.auth_type === 'password' ? (
-              <Input
-                id="password"
-                type="password"
-                value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
-                placeholder={isEditing ? '留空则不修改' : ''}
-                className="pf-input-mono"
-              />
+            {form.auth_type === 'vault' ? (
+              <>
+                <Label className="pf-label">凭据选择</Label>
+                <VaultSelectButton
+                  vaultId={form.vault_id}
+                  onChange={(item) => setForm({ ...form, vault_id: item.id, username: item.username || form.username })}
+                />
+              </>
             ) : (
-              <Textarea
-                id="private_key"
-                value={form.private_key}
-                onChange={(e) => setForm({ ...form, private_key: e.target.value })}
-                placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-                rows={3}
-                className="pf-input-mono pf-key-textarea"
-              />
+              <>
+                <Label htmlFor="password" className="pf-label">
+                  {form.auth_type === 'password' ? '密码' : '私钥'}
+                </Label>
+                {form.auth_type === 'password' ? (
+                  <Input
+                    id="password"
+                    type="password"
+                    value={form.password}
+                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                    placeholder={isEditing ? '留空则不修改' : ''}
+                    className="pf-input-mono"
+                  />
+                ) : (
+                  <Textarea
+                    id="private_key"
+                    value={form.private_key}
+                    onChange={(e) => setForm({ ...form, private_key: e.target.value })}
+                    placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                    rows={3}
+                    className="pf-input-mono pf-key-textarea"
+                  />
+                )}
+              </>
             )}
           </div>
 

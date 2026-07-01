@@ -4,7 +4,7 @@ export interface Profile {
   host: string
   port: number
   username: string
-  auth_type: 'password' | 'key' | 'agent'
+  auth_type: 'password' | 'key' | 'agent' | 'vault'
   icon?: string
   vault_id?: string
   group_id?: string
@@ -22,8 +22,9 @@ export interface ProfileCreateRequest {
   host: string
   port?: number
   username: string
-  auth_type: 'password' | 'key' | 'agent'
+  auth_type: 'password' | 'key' | 'agent' | 'vault'
   icon?: string
+  vault_id?: string
   password?: string
   private_key?: string
   passphrase?: string
@@ -38,8 +39,9 @@ export interface ProfileUpdateRequest {
   host?: string
   port?: number
   username?: string
-  auth_type?: 'password' | 'key' | 'agent'
+  auth_type?: 'password' | 'key' | 'agent' | 'vault'
   icon?: string
+  vault_id?: string
   password?: string
   private_key?: string
   passphrase?: string

@@ -11,8 +11,8 @@ import (
 	"github.com/yuweinfo/xcontrol/gateway/handler"
 	"github.com/yuweinfo/xcontrol/gateway/middleware"
 	"github.com/yuweinfo/xcontrol/protocol"
-	sshdriver "github.com/yuweinfo/xcontrol/protocol/ssh"
 	sftpdriver "github.com/yuweinfo/xcontrol/protocol/sftp"
+	sshdriver "github.com/yuweinfo/xcontrol/protocol/ssh"
 	"github.com/yuweinfo/xcontrol/store"
 	"github.com/yuweinfo/xcontrol/ws"
 )
@@ -47,6 +47,7 @@ func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS) http.Handle
 	profileH := handler.NewProfileHandler(profileStore, vaultStore, encryptor)
 	groupH := handler.NewGroupHandler(groupStore, profileStore)
 	snippetH := handler.NewSnippetHandler(snippetStore)
+	vaultH := handler.NewVaultHandler(vaultStore, auditStore)
 	sessionH := handler.NewSessionHandler(profileStore, vaultStore, auditStore, pm)
 	wsH := handler.NewWSHandler(hub, sessionH)
 	transferMgr := handler.NewTransferManager(sftpHub)
@@ -72,6 +73,16 @@ func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS) http.Handle
 	mux.HandleFunc("POST /api/snippets", snippetH.Create)
 	mux.HandleFunc("PUT /api/snippets/{id}", snippetH.Update)
 	mux.HandleFunc("DELETE /api/snippets/{id}", snippetH.Delete)
+
+	// Vault routes (key/credential management)
+	mux.HandleFunc("GET /api/vault", vaultH.List)
+	mux.HandleFunc("POST /api/vault", vaultH.Create)
+	mux.HandleFunc("POST /api/vault/generate", vaultH.GenerateKeyPair)
+	mux.HandleFunc("GET /api/vault/{id}", vaultH.Get)
+	mux.HandleFunc("PUT /api/vault/{id}", vaultH.Update)
+	mux.HandleFunc("DELETE /api/vault/{id}", vaultH.Delete)
+	mux.HandleFunc("GET /api/vault/{id}/references", vaultH.References)
+	mux.HandleFunc("GET /api/vault/{id}/reveal", vaultH.Reveal)
 
 	// Session routes
 	mux.HandleFunc("POST /api/sessions", sessionH.Create)

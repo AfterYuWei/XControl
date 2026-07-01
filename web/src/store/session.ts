@@ -33,6 +33,7 @@ interface SessionStore {
   // Actions
   openTab: (profileId: string, profileName: string, host?: string, port?: number, username?: string) => Promise<string>
   openSftpTab: () => string
+  openVaultTab: () => string
   closeTab: (tabId: string) => void
   setActiveTab: (tabId: string) => void
   updateTabStatus: (tabId: string, status: TabStatus, sessionId?: string) => void
@@ -169,6 +170,29 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       profileName: 'SFTP',
       sessionId: null,
       status: 'disconnected',
+    }
+    set((state) => ({
+      tabs: [...state.tabs, newTab],
+      activeTabId: tabId,
+    }))
+    return tabId
+  },
+
+  openVaultTab: () => {
+    // vault 标签页全局唯一：已存在则聚焦，避免重复打开
+    const existing = get().tabs.find((t) => t.kind === 'vault')
+    if (existing) {
+      set({ activeTabId: existing.id })
+      return existing.id
+    }
+    const tabId = `vault-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+    const newTab: TerminalTab = {
+      id: tabId,
+      kind: 'vault',
+      profileId: '',
+      profileName: 'Vault',
+      sessionId: null,
+      status: 'connected',
     }
     set((state) => ({
       tabs: [...state.tabs, newTab],

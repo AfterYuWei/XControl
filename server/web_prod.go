@@ -5,6 +5,8 @@ package main
 import (
 	"embed"
 	"io/fs"
+
+	"github.com/yuweinfo/xcontrol/config"
 )
 
 // embeddedWeb 在 prod 构建时把前端构建产物（web_dist/）嵌入到二进制中。
@@ -20,4 +22,9 @@ func WebFS() fs.FS {
 		return nil
 	}
 	return sub
+}
+
+// SetDevDefaults 在生产模式下为空实现（不覆盖配置）。
+func SetDevDefaults(cfg *config.Config) {
+	// 生产模式不修改配置，保持环境变量或默认值
 }

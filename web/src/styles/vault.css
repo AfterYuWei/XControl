@@ -1,0 +1,533 @@
+/* ──────────────────────────────────────────────────────────────
+   密钥保险箱样式
+   所有颜色使用语义主题变量，确保明暗模式可读。
+   禁用 var(--term-fg)（未定义，浅色模式不可见）。
+   ────────────────────────────────────────────────────────────── */
+
+/* ── 主视图容器 ── */
+.vault-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+/* ── 顶部工具栏 ── */
+.vault-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  flex-shrink: 0;
+}
+
+.vault-toolbar-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg-2);
+  white-space: nowrap;
+  margin-right: 4px;
+}
+
+.vault-toolbar-filter {
+  min-width: 110px;
+}
+
+.vault-toolbar-search {
+  flex: 1;
+  max-width: 260px;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--fg-2);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.vault-toolbar-search:focus {
+  border-color: var(--accent);
+}
+
+.vault-toolbar-search::placeholder {
+  color: var(--fg-4);
+}
+
+.vault-toolbar-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* ── 列表容器 ── */
+.vault-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 8px;
+}
+
+/* ── 列表行 ── */
+.vault-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background 0.12s;
+}
+
+.vault-row:hover {
+  background: var(--accent-bg2);
+}
+
+.vault-row-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.vault-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.vault-row-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.vault-row-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 280px;
+}
+
+.vault-row-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 500;
+  border-radius: 4px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.vault-row-badge-passphrase {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+.vault-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--fg-4);
+  flex-wrap: wrap;
+}
+
+.vault-row-fp {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.vault-row-sep {
+  opacity: 0.5;
+}
+
+.vault-row-remark {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+.vault-row-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.vault-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  color: var(--fg-4);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.vault-act:hover {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.vault-act-danger:hover {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+.vault-act:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── 掩码文本 (VaultRevealText) ── */
+.vault-reveal {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  color: var(--fg-2);
+}
+
+.vault-reveal-multi {
+  align-items: flex-start;
+}
+
+.vault-reveal-value {
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+.vault-reveal-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--fg-4);
+  cursor: pointer;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.vault-reveal-toggle:hover {
+  color: var(--accent);
+  background: var(--accent-bg);
+}
+
+.vault-reveal-empty {
+  color: var(--fg-4);
+  font-size: 12px;
+}
+
+/* ── 表单辅助 ── */
+.vault-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.vault-input-with-action {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.vault-input-with-action > input {
+  flex: 1;
+}
+
+.vault-textarea-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 4px;
+}
+
+/* ── 密码生成器 ── */
+.vault-gen-pwd {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  margin-top: 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
+
+.vault-gen-pwd-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.vault-gen-pwd-label {
+  font-size: 12px;
+  color: var(--fg-2);
+  white-space: nowrap;
+  min-width: 56px;
+}
+
+.vault-gen-pwd-slider {
+  flex: 1;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.vault-gen-pwd-charset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.vault-gen-pwd-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--fg-2);
+  cursor: pointer;
+}
+
+.vault-gen-pwd-check input {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.vault-gen-pwd-result {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.vault-gen-pwd-output {
+  flex: 1;
+}
+
+.vault-gen-pwd-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ── 密钥对生成弹窗 ── */
+.vault-gen-dialog-content {
+  max-width: 600px;
+}
+
+.vault-gen-result {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.vault-gen-result-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vault-gen-result-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fg-2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.vault-gen-result-fp {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  color: var(--fg-4);
+}
+
+/* ── 空态/错误态/加载态 ── */
+.vault-empty,
+.vault-error,
+.vault-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 100%;
+  padding: 40px 20px;
+  color: var(--fg-4);
+  text-align: center;
+}
+
+.vault-empty-icon,
+.vault-error-icon {
+  opacity: 0.5;
+}
+
+.vault-empty-title,
+.vault-error-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg-2);
+}
+
+.vault-empty-desc,
+.vault-error-desc {
+  font-size: 12px;
+  color: var(--fg-4);
+  max-width: 280px;
+}
+
+.vault-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: vault-spin 0.8s linear infinite;
+}
+
+@keyframes vault-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── 删除确认弹窗 ── */
+.vault-delete-refs {
+  margin: 10px 0;
+  padding: 10px;
+  background: var(--red-bg);
+  border: 1px solid var(--red);
+  border-radius: 6px;
+}
+
+.vault-delete-refs-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--red);
+  margin-bottom: 6px;
+}
+
+.vault-delete-refs-list {
+  font-size: 12px;
+  color: var(--fg-2);
+  padding-left: 16px;
+  margin: 0;
+}
+
+.vault-delete-refs-list li {
+  margin: 2px 0;
+}
+
+/* ── Vault 选择弹窗 ── */
+.vault-select-dialog-content {
+  max-width: 560px;
+}
+
+.vault-select-search {
+  width: 100%;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--fg-2);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+  margin-bottom: 10px;
+}
+
+.vault-select-search:focus {
+  border-color: var(--accent);
+}
+
+.vault-select-list {
+  max-height: 360px;
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
+
+.vault-select-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background 0.12s;
+}
+
+.vault-select-row:last-child {
+  border-bottom: none;
+}
+
+.vault-select-row:hover {
+  background: var(--accent-bg2);
+}
+
+.vault-select-row.selected {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.vault-select-empty {
+  padding: 24px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--fg-4);
+}
+
+/* ── Vault 选择按钮 (ProfileForm 内) ── */
+.vault-select-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  font-size: 13px;
+  color: var(--fg-2);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.vault-select-btn:hover {
+  border-color: var(--accent);
+}
+
+.vault-select-btn-placeholder {
+  color: var(--fg-4);
+}
+
+.vault-select-btn-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

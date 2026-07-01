@@ -15,6 +15,7 @@ import (
 func main() {
 	// Load config
 	cfg := config.Load()
+	SetDevDefaults(cfg) // 开发模式覆盖默认配置
 
 	// Setup logger
 	level := slog.LevelInfo
@@ -23,7 +24,7 @@ func main() {
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
 
-	slog.Info("starting xcontrol server", "port", cfg.Port)
+	slog.Info("starting xcontrol server", "port", cfg.Port, "log_level", cfg.LogLevel)
 
 	// Initialize database
 	db, err := store.InitDB(cfg.DBPath)

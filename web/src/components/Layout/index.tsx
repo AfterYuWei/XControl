@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Search, X, FolderUp, Settings } from 'lucide-react'
+import { Search, X, FolderUp, Settings, KeyRound } from 'lucide-react'
 import { Sidebar } from '@/components/Sidebar'
 import { TerminalView } from '@/components/Terminal'
 import { StatusBar } from '@/components/StatusBar'
@@ -13,7 +13,7 @@ import { useSettingsStore } from '@/store/settings'
 import { useWindowControls } from '@/hooks/useWindowControls'
 
 export function Layout() {
-  const { tabs, openSftpTab } = useSessionStore()
+  const { tabs, openSftpTab, openVaultTab } = useSessionStore()
   const { sidebarWidth, setSidebarWidth } = useSettingsStore()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -108,6 +108,14 @@ export function Layout() {
             onClick={() => openSftpTab()}
           >
             <FolderUp size={14} />
+          </button>
+          <button
+            className="hdr-icon-btn"
+            title="Vault"
+            aria-label="打开 Vault"
+            onClick={() => openVaultTab()}
+          >
+            <KeyRound size={14} />
           </button>
         </div>
 

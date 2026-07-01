@@ -96,6 +96,18 @@ func migrate(db *sql.DB) error {
 	if err := addColumnIfMissing(db, "profiles", "icon", "TEXT DEFAULT ''"); err != nil {
 		return fmt.Errorf("add profiles.icon: %w", err)
 	}
+	if err := addColumnIfMissing(db, "vault", "name", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return fmt.Errorf("add vault.name: %w", err)
+	}
+	if err := addColumnIfMissing(db, "vault", "remark", "TEXT DEFAULT ''"); err != nil {
+		return fmt.Errorf("add vault.remark: %w", err)
+	}
+	if err := addColumnIfMissing(db, "vault", "updated_at", "DATETIME"); err != nil {
+		return fmt.Errorf("add vault.updated_at: %w", err)
+	}
+	if err := addColumnIfMissing(db, "vault", "username", "TEXT DEFAULT ''"); err != nil {
+		return fmt.Errorf("add vault.username: %w", err)
+	}
 
 	return nil
 }

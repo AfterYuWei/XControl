@@ -114,7 +114,7 @@ func (h *SessionHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get credential from vault
-	var password, privKey, passphrase string
+	var password, privKey, passphrase, cert string
 	if profile.VaultID != "" {
 		cred, err := h.vault.Retrieve(profile.VaultID)
 		if err != nil {
@@ -123,6 +123,7 @@ func (h *SessionHandler) Create(w http.ResponseWriter, r *http.Request) {
 			password = cred.Password
 			privKey = cred.PrivKey
 			passphrase = cred.Passphrase
+			cert = cred.Cert
 		}
 	}
 
@@ -149,6 +150,7 @@ func (h *SessionHandler) Create(w http.ResponseWriter, r *http.Request) {
 			Password:   password,
 			PrivKey:    privKey,
 			Passphrase: passphrase,
+			Cert:       cert,
 		}
 
 		driver, err := h.pm.Create("ssh", opts)

@@ -3,31 +3,32 @@ package model
 import "time"
 
 type Profile struct {
-	ID         string    `json:"id"`
-	Name       string    `json:"name"`
-	Host       string    `json:"host"`
-	Port       int       `json:"port"`
-	Username   string    `json:"username"`
-	AuthType   string    `json:"auth_type"` // password | key | agent
-	Icon       string    `json:"icon,omitempty"` // line-icon key, e.g. "server", "database"
-	VaultID    string    `json:"vault_id,omitempty"`
-	GroupID    string    `json:"group_id,omitempty"`
-	Tags       []string  `json:"tags"`
-	Options    string    `json:"options,omitempty"` // JSON string
-	Note       string    `json:"note,omitempty"`
-	SortOrder  int       `json:"sort_order"`
+	ID         string     `json:"id"`
+	Name       string     `json:"name"`
+	Host       string     `json:"host"`
+	Port       int        `json:"port"`
+	Username   string     `json:"username"`
+	AuthType   string     `json:"auth_type"`      // password | key | agent
+	Icon       string     `json:"icon,omitempty"` // line-icon key, e.g. "server", "database"
+	VaultID    string     `json:"vault_id,omitempty"`
+	GroupID    string     `json:"group_id,omitempty"`
+	Tags       []string   `json:"tags"`
+	Options    string     `json:"options,omitempty"` // JSON string
+	Note       string     `json:"note,omitempty"`
+	SortOrder  int        `json:"sort_order"`
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
 }
 
 type ProfileCreateRequest struct {
-	Name     string   `json:"name"`
-	Host     string   `json:"host"`
-	Port     int      `json:"port"`
-	Username string   `json:"username"`
+	Name       string   `json:"name"`
+	Host       string   `json:"host"`
+	Port       int      `json:"port"`
+	Username   string   `json:"username"`
 	AuthType   string   `json:"auth_type"`
 	Icon       string   `json:"icon,omitempty"`
+	VaultID    string   `json:"vault_id,omitempty"`
 	Password   string   `json:"password,omitempty"`
 	PrivKey    string   `json:"private_key,omitempty"`
 	Passphrase string   `json:"passphrase,omitempty"`

@@ -19,6 +19,7 @@ type DriverOpts struct {
 	Password   string
 	PrivKey    string
 	Passphrase string
+	Cert       string      // optional SSH certificate (OpenSSH format)
 	JumpHost   *DriverOpts // optional jump host
 }
 

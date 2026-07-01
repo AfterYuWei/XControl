@@ -29,7 +29,7 @@ type ServerDetailSession struct {
 	Entry     *connpool.Entry // shared connection from pool
 	Status    string          // connecting | connected | disconnected
 	Error     string
-	HomeDir   string          // User's home directory
+	HomeDir   string // User's home directory
 	CreatedAt time.Time
 
 	cancel context.CancelFunc
@@ -78,7 +78,7 @@ func (h *ServerDetailHandler) CreateSession(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	var password, privKey, passphrase string
+	var password, privKey, passphrase, cert string
 	if profile.VaultID != "" {
 		cred, err := h.vault.Retrieve(profile.VaultID)
 		if err != nil {
@@ -87,6 +87,7 @@ func (h *ServerDetailHandler) CreateSession(w http.ResponseWriter, r *http.Reque
 			password = cred.Password
 			privKey = cred.PrivKey
 			passphrase = cred.Passphrase
+			cert = cred.Cert
 		}
 	}
 
@@ -97,6 +98,7 @@ func (h *ServerDetailHandler) CreateSession(w http.ResponseWriter, r *http.Reque
 		Password:   password,
 		PrivKey:    privKey,
 		Passphrase: passphrase,
+		Cert:       cert,
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -648,8 +650,12 @@ func (h *ServerDetailHandler) collectMetrics(entry *connpool.Entry) model.Server
 				tx2, _ := strconv.ParseInt(p2[2], 10, 64)
 				rx := rx2 - rx1
 				tx := tx2 - tx1
-				if rx < 0 { rx = 0 }
-				if tx < 0 { tx = 0 }
+				if rx < 0 {
+					rx = 0
+				}
+				if tx < 0 {
+					tx = 0
+				}
 				metrics.NetDetail = append(metrics.NetDetail, model.NetIfStat{
 					Name: p1[0], Rx: rx, Tx: tx,
 				})
@@ -658,7 +664,6 @@ func (h *ServerDetailHandler) collectMetrics(entry *connpool.Entry) model.Server
 			}
 		}
 	}
-
 
 	if metrics.MemTotal > 0 {
 		metrics.MemPercent = float64(metrics.MemUsed) / float64(metrics.MemTotal) * 100

@@ -1,7 +1,17 @@
 import { Sun, Moon, Monitor } from 'lucide-react'
 import { useSettingsStore } from '@/store/settings'
 
-export function ThemeToggle({ className = 'tab-act' }: { className?: string }) {
+interface ThemeToggleProps {
+  className?: string
+  showLabel?: boolean
+  buttonLabel?: string
+}
+
+export function ThemeToggle({
+  className = 'tab-act',
+  showLabel = false,
+  buttonLabel = '主题',
+}: ThemeToggleProps) {
   // 订阅 systemRevision：system 模式下系统主题变化时 store 会自增该值，
   // 触发本组件重渲染，使 isDark 与 tooltip 实时跟随系统深浅变化。
   const { theme, setTheme, systemRevision } = useSettingsStore()
@@ -23,7 +33,7 @@ export function ThemeToggle({ className = 'tab-act' }: { className?: string }) {
   }
 
   const Icon = theme === 'system' ? Monitor : isDark ? Moon : Sun
-  const label =
+  const tooltipLabel =
     theme === 'system'
       ? `Theme: System (${isDark ? 'Dark' : 'Light'})`
       : isDark
@@ -33,11 +43,12 @@ export function ThemeToggle({ className = 'tab-act' }: { className?: string }) {
   return (
     <button
       className={className}
-      data-tip={label}
+      data-tip={tooltipLabel}
       onClick={cycle}
       aria-label="Toggle theme"
     >
       <Icon size={13} />
+      {showLabel ? <span className="hdr-icon-btn-label">{buttonLabel}</span> : null}
     </button>
   )
 }

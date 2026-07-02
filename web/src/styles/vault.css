@@ -25,6 +25,9 @@
 }
 
 .vault-toolbar-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 13px;
   font-weight: 600;
   color: var(--fg-2);
@@ -334,19 +337,52 @@
 /* ── 密钥对生成弹窗 ── */
 .vault-gen-dialog-content {
   max-width: 600px;
+  padding-bottom: 20px;
+}
+
+.vault-gen-header {
+  margin-bottom: 2px;
+}
+
+.vault-gen-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+}
+
+.vault-gen-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-3);
+  letter-spacing: 0.02em;
+}
+
+.vault-gen-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.vault-gen-primary {
+  align-self: flex-end;
+  min-width: 124px;
 }
 
 .vault-gen-result {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-top: 12px;
+  gap: 14px;
+  margin-top: 14px;
 }
 
 .vault-gen-result-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .vault-gen-result-label {
@@ -362,6 +398,16 @@
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 11px;
   color: var(--fg-4);
+}
+
+@media (max-width: 720px) {
+  .vault-gen-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .vault-gen-primary {
+    width: 100%;
+  }
 }
 
 /* ── 空态/错误态/加载态 ── */

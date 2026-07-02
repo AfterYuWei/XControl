@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/yuweinfo/xcontrol/connpool"
+	"github.com/yuweinfo/xcontrol/crypto"
 	"github.com/yuweinfo/xcontrol/fileutil"
 	"github.com/yuweinfo/xcontrol/model"
 	"github.com/yuweinfo/xcontrol/protocol"
@@ -45,14 +46,16 @@ type ServerDetailHandler struct {
 	mu       sync.RWMutex
 	profiles store.ProfileStore
 	vault    store.VaultStore
+	encryptor *crypto.Encryptor
 	pool     *connpool.Pool
 }
 
-func NewServerDetailHandler(ps store.ProfileStore, vs store.VaultStore, pool *connpool.Pool) *ServerDetailHandler {
+func NewServerDetailHandler(ps store.ProfileStore, vs store.VaultStore, enc *crypto.Encryptor, pool *connpool.Pool) *ServerDetailHandler {
 	return &ServerDetailHandler{
 		sessions: make(map[string]*ServerDetailSession),
 		profiles: ps,
 		vault:    vs,
+		encryptor: enc,
 		pool:     pool,
 	}
 }
@@ -79,26 +82,25 @@ func (h *ServerDetailHandler) CreateSession(w http.ResponseWriter, r *http.Reque
 	}
 
 	var password, privKey, passphrase, cert string
-	if profile.VaultID != "" {
-		cred, err := h.vault.Retrieve(profile.VaultID)
-		if err != nil {
-			slog.Warn("server detail: failed to retrieve vault credential", "error", err)
-		} else {
-			password = cred.Password
-			privKey = cred.PrivKey
-			passphrase = cred.Passphrase
-			cert = cred.Cert
-		}
+	cred, err := resolveProfileCredential(profile, h.vault, h.encryptor)
+	if err != nil {
+		slog.Warn("server detail: failed to resolve credential", "error", err)
+	} else {
+		password = cred.Password
+		privKey = cred.PrivKey
+		passphrase = cred.Passphrase
+		cert = cred.Cert
 	}
 
 	opts := protocol.DriverOpts{
-		Host:       profile.Host,
-		Port:       profile.Port,
-		Username:   profile.Username,
-		Password:   password,
-		PrivKey:    privKey,
-		Passphrase: passphrase,
-		Cert:       cert,
+		Host:               profile.Host,
+		Port:               profile.Port,
+		Username:           profile.Username,
+		Password:           password,
+		PrivKey:            privKey,
+		Passphrase:         passphrase,
+		Cert:               cert,
+		HostKeyFingerprint: profileHostKeyFingerprint(profile.Options),
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)

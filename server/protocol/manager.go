@@ -13,14 +13,15 @@ type Manager struct {
 type DriverFactory func(opts DriverOpts) (Driver, error)
 
 type DriverOpts struct {
-	Host       string
-	Port       int
-	Username   string
-	Password   string
-	PrivKey    string
-	Passphrase string
-	Cert       string      // optional SSH certificate (OpenSSH format)
-	JumpHost   *DriverOpts // optional jump host
+	Host               string
+	Port               int
+	Username           string
+	Password           string
+	PrivKey            string
+	Passphrase         string
+	Cert               string      // optional SSH certificate (OpenSSH format)
+	HostKeyFingerprint string      // expected SSH host key fingerprint (SHA256:...)
+	JumpHost           *DriverOpts // optional jump host
 }
 
 func NewManager() *Manager {

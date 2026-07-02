@@ -47,7 +47,7 @@ function startBackend(port) {
     XCONTROL_PORT: String(port),
     XCONTROL_DB_PATH: path.join(userData, 'xcontrol.db'),
     XCONTROL_KEY_PATH: path.join(userData, 'key'),
-    XCONTROL_LOG_LEVEL: 'info',
+    XCONTROL_LOG_LEVEL: 'debug',
   })
 
   backendProcess = spawn(exe, [], {

@@ -15,9 +15,18 @@ import (
 // other protocol drivers (e.g. SFTP) can reuse the same authentication logic.
 func BuildSSHConfig(opts protocol.DriverOpts) (*gossh.ClientConfig, error) {
 	config := &gossh.ClientConfig{
-		User:            opts.Username,
-		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
-		Timeout:         10 * time.Second,
+		User:    opts.Username,
+		Timeout: 10 * time.Second,
+	}
+	config.HostKeyCallback = func(_ string, _ net.Addr, key gossh.PublicKey) error {
+		if opts.HostKeyFingerprint == "" {
+			return nil
+		}
+		actual := gossh.FingerprintSHA256(key)
+		if actual != opts.HostKeyFingerprint {
+			return fmt.Errorf("host key fingerprint mismatch: expected %s, got %s", opts.HostKeyFingerprint, actual)
+		}
+		return nil
 	}
 
 	if opts.Password != "" {

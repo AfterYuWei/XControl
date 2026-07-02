@@ -100,6 +100,7 @@ export function Layout() {
                 <line x1="6" y1="3" x2="6" y2="13" />
               </svg>
             )}
+            <span className="hdr-icon-btn-label">侧栏</span>
           </button>
           <button
             className="hdr-icon-btn"
@@ -108,14 +109,16 @@ export function Layout() {
             onClick={() => openSftpTab()}
           >
             <FolderUp size={14} />
+            <span className="hdr-icon-btn-label">SFTP</span>
           </button>
           <button
             className="hdr-icon-btn"
-            title="Vault"
+            title="Vaults"
             aria-label="打开 Vault"
             onClick={() => openVaultTab()}
           >
             <KeyRound size={14} />
+            <span className="hdr-icon-btn-label">Vaults</span>
           </button>
         </div>
 
@@ -146,15 +149,16 @@ export function Layout() {
 
         {/* 右：设置 + 主题切换 */}
         <div className="header-right">
+          <ThemeToggle className="hdr-icon-btn" showLabel buttonLabel="主题" />
           <button
-            className="tab-act"
+            className="hdr-icon-btn"
             data-tip="设置"
             aria-label="设置"
             onClick={() => setSettingsOpen(true)}
           >
             <Settings size={13} />
+            <span className="hdr-icon-btn-label">设置</span>
           </button>
-          <ThemeToggle className="tab-act" />
         </div>
 
         {/* 窗口控制按钮：仅 Windows/Linux 桌面环境渲染（macOS 用系统交通灯）。

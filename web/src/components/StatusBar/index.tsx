@@ -1,9 +1,9 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { FolderUp, ChevronLeft, ChevronRight, KeyRound } from 'lucide-react'
+import { FolderUp, ChevronLeft, ChevronRight, KeyRound, Plus } from 'lucide-react'
 import { useSessionStore } from '@/store/session'
 
 export function StatusBar() {
-  const { tabs, activeTabId, setActiveTab, closeTab } = useSessionStore()
+  const { tabs, activeTabId, setActiveTab, closeTab, openDraftTab } = useSessionStore()
   const [time, setTime] = useState('')
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(false)
@@ -138,7 +138,7 @@ export function StatusBar() {
               ) : (
                 <span className={`sb-dot ${dc}`} aria-hidden="true" />
               )}
-              <span className="sb-name">{isSftp ? 'SFTP' : isVault ? 'Vault' : tab.profileName}</span>
+              <span className="sb-name">{isSftp ? 'SFTP' : isVault ? 'Vaults' : tab.profileName}</span>
               <button
                 className="sb-x"
                 aria-label={`关闭会话 ${tab.profileName}`}
@@ -152,6 +152,15 @@ export function StatusBar() {
             </div>
           )
         })}
+          <button
+            className="sb-tab sb-tab-add"
+            type="button"
+            aria-label="新建连接标签页"
+            title="新建连接标签页"
+            onClick={() => openDraftTab()}
+          >
+            <Plus size={11} aria-hidden="true" />
+          </button>
         </div>
         {canScrollRight && (
           <button

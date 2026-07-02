@@ -73,7 +73,7 @@ export function VaultView() {
       <div className="vault-toolbar">
         <span className="vault-toolbar-title">
           <KeyRound size={14} style={{ verticalAlign: '-2px', marginRight: '4px' }} />
-          Vault
+          Vaults
         </span>
         <div className="vault-toolbar-filter">
           <Select

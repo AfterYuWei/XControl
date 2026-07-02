@@ -20,6 +20,10 @@ import (
 func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS) http.Handler {
 	mux := http.NewServeMux()
 
+	if err := store.BackfillProfileInlineCredentials(db, encryptor); err != nil {
+		panic(err)
+	}
+
 	// Initialize stores
 	profileStore := store.NewProfileStore(db)
 	groupStore := store.NewGroupStore(db)
@@ -48,11 +52,11 @@ func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS) http.Handle
 	groupH := handler.NewGroupHandler(groupStore, profileStore)
 	snippetH := handler.NewSnippetHandler(snippetStore)
 	vaultH := handler.NewVaultHandler(vaultStore, auditStore)
-	sessionH := handler.NewSessionHandler(profileStore, vaultStore, auditStore, pm)
+	sessionH := handler.NewSessionHandler(profileStore, vaultStore, encryptor, auditStore, pm)
 	wsH := handler.NewWSHandler(hub, sessionH)
 	transferMgr := handler.NewTransferManager(sftpHub)
-	sftpH := handler.NewSftpHandler(profileStore, vaultStore, auditStore, pm, sftpHub, transferMgr, pool)
-	serverDetailH := handler.NewServerDetailHandler(profileStore, vaultStore, pool)
+	sftpH := handler.NewSftpHandler(profileStore, vaultStore, encryptor, auditStore, pm, sftpHub, transferMgr, pool)
+	serverDetailH := handler.NewServerDetailHandler(profileStore, vaultStore, encryptor, pool)
 	editH := handler.NewEditHandler(sftpH, serverDetailH)
 
 	// Profile routes

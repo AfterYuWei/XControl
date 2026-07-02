@@ -239,11 +239,13 @@
 /* Shared icon button used in the sidebar header (collapse / new connection).
    Matches the tabbar .tab-act sizing for visual consistency. */
 .hdr-icon-btn {
-  width: 26px;
+  min-width: 26px;
   height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
   border: none;
   background: transparent;
   color: var(--fg-4);
@@ -265,6 +267,12 @@
 .hdr-icon-btn.active:hover {
   background: var(--accent-bg);
   color: var(--accent-hi);
+}
+.hdr-icon-btn-label {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
 }
 .search-wrap {
   position: relative;

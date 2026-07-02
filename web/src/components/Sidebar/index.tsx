@@ -110,7 +110,19 @@ export function Sidebar() {
   }, [tabs, activeTabId])
 
   const handleConnect = (profile: Profile) => {
-    openTab(profile.id, profile.name, profile.host, profile.port, profile.username)
+    const shouldReuseActiveDraft =
+      activeTab?.kind === 'terminal' &&
+      !activeTab.profileId &&
+      !activeTab.sessionId
+
+    openTab(
+      profile.id,
+      profile.name,
+      profile.host,
+      profile.port,
+      profile.username,
+      shouldReuseActiveDraft ? activeTab.id : undefined,
+    )
   }
 
   const handleEditProfile = (profile: Profile) => {

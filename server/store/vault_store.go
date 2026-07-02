@@ -161,12 +161,12 @@ func (s *sqliteVaultStore) Delete(id string) error {
 
 func (s *sqliteVaultStore) RefCount(id string) (int, error) {
 	var count int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM profiles WHERE vault_id = ?`, id).Scan(&count)
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM profiles WHERE auth_type = 'vault' AND vault_id = ?`, id).Scan(&count)
 	return count, err
 }
 
 func (s *sqliteVaultStore) References(id string) ([]model.ProfileRef, error) {
-	rows, err := s.db.Query(`SELECT id, name FROM profiles WHERE vault_id = ?`, id)
+	rows, err := s.db.Query(`SELECT id, name FROM profiles WHERE auth_type = 'vault' AND vault_id = ?`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +186,8 @@ func (s *sqliteVaultStore) References(id string) ([]model.ProfileRef, error) {
 func (s *sqliteVaultStore) Get(id string) (*model.VaultItem, error) {
 	var (
 		vType, data, name, username, remark, fingerprint string
-		createdAt, updatedAt                             time.Time
+		createdAt                                        time.Time
+		updatedAt                                        sql.NullTime
 	)
 	err := s.db.QueryRow(
 		`SELECT type, data, name, username, remark, fingerprint, created_at, updated_at FROM vault WHERE id = ?`,
@@ -201,6 +202,10 @@ func (s *sqliteVaultStore) Get(id string) (*model.VaultItem, error) {
 	if decrypted, derr := s.encryptor.Decrypt(data); derr == nil {
 		hasPassphrase = s.detectPassphrase(decrypted, vType)
 	}
+	finalUpdatedAt := createdAt
+	if updatedAt.Valid {
+		finalUpdatedAt = updatedAt.Time
+	}
 
 	return &model.VaultItem{
 		ID:            id,
@@ -212,27 +217,41 @@ func (s *sqliteVaultStore) Get(id string) (*model.VaultItem, error) {
 		RefCount:      refCount,
 		HasPassphrase: hasPassphrase,
 		CreatedAt:     createdAt,
-		UpdatedAt:     updatedAt,
+		UpdatedAt:     finalUpdatedAt,
 	}, nil
 }
 
 func (s *sqliteVaultStore) List(filter model.VaultListFilter) ([]*model.VaultItem, error) {
-	query := `SELECT id, type, data, name, username, remark, fingerprint, created_at, updated_at FROM vault`
+	query := `SELECT
+		v.id,
+		v.type,
+		v.data,
+		v.name,
+		v.username,
+		v.remark,
+		v.fingerprint,
+		v.created_at,
+		v.updated_at,
+		COUNT(p.id) AS ref_count
+	FROM vault v
+	LEFT JOIN profiles p ON p.vault_id = v.id AND p.auth_type = 'vault'`
 	args := []any{}
 	where := []string{}
 	if filter.Type != "" {
-		where = append(where, "type = ?")
+		where = append(where, "v.type = ?")
 		args = append(args, filter.Type)
 	}
 	if filter.Q != "" {
-		where = append(where, "(name LIKE ? OR remark LIKE ? OR username LIKE ?)")
+		where = append(where, "(v.name LIKE ? OR v.remark LIKE ? OR v.username LIKE ?)")
 		pattern := "%" + filter.Q + "%"
 		args = append(args, pattern, pattern, pattern)
 	}
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
 	}
-	query += " ORDER BY updated_at DESC"
+	query += `
+	GROUP BY v.id, v.type, v.data, v.name, v.username, v.remark, v.fingerprint, v.created_at, v.updated_at
+	ORDER BY v.updated_at DESC`
 
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
@@ -244,15 +263,20 @@ func (s *sqliteVaultStore) List(filter model.VaultListFilter) ([]*model.VaultIte
 	for rows.Next() {
 		var (
 			vID, vType, data, name, username, remark, fingerprint string
-			createdAt, updatedAt                                  time.Time
+			createdAt                                             time.Time
+			updatedAt                                             sql.NullTime
+			refCount                                              int
 		)
-		if err := rows.Scan(&vID, &vType, &data, &name, &username, &remark, &fingerprint, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(&vID, &vType, &data, &name, &username, &remark, &fingerprint, &createdAt, &updatedAt, &refCount); err != nil {
 			return nil, err
 		}
-		refCount, _ := s.RefCount(vID)
 		hasPassphrase := false
 		if decrypted, derr := s.encryptor.Decrypt(data); derr == nil {
 			hasPassphrase = s.detectPassphrase(decrypted, vType)
+		}
+		finalUpdatedAt := createdAt
+		if updatedAt.Valid {
+			finalUpdatedAt = updatedAt.Time
 		}
 		items = append(items, &model.VaultItem{
 			ID:            vID,
@@ -264,7 +288,7 @@ func (s *sqliteVaultStore) List(filter model.VaultListFilter) ([]*model.VaultIte
 			RefCount:      refCount,
 			HasPassphrase: hasPassphrase,
 			CreatedAt:     createdAt,
-			UpdatedAt:     updatedAt,
+			UpdatedAt:     finalUpdatedAt,
 		})
 	}
 	return items, rows.Err()

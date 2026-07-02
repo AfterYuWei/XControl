@@ -25,6 +25,7 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
 
 	slog.Info("starting xcontrol server", "port", cfg.Port, "log_level", cfg.LogLevel)
+	slog.Debug("debug logging enabled", "port", cfg.Port, "db_path", cfg.DBPath, "key_path", cfg.KeyPath)
 
 	// Initialize database
 	db, err := store.InitDB(cfg.DBPath)

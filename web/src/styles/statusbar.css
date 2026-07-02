@@ -107,6 +107,16 @@
   background: var(--bg-active);
   color: var(--fg);
 }
+.sb-tab-add {
+  min-width: 18px;
+  max-width: 18px;
+  width: 18px;
+  justify-content: center;
+  padding: 0;
+}
+.sb-tab-add.active {
+  background: transparent;
+}
 .sb-dot {
   width: 5px;
   height: 5px;

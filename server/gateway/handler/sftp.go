@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/yuweinfo/xcontrol/connpool"
+	"github.com/yuweinfo/xcontrol/crypto"
 	"github.com/yuweinfo/xcontrol/fileutil"
 	"github.com/yuweinfo/xcontrol/model"
 	"github.com/yuweinfo/xcontrol/protocol"
@@ -58,6 +59,7 @@ type SftpHandler struct {
 	mu        sync.RWMutex
 	profiles  store.ProfileStore
 	vault     store.VaultStore
+	encryptor *crypto.Encryptor
 	audit     store.AuditStore
 	pm        *protocol.Manager
 	pool      *connpool.Pool
@@ -65,11 +67,12 @@ type SftpHandler struct {
 	hub       *ws.SftpHub
 }
 
-func NewSftpHandler(ps store.ProfileStore, vs store.VaultStore, as store.AuditStore, pm *protocol.Manager, hub *ws.SftpHub, transfers *TransferManager, pool *connpool.Pool) *SftpHandler {
+func NewSftpHandler(ps store.ProfileStore, vs store.VaultStore, enc *crypto.Encryptor, as store.AuditStore, pm *protocol.Manager, hub *ws.SftpHub, transfers *TransferManager, pool *connpool.Pool) *SftpHandler {
 	return &SftpHandler{
 		sessions:  make(map[string]*SftpSession),
 		profiles:  ps,
 		vault:     vs,
+		encryptor: enc,
 		audit:     as,
 		pm:        pm,
 		pool:      pool,
@@ -138,16 +141,14 @@ func (h *SftpHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		var password, privKey, passphrase, cert string
-		if profile.VaultID != "" {
-			cred, err := h.vault.Retrieve(profile.VaultID)
-			if err != nil {
-				slog.Warn("failed to retrieve vault credential", "error", err)
-			} else {
-				password = cred.Password
-				privKey = cred.PrivKey
-				passphrase = cred.Passphrase
-				cert = cred.Cert
-			}
+		cred, err := resolveProfileCredential(profile, h.vault, h.encryptor)
+		if err != nil {
+			slog.Warn("failed to resolve profile credential", "error", err)
+		} else {
+			password = cred.Password
+			privKey = cred.PrivKey
+			passphrase = cred.Passphrase
+			cert = cred.Cert
 		}
 
 		// Retain connection info for direct server-to-server transfer
@@ -160,13 +161,14 @@ func (h *SftpHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 		session.Cert = cert
 
 		opts := protocol.DriverOpts{
-			Host:       profile.Host,
-			Port:       profile.Port,
-			Username:   profile.Username,
-			Password:   password,
-			PrivKey:    privKey,
-			Passphrase: passphrase,
-			Cert:       cert,
+			Host:               profile.Host,
+			Port:               profile.Port,
+			Username:           profile.Username,
+			Password:           password,
+			PrivKey:            privKey,
+			Passphrase:         passphrase,
+			Cert:               cert,
+			HostKeyFingerprint: profileHostKeyFingerprint(profile.Options),
 		}
 
 		// Use connection pool: acquire SFTP ref (SSH ref not needed for pure SFTP)

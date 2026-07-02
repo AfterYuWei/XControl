@@ -19,6 +19,34 @@
   color: var(--fg-3) !important;
   letter-spacing: 0.01em;
 }
+.pf-field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.pf-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--fg-3);
+  border-radius: var(--r-xs);
+  padding: 5px 9px;
+  font: 500 12px / 1 var(--sans);
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.pf-upload-btn:hover:not(:disabled) {
+  color: var(--fg);
+  border-color: var(--fg-4);
+  background: var(--bg-hover);
+}
+.pf-upload-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 /* 2-column grid row for host:port / username:auth pairs. */
 .pf-grid-2 {
   display: grid;
@@ -42,6 +70,33 @@
 }
 .pf-input-group > input {
   padding-left: 38px;
+}
+.pf-input-group-action > input {
+  padding-left: 12px;
+  padding-right: 40px;
+}
+.pf-inline-action {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--fg-3);
+  cursor: pointer;
+  z-index: 2;
+  transition: color 0.12s;
+}
+.pf-inline-action:hover {
+  color: var(--fg);
+}
+.pf-help-text {
+  font: 400 12px / 1.5 var(--sans);
+  color: var(--fg-4);
 }
 /* Icon prefix button inside the name input. */
 .pf-icon-prefix-wrap {

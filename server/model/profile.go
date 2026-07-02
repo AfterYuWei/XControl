@@ -3,22 +3,23 @@ package model
 import "time"
 
 type Profile struct {
-	ID         string     `json:"id"`
-	Name       string     `json:"name"`
-	Host       string     `json:"host"`
-	Port       int        `json:"port"`
-	Username   string     `json:"username"`
-	AuthType   string     `json:"auth_type"`      // password | key | agent
-	Icon       string     `json:"icon,omitempty"` // line-icon key, e.g. "server", "database"
-	VaultID    string     `json:"vault_id,omitempty"`
-	GroupID    string     `json:"group_id,omitempty"`
-	Tags       []string   `json:"tags"`
-	Options    string     `json:"options,omitempty"` // JSON string
-	Note       string     `json:"note,omitempty"`
-	SortOrder  int        `json:"sort_order"`
-	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
-	UpdatedAt  time.Time  `json:"updated_at"`
+	ID               string     `json:"id"`
+	Name             string     `json:"name"`
+	Host             string     `json:"host"`
+	Port             int        `json:"port"`
+	Username         string     `json:"username"`
+	AuthType         string     `json:"auth_type"`      // password | key | agent | vault
+	Icon             string     `json:"icon,omitempty"` // line-icon key, e.g. "server", "database"
+	VaultID          string     `json:"vault_id,omitempty"`
+	InlineCredential string     `json:"-"`
+	GroupID          string     `json:"group_id,omitempty"`
+	Tags             []string   `json:"tags"`
+	Options          string     `json:"options,omitempty"` // JSON string
+	Note             string     `json:"note,omitempty"`
+	SortOrder        int        `json:"sort_order"`
+	LastUsedAt       *time.Time `json:"last_used_at,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
 type ProfileCreateRequest struct {
@@ -39,20 +40,21 @@ type ProfileCreateRequest struct {
 }
 
 type ProfileUpdateRequest struct {
-	Name       *string  `json:"name,omitempty"`
-	Host       *string  `json:"host,omitempty"`
-	Port       *int     `json:"port,omitempty"`
-	Username   *string  `json:"username,omitempty"`
-	AuthType   *string  `json:"auth_type,omitempty"`
-	Icon       *string  `json:"icon,omitempty"`
-	VaultID    *string  `json:"vault_id,omitempty"`
-	Password   *string  `json:"password,omitempty"`
-	PrivKey    *string  `json:"private_key,omitempty"`
-	Passphrase *string  `json:"passphrase,omitempty"`
-	GroupID    *string  `json:"group_id,omitempty"`
-	Tags       []string `json:"tags,omitempty"`
-	Options    *string  `json:"options,omitempty"`
-	Note       *string  `json:"note,omitempty"`
+	Name             *string  `json:"name,omitempty"`
+	Host             *string  `json:"host,omitempty"`
+	Port             *int     `json:"port,omitempty"`
+	Username         *string  `json:"username,omitempty"`
+	AuthType         *string  `json:"auth_type,omitempty"`
+	Icon             *string  `json:"icon,omitempty"`
+	VaultID          *string  `json:"vault_id,omitempty"`
+	InlineCredential *string  `json:"-"`
+	Password         *string  `json:"password,omitempty"`
+	PrivKey          *string  `json:"private_key,omitempty"`
+	Passphrase       *string  `json:"passphrase,omitempty"`
+	GroupID          *string  `json:"group_id,omitempty"`
+	Tags             []string `json:"tags,omitempty"`
+	Options          *string  `json:"options,omitempty"`
+	Note             *string  `json:"note,omitempty"`
 }
 
 type ProfileTestResult struct {

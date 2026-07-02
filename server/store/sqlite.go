@@ -96,6 +96,9 @@ func migrate(db *sql.DB) error {
 	if err := addColumnIfMissing(db, "profiles", "icon", "TEXT DEFAULT ''"); err != nil {
 		return fmt.Errorf("add profiles.icon: %w", err)
 	}
+	if err := addColumnIfMissing(db, "profiles", "inline_credential", "TEXT DEFAULT ''"); err != nil {
+		return fmt.Errorf("add profiles.inline_credential: %w", err)
+	}
 	if err := addColumnIfMissing(db, "vault", "name", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return fmt.Errorf("add vault.name: %w", err)
 	}
@@ -107,6 +110,9 @@ func migrate(db *sql.DB) error {
 	}
 	if err := addColumnIfMissing(db, "vault", "username", "TEXT DEFAULT ''"); err != nil {
 		return fmt.Errorf("add vault.username: %w", err)
+	}
+	if _, err := db.Exec(`UPDATE vault SET updated_at = created_at WHERE updated_at IS NULL`); err != nil {
+		return fmt.Errorf("backfill vault.updated_at: %w", err)
 	}
 
 	return nil

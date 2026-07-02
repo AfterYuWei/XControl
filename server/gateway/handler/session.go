@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/yuweinfo/xcontrol/crypto"
 	"github.com/yuweinfo/xcontrol/model"
 	"github.com/yuweinfo/xcontrol/protocol"
+	sshproto "github.com/yuweinfo/xcontrol/protocol/ssh"
 	"github.com/yuweinfo/xcontrol/store"
 )
 
@@ -72,15 +74,17 @@ type SessionHandler struct {
 	mu       sync.RWMutex
 	profiles store.ProfileStore
 	vault    store.VaultStore
+	encryptor *crypto.Encryptor
 	audit    store.AuditStore
 	pm       *protocol.Manager
 }
 
-func NewSessionHandler(ps store.ProfileStore, vs store.VaultStore, as store.AuditStore, pm *protocol.Manager) *SessionHandler {
+func NewSessionHandler(ps store.ProfileStore, vs store.VaultStore, enc *crypto.Encryptor, as store.AuditStore, pm *protocol.Manager) *SessionHandler {
 	return &SessionHandler{
 		sessions: make(map[string]*Session),
 		profiles: ps,
 		vault:    vs,
+		encryptor: enc,
 		audit:    as,
 		pm:       pm,
 	}
@@ -88,9 +92,10 @@ func NewSessionHandler(ps store.ProfileStore, vs store.VaultStore, as store.Audi
 
 func (h *SessionHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		ProfileID string `json:"profile_id"`
-		Cols      int    `json:"cols"`
-		Rows      int    `json:"rows"`
+		ProfileID                   string `json:"profile_id"`
+		Cols                        int    `json:"cols"`
+		Rows                        int    `json:"rows"`
+		ConfirmedHostKeyFingerprint string `json:"confirmed_host_key_fingerprint,omitempty"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_JSON", err.Error())
@@ -113,18 +118,39 @@ func (h *SessionHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get credential from vault
 	var password, privKey, passphrase, cert string
-	if profile.VaultID != "" {
-		cred, err := h.vault.Retrieve(profile.VaultID)
-		if err != nil {
-			slog.Warn("failed to retrieve vault credential", "error", err)
-		} else {
-			password = cred.Password
-			privKey = cred.PrivKey
-			passphrase = cred.Passphrase
-			cert = cred.Cert
-		}
+	cred, err := resolveProfileCredential(profile, h.vault, h.encryptor)
+	if err != nil {
+		slog.Warn("failed to resolve profile credential", "error", err)
+	} else {
+		password = cred.Password
+		privKey = cred.PrivKey
+		passphrase = cred.Passphrase
+		cert = cred.Cert
+	}
+
+	knownHostKeyFingerprint := profileHostKeyFingerprint(profile.Options)
+	currentHostKeyFingerprint, err := sshproto.InspectHostKeyFingerprint(r.Context(), protocol.DriverOpts{
+		Host:     profile.Host,
+		Port:     profile.Port,
+		Username: profile.Username,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "HOST_KEY_CHECK_FAILED", fmt.Sprintf("check host key failed: %v", err))
+		return
+	}
+	if knownHostKeyFingerprint != "" &&
+		knownHostKeyFingerprint != currentHostKeyFingerprint &&
+		req.ConfirmedHostKeyFingerprint != currentHostKeyFingerprint {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error": APIError{
+				Code:    "HOST_KEY_CHANGED",
+				Message: "检测到服务器主机指纹发生变化，请确认是否继续连接",
+			},
+			"host_fingerprint":       currentHostKeyFingerprint,
+			"known_host_fingerprint": knownHostKeyFingerprint,
+		})
+		return
 	}
 
 	sessionID := uuid.New().String()
@@ -144,13 +170,14 @@ func (h *SessionHandler) Create(w http.ResponseWriter, r *http.Request) {
 		ctx := context.Background()
 
 		opts := protocol.DriverOpts{
-			Host:       profile.Host,
-			Port:       profile.Port,
-			Username:   profile.Username,
-			Password:   password,
-			PrivKey:    privKey,
-			Passphrase: passphrase,
-			Cert:       cert,
+			Host:               profile.Host,
+			Port:               profile.Port,
+			Username:           profile.Username,
+			Password:           password,
+			PrivKey:            privKey,
+			Passphrase:         passphrase,
+			Cert:               cert,
+			HostKeyFingerprint: currentHostKeyFingerprint,
 		}
 
 		driver, err := h.pm.Create("ssh", opts)
@@ -200,6 +227,16 @@ func (h *SessionHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 		session.Shell = shell
 		session.Status = "connected"
+
+		if knownHostKeyFingerprint != currentHostKeyFingerprint {
+			if nextOptions, optErr := withProfileHostKeyFingerprint(profile.Options, currentHostKeyFingerprint); optErr != nil {
+				slog.Warn("failed to encode host key fingerprint", "profile_id", req.ProfileID, "error", optErr)
+			} else {
+				if err := h.profiles.Update(req.ProfileID, &model.ProfileUpdateRequest{Options: &nextOptions}); err != nil {
+					slog.Warn("failed to persist host key fingerprint", "profile_id", req.ProfileID, "error", err)
+				}
+			}
+		}
 
 		// Update last used
 		h.profiles.UpdateLastUsed(req.ProfileID)

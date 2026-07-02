@@ -1,26 +1,16 @@
-import { useState, useEffect } from 'react'
-import { Lock, KeyRound, ScrollText, Check } from 'lucide-react'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { useEffect, useState } from 'react'
+import { Check } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { vaultApi } from '@/api/vault'
 import { notify } from '@/store/notify'
-import { VAULT_TYPE_LABELS, type VaultItem, type VaultType } from '@/types/vault'
+import { VAULT_TYPE_LABELS, type VaultItem } from '@/types/vault'
+import { VAULT_TYPE_ICONS } from '@/lib/vaultIcons'
 
 interface VaultSelectDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   selectedId?: string
   onSelect: (item: VaultItem) => void
-}
-
-const TYPE_ICON: Record<VaultType, typeof Lock> = {
-  password: Lock,
-  private_key: KeyRound,
-  ssh_certificate: ScrollText,
 }
 
 export function VaultSelectDialog({ open, onOpenChange, selectedId, onSelect }: VaultSelectDialogProps) {
@@ -40,9 +30,9 @@ export function VaultSelectDialog({ open, onOpenChange, selectedId, onSelect }: 
 
   const filtered = search
     ? items.filter(
-        (i) =>
-          i.name.toLowerCase().includes(search.toLowerCase()) ||
-          i.remark.toLowerCase().includes(search.toLowerCase()),
+        (item) =>
+          item.name.toLowerCase().includes(search.toLowerCase()) ||
+          item.remark.toLowerCase().includes(search.toLowerCase()),
       )
     : items
 
@@ -61,20 +51,20 @@ export function VaultSelectDialog({ open, onOpenChange, selectedId, onSelect }: 
         <input
           type="text"
           className="vault-select-search"
-          placeholder="搜索名称/备注…"
+          placeholder="搜索名称 / 备注"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(event) => setSearch(event.target.value)}
           autoFocus
         />
 
         <div className="vault-select-list">
           {loading ? (
-            <div className="vault-select-empty">加载中…</div>
+            <div className="vault-select-empty">加载中...</div>
           ) : filtered.length === 0 ? (
             <div className="vault-select-empty">无匹配凭据</div>
           ) : (
             filtered.map((item) => {
-              const Icon = TYPE_ICON[item.type]
+              const Icon = VAULT_TYPE_ICONS[item.type]
               const isSelected = item.id === selectedId
               return (
                 <div
@@ -90,20 +80,12 @@ export function VaultSelectDialog({ open, onOpenChange, selectedId, onSelect }: 
                   <div className="vault-row-main">
                     <div className="vault-row-title">
                       <span className="vault-row-name">{item.name || '未命名'}</span>
-                      <span className={`vault-row-badge vault-row-badge-${item.type}`}>
-                        {VAULT_TYPE_LABELS[item.type]}
-                      </span>
+                      <span className={`vault-row-badge vault-row-badge-${item.type}`}>{VAULT_TYPE_LABELS[item.type]}</span>
                     </div>
                     <div className="vault-row-meta">
                       {item.username && (
                         <>
                           <span className="vault-row-user">{item.username}</span>
-                          <span className="vault-row-sep">·</span>
-                        </>
-                      )}
-                      {item.fingerprint && (
-                        <>
-                          <span className="vault-row-fp">指纹 {item.fingerprint}</span>
                           <span className="vault-row-sep">·</span>
                         </>
                       )}

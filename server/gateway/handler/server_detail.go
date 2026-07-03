@@ -19,6 +19,7 @@ import (
 	"github.com/yuweinfo/xcontrol/fileutil"
 	"github.com/yuweinfo/xcontrol/model"
 	"github.com/yuweinfo/xcontrol/protocol"
+	sshproto "github.com/yuweinfo/xcontrol/protocol/ssh"
 	"github.com/yuweinfo/xcontrol/store"
 )
 
@@ -135,7 +136,7 @@ func (h *ServerDetailHandler) CreateSession(w http.ResponseWriter, r *http.Reque
 		HostKeyFingerprint: profileHostKeyFingerprint(profile.Options),
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), sshproto.DefaultConnectTimeout+15*time.Second)
 	defer cancel()
 
 	// Acquire from connection pool — blocks until connected (or timeout)

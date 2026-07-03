@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/coder/websocket"
+	sshproto "github.com/yuweinfo/xcontrol/protocol/ssh"
 	"github.com/yuweinfo/xcontrol/ws"
 )
 
@@ -19,6 +20,8 @@ type WSHandler struct {
 	hub      *ws.Hub
 	sessions *SessionHandler
 }
+
+const sessionReadyTimeout = sshproto.DefaultConnectTimeout + 15*time.Second
 
 func NewWSHandler(hub *ws.Hub, sh *SessionHandler) *WSHandler {
 	return &WSHandler{hub: hub, sessions: sh}
@@ -44,7 +47,7 @@ func (h *WSHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	defer h.hub.Unregister(sessionID)
 
 	// Wait for session to be ready
-	session := h.waitForSession(sessionID, 30*time.Second)
+	session := h.waitForSession(sessionID, sessionReadyTimeout)
 	if session == nil {
 		// Check if there's a specific error from the session
 		errMsg := "session not found or connection timeout"

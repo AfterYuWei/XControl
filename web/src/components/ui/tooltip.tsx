@@ -7,9 +7,18 @@ interface TooltipProps {
   content: React.ReactNode
   side?: "top" | "bottom" | "left" | "right"
   hideWhenEmpty?: boolean
+  triggerClassName?: string
+  contentClassName?: string
 }
 
-export function Tooltip({ children, content, side = "top", hideWhenEmpty = true }: TooltipProps) {
+export function Tooltip({
+  children,
+  content,
+  side = "top",
+  hideWhenEmpty = true,
+  triggerClassName,
+  contentClassName,
+}: TooltipProps) {
   const triggerRef = React.useRef<HTMLDivElement>(null)
   const [visible, setVisible] = React.useState(false)
   const [pos, setPos] = React.useState({ top: 0, left: 0 })
@@ -52,6 +61,7 @@ export function Tooltip({ children, content, side = "top", hideWhenEmpty = true 
         ref={triggerRef}
         onMouseEnter={show}
         onMouseLeave={hide}
+        className={triggerClassName}
       >
         {children}
       </div>
@@ -72,12 +82,13 @@ export function Tooltip({ children, content, side = "top", hideWhenEmpty = true 
           }}
           className={cn(
             "fixed z-[9999] pointer-events-none",
-            "rounded-sm px-3 py-2 text-xs shadow-lg border",
+            "max-w-80 rounded-md border px-3 py-2.5 text-[11px] leading-5 shadow-[0_14px_36px_rgba(15,23,42,0.22)] backdrop-blur-sm",
             "animate-in fade-in-0 zoom-in-95",
+            contentClassName,
           )}
         >
           {typeof content === "string" ? (
-            <span className="whitespace-nowrap">{content}</span>
+            <span className="block whitespace-nowrap font-medium">{content}</span>
           ) : (
             content
           )}

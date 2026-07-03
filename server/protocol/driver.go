@@ -42,6 +42,13 @@ type CommandExecutor interface {
 	Exec(cmd string) (stdout []byte, stderr []byte, exitCode int, err error)
 }
 
+// ContextCommandExecutor is an optional extension of CommandExecutor that
+// allows callers to cancel or time-bound remote command execution.
+type ContextCommandExecutor interface {
+	CommandExecutor
+	ExecContext(ctx context.Context, cmd string) (stdout []byte, stderr []byte, exitCode int, err error)
+}
+
 // ConnectionLifecycle is an optional interface for drivers that support
 // connection health monitoring and death notifications. The connection pool
 // uses this to detect stale connections and evict them automatically.

@@ -24,6 +24,7 @@ export interface SessionTab {
   nextRetryAt?: number
   hostKeyFingerprint?: string
   knownHostKeyFingerprint?: string
+  detailAttached?: boolean
 }
 
 interface SessionStore {
@@ -76,6 +77,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       host,
       port,
       username,
+      detailAttached: false,
     }
 
     set((state) => ({
@@ -129,6 +131,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     if (tab?.sessionId) {
       sessionApi.close(tab.sessionId).catch(console.error)
     }
+    if (tab?.detailAttached && tab.profileId) {
+      useServerDetailStore.getState().disconnect(tab.profileId)
+    }
 
     set((state) => {
       const tabs = state.tabs.filter((t) => t.id !== tabId)
@@ -159,23 +164,38 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   updateTabStatus: (tabId, status, sessionId) => {
+    let shouldAttach = false
+    let attachProfileId = ''
+
     set((state) => ({
       tabs: state.tabs.map((tab) =>
         tab.id === tabId
-          ? {
-              ...tab,
-              status,
-              ...(sessionId ? { sessionId } : {}),
-            }
+          ? (() => {
+              const nextTab = {
+                ...tab,
+                status,
+                ...(sessionId ? { sessionId } : {}),
+              }
+
+              if (
+                status === 'connected' &&
+                tab.kind === 'terminal' &&
+                !!tab.profileId &&
+                !tab.detailAttached
+              ) {
+                shouldAttach = true
+                attachProfileId = tab.profileId
+                nextTab.detailAttached = true
+              }
+
+              return nextTab
+            })()
           : tab,
       ),
     }))
 
-    if (status === 'connected') {
-      const tab = get().tabs.find((t) => t.id === tabId)
-      if (tab?.profileId && tab.kind === 'terminal') {
-        useServerDetailStore.getState().connect(tab.profileId)
-      }
+    if (shouldAttach && attachProfileId) {
+      void useServerDetailStore.getState().connect(attachProfileId)
     }
   },
 

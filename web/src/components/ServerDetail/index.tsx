@@ -116,6 +116,23 @@ export function ServerDetail({
     return ''
   }
 
+  const statusText = isOff ? '未连接' : tab?.status === 'connecting' ? '连接中' : '已连接'
+  const connectionDisplay = `${host}:${port}`
+  const platformDisplay = info?.os || info?.kernel || '—'
+  const runtimeDisplay = info ? `${statusText} ${compactUptime(info.uptime)}` : statusText
+  const loadDisplay = info?.load_avg || '—'
+
+  const renderInfoTooltip = (rows: Array<{ label: string; value: string }>) => (
+    <div className="sdetail-tip">
+      {rows.filter((row) => row.value).map((row) => (
+        <div key={row.label} className="sdetail-tip-row">
+          <span className="sdetail-tip-label">{row.label}</span>
+          <span className="sdetail-tip-val">{row.value}</span>
+        </div>
+      ))}
+    </div>
+  )
+
   // Convert FileTreeNode to SftpEntry for dialogs
   const toSftpEntry = (node: FileTreeNode): SftpEntry => ({
     name: node.name,
@@ -266,10 +283,9 @@ export function ServerDetail({
       </div>
 
       {/* File browser header — outside the scroll area */}
-      <div className="sdetail-file-hdr" style={{ flexShrink: 0 }}>
+      <div className="sdetail-file-hdr">
         <button
-          className="psec-title sdetail-collapse-hdr"
-          style={{ padding: '8px 12px 6px', flex: 1 }}
+          className="psec-title sdetail-collapse-hdr sdetail-file-toggle"
           onClick={() => toggleFiles(tabId)}
           aria-label={detail.filesCollapsed ? '展开文件管理' : '折叠文件管理'}
           aria-expanded={!detail.filesCollapsed}
@@ -462,11 +478,9 @@ export function ServerDetail({
                   <div className="m-bar">
                     <div className="m-fill mem" style={{ width: metrics ? `${metrics.mem_percent}%` : '0%' }} />
                   </div>
-                  {metrics && (
-                    <div className="m-sub">
-                      <span>{formatBytes(metrics.mem_used)} / {formatBytes(metrics.mem_total)}</span>
-                    </div>
-                  )}
+                  <div className="m-sub">
+                    <span>{metrics ? `${formatBytes(metrics.mem_used)} / ${formatBytes(metrics.mem_total)}` : '—'}</span>
+                  </div>
                 </div>
               </Tooltip>
               <div className="metric" style={{ opacity: isOff || !metrics ? 0.4 : 1 }}>
@@ -477,11 +491,9 @@ export function ServerDetail({
                 <div className="m-bar">
                   <div className="m-fill disk" style={{ width: metrics ? `${metrics.disk_percent}%` : '0%' }} />
                 </div>
-                {metrics && (
-                  <div className="m-sub">
-                    <span>{formatBytes(metrics.disk_used)} / {formatBytes(metrics.disk_total)}</span>
-                  </div>
-                )}
+                <div className="m-sub">
+                  <span>{metrics ? `${formatBytes(metrics.disk_used)} / ${formatBytes(metrics.disk_total)}` : '—'}</span>
+                </div>
               </div>
               <Tooltip
                 side="top"
@@ -528,46 +540,56 @@ export function ServerDetail({
                 <span className="info-val">{info?.hostname || profileName}</span>
               </div>
               <div className="info-row">
-                <span className="info-label">系统</span>
-                <span className="info-val">{info?.os || '—'}</span>
+                <span className="info-label">连接</span>
+                <Tooltip
+                  triggerClassName="flex-1 min-w-0"
+                  content={renderInfoTooltip([
+                    { label: '用户', value: username },
+                    { label: '主机', value: host },
+                    { label: '端口', value: String(port) },
+                    { label: '地址', value: `${username}@${host}:${port}` },
+                  ])}
+                >
+                  <span className="info-val">{connectionDisplay}</span>
+                </Tooltip>
               </div>
               <div className="info-row">
-                <span className="info-label">内核</span>
-                <span className="info-val">{info?.kernel || '—'}</span>
-              </div>
-              <div className="info-row">
-                <span className="info-label">架构</span>
-                <span className="info-val">{info?.arch || '—'}</span>
-              </div>
-              <div className="info-row">
-                <span className="info-label">地址</span>
-                <span className="info-val">{host}:{port}</span>
-              </div>
-              <div className="info-row">
-                <span className="info-label">用户</span>
-                <span className="info-val">{username}</span>
+                <span className="info-label">平台</span>
+                <Tooltip
+                  triggerClassName="flex-1 min-w-0"
+                  content={renderInfoTooltip([
+                    { label: '系统', value: info?.os || '—' },
+                    { label: '内核', value: info?.kernel || '—' },
+                    { label: '架构', value: info?.arch || '—' },
+                  ])}
+                >
+                  <span className="info-val">{platformDisplay}</span>
+                </Tooltip>
               </div>
               <div className="info-row">
                 <span className="info-label">状态</span>
-                <span className="info-val">
-                  {isOff ? '未连接' : tab?.status === 'connecting' ? '连接中' : '已连接'}
-                </span>
+                <Tooltip
+                  triggerClassName="flex-1 min-w-0"
+                  content={renderInfoTooltip([
+                    { label: '连接', value: statusText },
+                    { label: '运行', value: info?.uptime || '—' },
+                  ])}
+                >
+                  <span className="info-val">{runtimeDisplay}</span>
+                </Tooltip>
               </div>
               <div className="info-row">
-                <span className="info-label">运行时间</span>
-                <span className="info-val" title={info?.uptime || ''}>
-                  {info ? compactUptime(info.uptime) : '—'}
-                </span>
-              </div>
-              <div className="info-row">
-                <span className="info-label">平均负载</span>
-                <span className="info-val" title={info?.load_avg_detail ? parseLoadDetail(info.load_avg_detail) : ''}>
-                  {info?.load_avg || '—'}
-                </span>
-              </div>
-              <div className="info-row">
-                <span className="info-label">CPU 核心</span>
-                <span className="info-val">{info?.cpus || '—'}</span>
+                <span className="info-label">负载</span>
+                <Tooltip
+                  triggerClassName="flex-1 min-w-0"
+                  content={renderInfoTooltip([
+                    { label: '平均', value: info?.load_avg || '—' },
+                    { label: '细节', value: parseLoadDetail(info?.load_avg_detail || '') || '—' },
+                    { label: '核心', value: info?.cpus ? `${info.cpus} 核` : '—' },
+                  ])}
+                >
+                  <span className="info-val">{loadDisplay}</span>
+                </Tooltip>
               </div>
             </div>
           )}

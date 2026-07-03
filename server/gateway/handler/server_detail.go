@@ -36,12 +36,37 @@ type ServerDetailSession struct {
 	cancel   context.CancelFunc
 	done     chan struct{}
 	doneOnce sync.Once
+
+	sampleMu   sync.Mutex
+	lastSample *rawMetricsSnapshot
 }
 
 func (s *ServerDetailSession) closeDone() {
 	s.doneOnce.Do(func() {
 		close(s.done)
 	})
+}
+
+type cpuCounters struct {
+	total uint64
+	idle  uint64
+}
+
+type netCounters struct {
+	rx uint64
+	tx uint64
+}
+
+type rawMetricsSnapshot struct {
+	takenAt   time.Time
+	cpu       cpuCounters
+	cpuDetail []cpuCounters
+	memUsed   int64
+	memTotal  int64
+	memDetail []model.ProcMem
+	diskUsed  int64
+	diskTotal int64
+	netDetail map[string]netCounters
 }
 
 // ServerDetailHandler manages "management connections" — one per server —
@@ -132,6 +157,14 @@ func (h *ServerDetailHandler) CreateSession(w http.ResponseWriter, r *http.Reque
 		CreatedAt: time.Now(),
 		cancel:    func() {},
 		done:      make(chan struct{}),
+	}
+
+	if entry.Exec != nil {
+		if snapshot, snapshotErr := h.collectRawMetrics(entry); snapshotErr == nil {
+			session.lastSample = snapshot
+		} else {
+			slog.Debug("server detail: initial metrics snapshot failed", "error", snapshotErr)
+		}
 	}
 
 	h.mu.Lock()
@@ -433,7 +466,7 @@ func (h *ServerDetailHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 
 	// Send first metrics snapshot immediately (don't wait for first tick)
 	if entry.Exec != nil {
-		metrics := h.collectMetrics(entry)
+		metrics := h.collectMetrics(session, entry)
 		metrics.Timestamp = time.Now().UnixMilli()
 		writeWSJSON(ctx, wsConn, map[string]any{
 			"type": model.MsgServerMetrics,
@@ -441,10 +474,9 @@ func (h *ServerDetailHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// Start metrics collection loop
-	// Note: collectMetrics includes a 1s sleep for network sampling, so the
-	// effective interval is ticker + ~1s.
-	metricsTicker := time.NewTicker(5 * time.Second)
+	// Start metrics collection loop. Sampling is instant; CPU/network rates are
+	// derived from deltas between successive snapshots stored in the session.
+	metricsTicker := time.NewTicker(3 * time.Second)
 	defer metricsTicker.Stop()
 
 	// Read loop (handles ping/pong and close)
@@ -476,7 +508,7 @@ func (h *ServerDetailHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 			if entry.Exec == nil {
 				continue
 			}
-			metrics := h.collectMetrics(entry)
+			metrics := h.collectMetrics(session, entry)
 			metrics.Timestamp = time.Now().UnixMilli()
 
 			if err := writeWSJSON(ctx, wsConn, map[string]any{
@@ -597,7 +629,7 @@ func (h *ServerDetailHandler) collectServerInfo(entry *connpool.Entry) model.Ser
 //	DISK_USED: 5000000000
 //	DISK_TOTAL: 20000000000
 //	IFACE:eth0: 12345 67890
-func (h *ServerDetailHandler) collectMetrics(entry *connpool.Entry) model.ServerMetrics {
+func (h *ServerDetailHandler) collectMetricsLegacy(session *ServerDetailSession, entry *connpool.Entry) model.ServerMetrics {
 	metrics := model.ServerMetrics{}
 	if entry.Exec == nil {
 		return metrics
@@ -713,6 +745,203 @@ func (h *ServerDetailHandler) collectMetrics(entry *connpool.Entry) model.Server
 		metrics.DiskPercent = float64(metrics.DiskUsed) / float64(metrics.DiskTotal) * 100
 	}
 	return metrics
+}
+
+// collectMetrics captures an instant raw snapshot from the remote host and
+// derives CPU/network rates from the previous snapshot cached on the session.
+func (h *ServerDetailHandler) collectMetrics(session *ServerDetailSession, entry *connpool.Entry) model.ServerMetrics {
+	metrics := model.ServerMetrics{}
+	if session == nil || entry == nil || entry.Exec == nil {
+		return metrics
+	}
+
+	current, err := h.collectRawMetrics(entry)
+	if err != nil {
+		slog.Warn("server detail: collect metrics failed", "error", err)
+		return metrics
+	}
+
+	metrics.MemUsed = current.memUsed
+	metrics.MemTotal = current.memTotal
+	metrics.MemDetail = current.memDetail
+	metrics.DiskUsed = current.diskUsed
+	metrics.DiskTotal = current.diskTotal
+	if metrics.MemTotal > 0 {
+		metrics.MemPercent = float64(metrics.MemUsed) / float64(metrics.MemTotal) * 100
+	}
+	if metrics.DiskTotal > 0 {
+		metrics.DiskPercent = float64(metrics.DiskUsed) / float64(metrics.DiskTotal) * 100
+	}
+
+	session.sampleMu.Lock()
+	prev := session.lastSample
+	session.lastSample = current
+	session.sampleMu.Unlock()
+
+	if prev == nil {
+		return metrics
+	}
+
+	elapsed := current.takenAt.Sub(prev.takenAt)
+	if elapsed < time.Second {
+		return metrics
+	}
+
+	metrics.CPU = cpuPercent(prev.cpu, current.cpu)
+	for i, curCore := range current.cpuDetail {
+		if i < len(prev.cpuDetail) {
+			metrics.CPUDetail = append(metrics.CPUDetail, cpuPercent(prev.cpuDetail[i], curCore))
+		}
+	}
+
+	seconds := elapsed.Seconds()
+	if seconds <= 0 {
+		return metrics
+	}
+
+	for name, curNet := range current.netDetail {
+		if isIgnoredNetInterface(name) {
+			continue
+		}
+		prevNet, ok := prev.netDetail[name]
+		if !ok {
+			metrics.NetDetail = append(metrics.NetDetail, model.NetIfStat{Name: name})
+			continue
+		}
+		rxDelta := counterDelta(prevNet.rx, curNet.rx)
+		txDelta := counterDelta(prevNet.tx, curNet.tx)
+		rxPerSec := int64(float64(rxDelta) / seconds)
+		txPerSec := int64(float64(txDelta) / seconds)
+		metrics.NetDetail = append(metrics.NetDetail, model.NetIfStat{
+			Name: name,
+			Rx:   rxPerSec,
+			Tx:   txPerSec,
+		})
+		metrics.NetRx += rxPerSec
+		metrics.NetTx += txPerSec
+	}
+
+	return metrics
+}
+
+func (h *ServerDetailHandler) collectRawMetrics(entry *connpool.Entry) (*rawMetricsSnapshot, error) {
+	if entry == nil || entry.Exec == nil {
+		return nil, fmt.Errorf("command execution not available")
+	}
+
+	cmd := `awk '/^cpu /{print "CT",$2,$3,$4,$5,$6,$7,$8,$9}/^cpu[0-9]+ /{core=$1; sub(/^cpu/,"",core); print "CC",core,$2,$3,$4,$5,$6,$7,$8,$9}' /proc/stat; ` +
+		`awk '/^MemTotal:/{mt=$2*1024}/^MemAvailable:/{ma=$2*1024} END{print "MT",mt; print "MA",ma}' /proc/meminfo; ` +
+		`df -B1 -P / | awk 'NR==2{print "DU",$3; print "DT",$2}'; ` +
+		`ps -eo pid=,comm=,rss=,%cpu=,%mem= --sort=-rss | head -6 | awk '{print "MP",$2,$5,$3*1024}'; ` +
+		`awk 'NR>2{iface=$1; gsub(/:/,"",iface); print "NI",iface,$2,$10}' /proc/net/dev`
+
+	stdout, _, exitCode, err := entry.Exec.Exec(cmd)
+	if err != nil && exitCode != 0 {
+		return nil, fmt.Errorf("command failed: %w", err)
+	}
+
+	snapshot := &rawMetricsSnapshot{
+		takenAt:   time.Now(),
+		netDetail: make(map[string]netCounters),
+	}
+
+	var memAvailable int64
+	for _, line := range strings.Split(strings.TrimSpace(string(stdout)), "\n") {
+		parts := strings.Fields(strings.TrimSpace(line))
+		if len(parts) == 0 {
+			continue
+		}
+		switch parts[0] {
+		case "CT":
+			if len(parts) >= 9 {
+				snapshot.cpu = parseCPUCounters(parts[1:9])
+			}
+		case "CC":
+			if len(parts) >= 10 {
+				snapshot.cpuDetail = append(snapshot.cpuDetail, parseCPUCounters(parts[2:10]))
+			}
+		case "MT":
+			snapshot.memTotal = parseInt64(parts, 1)
+		case "MA":
+			memAvailable = parseInt64(parts, 1)
+		case "DU":
+			snapshot.diskUsed = parseInt64(parts, 1)
+		case "DT":
+			snapshot.diskTotal = parseInt64(parts, 1)
+		case "MP":
+			if len(parts) >= 4 {
+				proc := model.ProcMem{Name: parts[1]}
+				proc.Percent, _ = strconv.ParseFloat(parts[2], 64)
+				proc.RSS = parseInt64(parts, 3)
+				snapshot.memDetail = append(snapshot.memDetail, proc)
+			}
+		case "NI":
+			if len(parts) >= 4 {
+				snapshot.netDetail[parts[1]] = netCounters{
+					rx: parseUint64(parts, 2),
+					tx: parseUint64(parts, 3),
+				}
+			}
+		}
+	}
+
+	if snapshot.memTotal > 0 {
+		snapshot.memUsed = snapshot.memTotal - memAvailable
+		if snapshot.memUsed < 0 {
+			snapshot.memUsed = 0
+		}
+	}
+
+	return snapshot, nil
+}
+
+func isIgnoredNetInterface(name string) bool {
+	return name == "lo" || strings.HasPrefix(name, "br-")
+}
+
+func parseCPUCounters(parts []string) cpuCounters {
+	var values [8]uint64
+	for i := range values {
+		if i < len(parts) {
+			v, _ := strconv.ParseUint(parts[i], 10, 64)
+			values[i] = v
+		}
+	}
+	total := values[0] + values[1] + values[2] + values[3] + values[4] + values[5] + values[6] + values[7]
+	idle := values[3] + values[4]
+	return cpuCounters{total: total, idle: idle}
+}
+
+func parseInt64(parts []string, idx int) int64 {
+	if idx >= len(parts) {
+		return 0
+	}
+	v, _ := strconv.ParseInt(parts[idx], 10, 64)
+	return v
+}
+
+func parseUint64(parts []string, idx int) uint64 {
+	if idx >= len(parts) {
+		return 0
+	}
+	v, _ := strconv.ParseUint(parts[idx], 10, 64)
+	return v
+}
+
+func cpuPercent(prev, cur cpuCounters) float64 {
+	totalDelta := counterDelta(prev.total, cur.total)
+	idleDelta := counterDelta(prev.idle, cur.idle)
+	if totalDelta == 0 || idleDelta > totalDelta {
+		return 0
+	}
+	return float64(totalDelta-idleDelta) / float64(totalDelta) * 100
+}
+
+func counterDelta(prev, cur uint64) uint64 {
+	if cur < prev {
+		return 0
+	}
+	return cur - prev
 }
 
 // parseServerInfo parses the compound command output into a ServerInfo struct.

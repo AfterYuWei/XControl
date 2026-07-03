@@ -11,12 +11,18 @@ import (
 	"github.com/yuweinfo/xcontrol/protocol"
 )
 
+const (
+	// DefaultConnectTimeout covers TCP connect plus the initial SSH handshake
+	// and authentication, which can be noticeably slower on high-latency links.
+	DefaultConnectTimeout = 30 * time.Second
+)
+
 // BuildSSHConfig constructs a gossh.ClientConfig from DriverOpts. Exported so
 // other protocol drivers (e.g. SFTP) can reuse the same authentication logic.
 func BuildSSHConfig(opts protocol.DriverOpts) (*gossh.ClientConfig, error) {
 	config := &gossh.ClientConfig{
 		User:    opts.Username,
-		Timeout: 10 * time.Second,
+		Timeout: DefaultConnectTimeout,
 	}
 	config.HostKeyCallback = func(_ string, _ net.Addr, key gossh.PublicKey) error {
 		if opts.HostKeyFingerprint == "" {
@@ -85,7 +91,7 @@ func ConnectViaJump(ctx context.Context, jumpOpts *protocol.DriverOpts, targetAd
 	}
 
 	jumpAddr := net.JoinHostPort(jumpOpts.Host, fmt.Sprintf("%d", jumpOpts.Port))
-	jumpClient, err := gossh.Dial("tcp", jumpAddr, jumpConfig)
+	jumpClient, err := dialClient(ctx, jumpAddr, jumpConfig)
 	if err != nil {
 		return nil, fmt.Errorf("dial jump host: %w", err)
 	}
@@ -96,12 +102,65 @@ func ConnectViaJump(ctx context.Context, jumpOpts *protocol.DriverOpts, targetAd
 		return nil, fmt.Errorf("dial target via jump: %w", err)
 	}
 
+	deadlineCtx, cancel := withConnectTimeout(ctx)
+	defer cancel()
+
+	if deadline, ok := deadlineCtx.Deadline(); ok {
+		if err := conn.SetDeadline(deadline); err != nil {
+			jumpClient.Close()
+			conn.Close()
+			return nil, err
+		}
+	}
+
 	ncc, chans, reqs, err := gossh.NewClientConn(conn, targetAddr, targetConfig)
 	if err != nil {
 		jumpClient.Close()
 		conn.Close()
 		return nil, fmt.Errorf("ssh handshake with target: %w", err)
 	}
+
+	_ = conn.SetDeadline(time.Time{})
+
+	return gossh.NewClient(ncc, chans, reqs), nil
+}
+
+func withConnectTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, DefaultConnectTimeout)
+}
+
+func dialClient(ctx context.Context, addr string, config *gossh.ClientConfig) (*gossh.Client, error) {
+	dialCtx, cancel := withConnectTimeout(ctx)
+	defer cancel()
+
+	dialer := &net.Dialer{}
+	conn, err := dialer.DialContext(dialCtx, "tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+
+	if deadline, ok := dialCtx.Deadline(); ok {
+		if err := conn.SetDeadline(deadline); err != nil {
+			conn.Close()
+			return nil, err
+		}
+	}
+
+	ncc, chans, reqs, err := gossh.NewClientConn(conn, addr, config)
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+
+	// Clear the handshake deadline so the established SSH connection can stay
+	// open indefinitely after the initial connect/auth flow completes.
+	_ = conn.SetDeadline(time.Time{})
 
 	return gossh.NewClient(ncc, chans, reqs), nil
 }
@@ -119,5 +178,9 @@ func Dial(ctx context.Context, opts protocol.DriverOpts) (*gossh.Client, error) 
 	if opts.JumpHost != nil {
 		return ConnectViaJump(ctx, opts.JumpHost, addr, config)
 	}
-	return gossh.Dial("tcp", addr, config)
+	client, err := dialClient(ctx, addr, config)
+	if err != nil {
+		return nil, fmt.Errorf("dial target: %w", err)
+	}
+	return client, nil
 }

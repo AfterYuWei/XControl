@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"time"
 
 	gossh "golang.org/x/crypto/ssh"
 
@@ -14,14 +13,29 @@ import (
 // InspectHostKeyFingerprint captures the current host key fingerprint without
 // completing authentication.
 func InspectHostKeyFingerprint(ctx context.Context, opts protocol.DriverOpts) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	var cancel context.CancelFunc
+	if _, ok := ctx.Deadline(); !ok {
+		ctx, cancel = context.WithTimeout(ctx, DefaultConnectTimeout)
+		defer cancel()
+	}
+
 	addr := net.JoinHostPort(opts.Host, fmt.Sprintf("%d", opts.Port))
-	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	dialer := &net.Dialer{}
 
 	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return "", err
 	}
 	defer conn.Close()
+
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := conn.SetDeadline(deadline); err != nil {
+			return "", err
+		}
+	}
 
 	var fingerprint string
 	config := &gossh.ClientConfig{
@@ -30,7 +44,7 @@ func InspectHostKeyFingerprint(ctx context.Context, opts protocol.DriverOpts) (s
 			fingerprint = gossh.FingerprintSHA256(key)
 			return errHostKeyCaptured
 		},
-		Timeout: 10 * time.Second,
+		Timeout: DefaultConnectTimeout,
 	}
 
 	_, _, _, err = gossh.NewClientConn(conn, addr, config)

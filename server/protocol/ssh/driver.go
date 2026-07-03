@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -251,6 +252,12 @@ func (d *Driver) Info() protocol.ConnectionInfo {
 // Exec runs a command on the remote host via a temporary SSH session.
 // Implements protocol.CommandExecutor.
 func (d *Driver) Exec(cmd string) (stdout []byte, stderr []byte, exitCode int, err error) {
+	return d.ExecContext(context.Background(), cmd)
+}
+
+// ExecContext runs a command on the remote host via a temporary SSH session
+// and stops the session when the caller's context is canceled or times out.
+func (d *Driver) ExecContext(ctx context.Context, cmd string) (stdout []byte, stderr []byte, exitCode int, err error) {
 	if d.client == nil {
 		return nil, nil, -1, fmt.Errorf("not connected")
 	}
@@ -260,14 +267,35 @@ func (d *Driver) Exec(cmd string) (stdout []byte, stderr []byte, exitCode int, e
 	}
 	defer sess.Close()
 
-stdout, err = sess.CombinedOutput(cmd)
-	if err != nil {
-		if exitErr, ok := err.(*gossh.ExitError); ok {
-			return stdout, nil, exitErr.ExitStatus(), err
-		}
-		return stdout, nil, -1, err
+	var stdoutBuf bytes.Buffer
+	var stderrBuf bytes.Buffer
+	sess.Stdout = &stdoutBuf
+	sess.Stderr = &stderrBuf
+
+	if err := sess.Start(cmd); err != nil {
+		return nil, nil, -1, err
 	}
-	return stdout, nil, 0, nil
+
+	waitCh := make(chan error, 1)
+	go func() {
+		waitCh <- sess.Wait()
+	}()
+
+	select {
+	case err := <-waitCh:
+		stdout = stdoutBuf.Bytes()
+		stderr = stderrBuf.Bytes()
+		if err != nil {
+			if exitErr, ok := err.(*gossh.ExitError); ok {
+				return stdout, stderr, exitErr.ExitStatus(), err
+			}
+			return stdout, stderr, -1, err
+		}
+		return stdout, stderr, 0, nil
+	case <-ctx.Done():
+		_ = sess.Close()
+		return stdoutBuf.Bytes(), stderrBuf.Bytes(), -1, ctx.Err()
+	}
 }
 
 // SSHClient returns the underlying SSH client for opening subsystem channels
@@ -279,6 +307,7 @@ func (d *Driver) SSHClient() *gossh.Client {
 
 // compile-time assertion that Driver implements CommandExecutor
 var _ protocol.CommandExecutor = (*Driver)(nil)
+var _ protocol.ContextCommandExecutor = (*Driver)(nil)
 
 // compile-time assertion that Driver implements ConnectionLifecycle
 var _ protocol.ConnectionLifecycle = (*Driver)(nil)

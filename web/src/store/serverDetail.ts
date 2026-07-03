@@ -24,14 +24,15 @@ interface ServerDetailState {
   status: 'idle' | 'connecting' | 'connected' | 'disconnected'
   error: string | null
   info: ServerInfo | null
-  files: FileTreeNode[] // root-level file list
+  files: FileTreeNode[]
   metrics: ServerMetrics | null
   wsConnected: boolean
-  homeDir: string // User's home directory
-  currentPath: string // Current browsing path
-  showHidden: boolean // Whether to show hidden files
-  selected: Set<string> // Selected file paths
-  loading: boolean // Whether file list is loading
+  homeDir: string
+  currentPath: string
+  showHidden: boolean
+  selected: Set<string>
+  loading: boolean
+  refCount: number // Number of terminal tabs sharing this profile-level state
 }
 
 // --- Store ---
@@ -43,6 +44,7 @@ interface ServerDetailStore {
   // Actions
   connect: (profileId: string) => Promise<void>
   disconnect: (profileId: string) => void
+  ensureConnected: (profileId: string) => Promise<void>
   getInfo: (profileId: string) => Promise<void>
   listFiles: (profileId: string, path: string) => Promise<void>
   navigateToParent: (profileId: string) => void
@@ -50,6 +52,7 @@ interface ServerDetailStore {
   updateMetrics: (profileId: string, metrics: ServerMetrics) => void
   updateInfo: (profileId: string, info: ServerInfo) => void
   setWsConnected: (profileId: string, connected: boolean) => void
+  markDisconnected: (profileId: string, error?: string) => void
   getStatus: (profileId: string) => ServerDetailState
   // Selection
   select: (profileId: string, path: string, opts?: { additive?: boolean }) => void
@@ -77,74 +80,216 @@ const defaultState = (): ServerDetailState => ({
   showHidden: false,
   selected: new Set(),
   loading: false,
+  refCount: 0,
 })
+
+function mapEntriesToNodes(entries: Awaited<ReturnType<typeof serverDetailApi.listFiles>>['entries']): FileTreeNode[] {
+  return entries
+    .sort((a, b) => {
+      if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1
+      return a.name.localeCompare(b.name)
+    })
+    .map((e) => ({
+      name: e.name,
+      path: e.path,
+      isDir: e.is_dir,
+      size: e.size,
+      modTime: e.mod_time,
+      mode: e.mode,
+      children: null,
+      loading: false,
+      error: null,
+    }))
+}
 
 export const useServerDetailStore = create<ServerDetailStore>((set, get) => ({
   details: {},
 
   connect: async (profileId: string) => {
     const current = get().details[profileId]
+    const nextRefCount = (current?.refCount ?? 0) + 1
+
     if (current?.status === 'connecting' || current?.status === 'connected') {
+      set((s) => ({
+        details: {
+          ...s.details,
+          [profileId]: { ...s.details[profileId], refCount: nextRefCount },
+        },
+      }))
       return
     }
 
-    set((s) => ({
-      details: { ...s.details, [profileId]: { ...defaultState(), status: 'connecting' } },
-    }))
-
-    try {
-      const res = await serverDetailApi.createSession(profileId)
-      const homeDir = res.home_dir || '/'
-      set((s) => ({
+    set((s) => {
+      const previous = s.details[profileId] ?? defaultState()
+      return {
         details: {
           ...s.details,
           [profileId]: {
-            ...s.details[profileId],
-            sessionId: res.session_id,
-            status: 'connected',
-            homeDir,
-            currentPath: homeDir,
+            ...previous,
+            status: 'connecting',
+            error: null,
+            selected: new Set(),
+            refCount: nextRefCount,
           },
         },
-      }))
+      }
+    })
 
-      // Auto-load server info after connection
-      get().getInfo(profileId)
-      // Auto-load home directory listing (not root)
-      get().listFiles(profileId, homeDir)
+    try {
+      if (current?.sessionId) {
+        serverDetailApi.closeSession(current.sessionId).catch(() => {})
+      }
+
+      const res = await serverDetailApi.createSession(profileId)
+      const homeDir = res.home_dir || '/'
+      const browsePath = current?.currentPath || homeDir
+
+      set((s) => {
+        const detail = s.details[profileId] ?? defaultState()
+        return {
+          details: {
+            ...s.details,
+            [profileId]: {
+              ...detail,
+              sessionId: res.session_id,
+              status: 'connected',
+              homeDir,
+              currentPath: browsePath,
+            },
+          },
+        }
+      })
+
+      void get().getInfo(profileId)
+      void get().listFiles(profileId, browsePath)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '连接失败'
-      set((s) => ({
-        details: {
-          ...s.details,
-          [profileId]: { ...defaultState(), status: 'disconnected', error: msg },
-        },
-      }))
+      const msg = err instanceof Error ? err.message : '杩炴帴澶辫触'
+      set((s) => {
+        const detail = s.details[profileId] ?? defaultState()
+        return {
+          details: {
+            ...s.details,
+            [profileId]: {
+              ...detail,
+              sessionId: null,
+              status: 'disconnected',
+              error: msg,
+            },
+          },
+        }
+      })
     }
   },
 
   disconnect: (profileId: string) => {
     const detail = get().details[profileId]
-    if (detail?.sessionId) {
+    if (!detail) return
+
+    const nextRefCount = Math.max(0, detail.refCount - 1)
+    if (nextRefCount > 0) {
+      set((s) => ({
+        details: {
+          ...s.details,
+          [profileId]: { ...s.details[profileId], refCount: nextRefCount },
+        },
+      }))
+      return
+    }
+
+    if (detail.sessionId) {
       serverDetailApi.closeSession(detail.sessionId).catch(console.error)
     }
+
+    set((s) => {
+      const details = { ...s.details }
+      delete details[profileId]
+      return { details }
+    })
+  },
+
+  ensureConnected: async (profileId: string) => {
+    const detail = get().details[profileId]
+    if (!detail || detail.refCount <= 0) return
+    if (detail.status === 'connecting' || detail.status === 'connected') return
+
     set((s) => ({
-      details: { ...s.details, [profileId]: defaultState() },
+      details: {
+        ...s.details,
+        [profileId]: {
+          ...s.details[profileId],
+          status: 'connecting',
+          error: null,
+        },
+      },
     }))
+
+    try {
+      if (detail.sessionId) {
+        serverDetailApi.closeSession(detail.sessionId).catch(() => {})
+      }
+
+      const res = await serverDetailApi.createSession(profileId)
+      const homeDir = res.home_dir || '/'
+
+      set((s) => {
+        const current = s.details[profileId]
+        if (!current || current.refCount <= 0) return s
+        return {
+          details: {
+            ...s.details,
+            [profileId]: {
+              ...current,
+              sessionId: res.session_id,
+              status: 'connected',
+              homeDir,
+              currentPath: current.currentPath || homeDir,
+            },
+          },
+        }
+      })
+
+      void get().getInfo(profileId)
+      const next = get().details[profileId]
+      if (next?.sessionId === res.session_id) {
+        void get().listFiles(profileId, next.currentPath || next.homeDir)
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '杩炴帴澶辫触'
+      set((s) => {
+        const current = s.details[profileId]
+        if (!current) return s
+        return {
+          details: {
+            ...s.details,
+            [profileId]: {
+              ...current,
+              sessionId: null,
+              status: 'disconnected',
+              error: msg,
+            },
+          },
+        }
+      })
+    }
   },
 
   getInfo: async (profileId: string) => {
     const detail = get().details[profileId]
     if (!detail?.sessionId) return
+    const sessionId = detail.sessionId
 
     try {
-      const info = await serverDetailApi.getInfo(detail.sessionId)
-      set((s) => ({
-        details: {
-          ...s.details,
-          [profileId]: { ...s.details[profileId], info },
-        },
-      }))
+      const info = await serverDetailApi.getInfo(sessionId)
+      set((s) => {
+        const current = s.details[profileId]
+        if (!current || current.sessionId !== sessionId) return s
+        return {
+          details: {
+            ...s.details,
+            [profileId]: { ...current, info },
+          },
+        }
+      })
     } catch (err) {
       console.error('Failed to fetch server info:', err)
     }
@@ -153,65 +298,62 @@ export const useServerDetailStore = create<ServerDetailStore>((set, get) => ({
   listFiles: async (profileId: string, path: string) => {
     const detail = get().details[profileId]
     if (!detail?.sessionId) return
+    const sessionId = detail.sessionId
+    const showHidden = detail.showHidden
 
-    // Set loading state and update path, but keep current files visible
-    set((s) => ({
-      details: {
-        ...s.details,
-        [profileId]: {
-          ...s.details[profileId],
-          currentPath: path,
-          selected: new Set(), // Clear selection when navigating
-          loading: true,
+    set((s) => {
+      const current = s.details[profileId]
+      if (!current || current.sessionId !== sessionId) return s
+      return {
+        details: {
+          ...s.details,
+          [profileId]: {
+            ...current,
+            currentPath: path,
+            error: null,
+            selected: new Set(),
+            loading: true,
+          },
         },
-      },
-    }))
+      }
+    })
 
     try {
-      const res = await serverDetailApi.listFiles(detail.sessionId, path, detail.showHidden)
-      const children: FileTreeNode[] = res.entries
-        .sort((a, b) => {
-          // Directories first, then alphabetical
-          if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1
-          return a.name.localeCompare(b.name)
-        })
-        .map((e) => ({
-          name: e.name,
-          path: e.path,
-          isDir: e.is_dir,
-          size: e.size,
-          modTime: e.mod_time,
-          mode: e.mode,
-          children: null,
-          loading: false,
-          error: null,
-        }))
+      const res = await serverDetailApi.listFiles(sessionId, path, showHidden)
+      const files = mapEntriesToNodes(res.entries)
 
-      // Replace file list and clear loading state
-      set((s) => ({
-        details: {
-          ...s.details,
-          [profileId]: {
-            ...s.details[profileId],
-            currentPath: path,
-            files: children,
-            loading: false,
+      set((s) => {
+        const current = s.details[profileId]
+        if (!current || current.sessionId !== sessionId) return s
+        return {
+          details: {
+            ...s.details,
+            [profileId]: {
+              ...current,
+              currentPath: path,
+              files,
+              loading: false,
+            },
           },
-        },
-      }))
+        }
+      })
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '加载失败'
-      set((s) => ({
-        details: {
-          ...s.details,
-          [profileId]: {
-            ...s.details[profileId],
-            files: [],
-            error: msg,
-            loading: false,
+      const msg = err instanceof Error ? err.message : '鍔犺浇澶辫触'
+      set((s) => {
+        const current = s.details[profileId]
+        if (!current || current.sessionId !== sessionId) return s
+        return {
+          details: {
+            ...s.details,
+            [profileId]: {
+              ...current,
+              files: [],
+              error: msg,
+              loading: false,
+            },
           },
-        },
-      }))
+        }
+      })
     }
   },
 
@@ -222,53 +364,80 @@ export const useServerDetailStore = create<ServerDetailStore>((set, get) => ({
     const currentPath = detail.currentPath
     if (currentPath === '/' || currentPath === '') return
 
-    // Calculate parent path
     const parentPath = currentPath.substring(0, currentPath.lastIndexOf('/')) || '/'
-    get().listFiles(profileId, parentPath)
+    void get().listFiles(profileId, parentPath)
   },
 
   openEditor: (profileId: string, path: string) => {
     const detail = get().details[profileId]
     if (!detail?.sessionId) return
-    // Delegate to the unified editor store
-    useEditorStore.getState().openFile(detail.sessionId!, 'serverDetail', path)
+    useEditorStore.getState().openFile(detail.sessionId, 'serverDetail', path)
   },
 
   updateMetrics: (profileId: string, metrics: ServerMetrics) => {
-    set((s) => ({
-      details: {
-        ...s.details,
-        [profileId]: { ...s.details[profileId], metrics },
-      },
-    }))
+    set((s) => {
+      const detail = s.details[profileId]
+      if (!detail) return s
+      return {
+        details: {
+          ...s.details,
+          [profileId]: { ...detail, metrics },
+        },
+      }
+    })
   },
 
   updateInfo: (profileId: string, info: ServerInfo) => {
-    set((s) => ({
-      details: {
-        ...s.details,
-        [profileId]: { ...s.details[profileId], info },
-      },
-    }))
+    set((s) => {
+      const detail = s.details[profileId]
+      if (!detail) return s
+      return {
+        details: {
+          ...s.details,
+          [profileId]: { ...detail, info },
+        },
+      }
+    })
   },
 
   setWsConnected: (profileId: string, connected: boolean) => {
-    set((s) => ({
-      details: {
-        ...s.details,
-        [profileId]: { ...s.details[profileId], wsConnected: connected },
-      },
-    }))
+    set((s) => {
+      const detail = s.details[profileId]
+      if (!detail) return s
+      return {
+        details: {
+          ...s.details,
+          [profileId]: { ...detail, wsConnected: connected },
+        },
+      }
+    })
   },
 
-  getStatus: (profileId: string) => {
-    return get().details[profileId] ?? defaultState()
+  markDisconnected: (profileId: string, error?: string) => {
+    set((s) => {
+      const detail = s.details[profileId]
+      if (!detail) return s
+      return {
+        details: {
+          ...s.details,
+          [profileId]: {
+            ...detail,
+            status: 'disconnected',
+            error: error ?? detail.error,
+            wsConnected: false,
+          },
+        },
+      }
+    })
   },
+
+  getStatus: (profileId: string) => get().details[profileId] ?? defaultState(),
 
   select: (profileId: string, path: string, opts?: { additive?: boolean }) => {
     set((s) => {
       const detail = s.details[profileId]
       if (!detail) return s
+
       let newSelected: Set<string>
       if (opts?.additive) {
         newSelected = new Set(detail.selected)
@@ -280,6 +449,7 @@ export const useServerDetailStore = create<ServerDetailStore>((set, get) => ({
       } else {
         newSelected = new Set([path])
       }
+
       return {
         details: {
           ...s.details,
@@ -290,18 +460,21 @@ export const useServerDetailStore = create<ServerDetailStore>((set, get) => ({
   },
 
   clearSelection: (profileId: string) => {
-    set((s) => ({
-      details: {
-        ...s.details,
-        [profileId]: { ...s.details[profileId], selected: new Set() },
-      },
-    }))
+    set((s) => {
+      const detail = s.details[profileId]
+      if (!detail) return s
+      return {
+        details: {
+          ...s.details,
+          [profileId]: { ...detail, selected: new Set() },
+        },
+      }
+    })
   },
 
   getSelectedNodes: (profileId: string) => {
     const detail = get().details[profileId]
     if (!detail) return []
-    // In list view, just filter the flat file list
     return detail.files.filter((node) => detail.selected.has(node.path))
   },
 
@@ -310,7 +483,6 @@ export const useServerDetailStore = create<ServerDetailStore>((set, get) => ({
     if (!detail?.sessionId) return
     try {
       await serverDetailApi.mkdir(detail.sessionId, path)
-      // Refresh the parent directory
       const parentPath = path.substring(0, path.lastIndexOf('/')) || '/'
       await get().listFiles(profileId, parentPath)
     } catch (err) {
@@ -323,10 +495,8 @@ export const useServerDetailStore = create<ServerDetailStore>((set, get) => ({
     const detail = get().details[profileId]
     if (!detail?.sessionId) return
     try {
-      // Use writeFile API to create empty file
       const { editApi } = await import('@/api/edit')
       await editApi.writeFile(detail.sessionId, filePath, { content: '', expected_mod_time: '' })
-      // Refresh the parent directory
       const parentPath = filePath.substring(0, filePath.lastIndexOf('/')) || '/'
       await get().listFiles(profileId, parentPath)
     } catch (err) {
@@ -340,7 +510,6 @@ export const useServerDetailStore = create<ServerDetailStore>((set, get) => ({
     if (!detail?.sessionId) return
     try {
       await serverDetailApi.rename(detail.sessionId, oldPath, newPath)
-      // Refresh the parent directory
       const parentPath = oldPath.substring(0, oldPath.lastIndexOf('/')) || '/'
       await get().listFiles(profileId, parentPath)
     } catch (err) {
@@ -354,7 +523,6 @@ export const useServerDetailStore = create<ServerDetailStore>((set, get) => ({
     if (!detail?.sessionId || paths.length === 0) return
     try {
       await serverDetailApi.delete(detail.sessionId, paths)
-      // Refresh the parent directory of the first deleted item
       const parentPath = paths[0].substring(0, paths[0].lastIndexOf('/')) || '/'
       await get().listFiles(profileId, parentPath)
     } catch (err) {
@@ -373,14 +541,12 @@ export const useServerDetailStore = create<ServerDetailStore>((set, get) => ({
         [profileId]: { ...s.details[profileId], showHidden: newShowHidden },
       },
     }))
-    // Reload current directory with new setting
-    get().listFiles(profileId, detail.homeDir)
+    void get().listFiles(profileId, detail.currentPath || detail.homeDir)
   },
 
   refresh: async (profileId: string) => {
     const detail = get().details[profileId]
     if (!detail?.sessionId) return
-    // Reload the home directory
-    await get().listFiles(profileId, detail.homeDir)
+    await get().listFiles(profileId, detail.currentPath || detail.homeDir)
   },
 }))

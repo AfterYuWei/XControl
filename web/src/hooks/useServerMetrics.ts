@@ -6,17 +6,27 @@ import type { ServerInfo, ServerMetrics } from '@/api/serverDetail'
  * Manages the WebSocket connection for real-time server metrics.
  * Connects when the management session is connected, disconnects on unmount.
  */
-export function useServerMetrics(profileId: string) {
+export function useServerMetrics(profileId: string, active: boolean) {
   const sessionId = useServerDetailStore((s) => s.details[profileId]?.sessionId ?? null)
   const status = useServerDetailStore((s) => s.details[profileId]?.status ?? 'idle')
   const updateMetrics = useServerDetailStore((s) => s.updateMetrics)
   const updateInfo = useServerDetailStore((s) => s.updateInfo)
   const setWsConnected = useServerDetailStore((s) => s.setWsConnected)
+  const markDisconnected = useServerDetailStore((s) => s.markDisconnected)
+  const ensureConnected = useServerDetailStore((s) => s.ensureConnected)
 
   const wsRef = useRef<WebSocket | null>(null)
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
+    if (!active) {
+      return
+    }
+
+    if (status === 'idle' || status === 'disconnected') {
+      void ensureConnected(profileId)
+      return
+    }
+
     if (!sessionId || status !== 'connected') {
       return
     }
@@ -62,8 +72,8 @@ export function useServerMetrics(profileId: string) {
         if (disposed) return
         setWsConnected(profileId, false)
         wsRef.current = null
-        if (!disposed && status === 'connected') {
-          reconnectTimer.current = setTimeout(connect, 3000)
+        if (status === 'connected') {
+          markDisconnected(profileId, '管理连接已断开，正在重连')
         }
       }
 
@@ -83,13 +93,10 @@ export function useServerMetrics(profileId: string) {
     return () => {
       disposed = true
       clearInterval(pingInterval)
-      if (reconnectTimer.current) {
-        clearTimeout(reconnectTimer.current)
-      }
       if (wsRef.current) {
         wsRef.current.close()
         wsRef.current = null
       }
     }
-  }, [sessionId, status, profileId, updateMetrics, updateInfo, setWsConnected])
+  }, [active, ensureConnected, markDisconnected, profileId, sessionId, setWsConnected, status, updateInfo, updateMetrics])
 }

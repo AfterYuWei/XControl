@@ -33,8 +33,15 @@ type ServerDetailSession struct {
 	HomeDir   string // User's home directory
 	CreatedAt time.Time
 
-	cancel context.CancelFunc
-	done   chan struct{}
+	cancel   context.CancelFunc
+	done     chan struct{}
+	doneOnce sync.Once
+}
+
+func (s *ServerDetailSession) closeDone() {
+	s.doneOnce.Do(func() {
+		close(s.done)
+	})
 }
 
 // ServerDetailHandler manages "management connections" — one per server —
@@ -42,21 +49,21 @@ type ServerDetailSession struct {
 // All connections go through the connection pool; no independent SSH
 // connections are created.
 type ServerDetailHandler struct {
-	sessions map[string]*ServerDetailSession
-	mu       sync.RWMutex
-	profiles store.ProfileStore
-	vault    store.VaultStore
+	sessions  map[string]*ServerDetailSession
+	mu        sync.RWMutex
+	profiles  store.ProfileStore
+	vault     store.VaultStore
 	encryptor *crypto.Encryptor
-	pool     *connpool.Pool
+	pool      *connpool.Pool
 }
 
 func NewServerDetailHandler(ps store.ProfileStore, vs store.VaultStore, enc *crypto.Encryptor, pool *connpool.Pool) *ServerDetailHandler {
 	return &ServerDetailHandler{
-		sessions: make(map[string]*ServerDetailSession),
-		profiles: ps,
-		vault:    vs,
+		sessions:  make(map[string]*ServerDetailSession),
+		profiles:  ps,
+		vault:     vs,
 		encryptor: enc,
-		pool:     pool,
+		pool:      pool,
 	}
 }
 
@@ -114,12 +121,7 @@ func (h *ServerDetailHandler) CreateSession(w http.ResponseWriter, r *http.Reque
 	}
 
 	sessionID := uuid.New().String()
-
-	// Determine home directory based on username
-	homeDir := "/root"
-	if profile.Username != "root" {
-		homeDir = "/home/" + profile.Username
-	}
+	homeDir := h.resolveHomeDir(profile.Username, entry)
 
 	session := &ServerDetailSession{
 		ID:        sessionID,
@@ -135,6 +137,22 @@ func (h *ServerDetailHandler) CreateSession(w http.ResponseWriter, r *http.Reque
 	h.mu.Lock()
 	h.sessions[sessionID] = session
 	h.mu.Unlock()
+
+	if lc, ok := entry.Driver.(protocol.ConnectionLifecycle); ok {
+		lc.OnDead(func(reason string) {
+			h.mu.Lock()
+			current, exists := h.sessions[sessionID]
+			if exists {
+				current.Status = "disconnected"
+				current.Error = "management connection lost: " + reason
+				current.Entry = nil
+			}
+			h.mu.Unlock()
+			if exists {
+				session.closeDone()
+			}
+		})
+	}
 
 	writeJSON(w, http.StatusCreated, model.ServerSessionResponse{
 		SessionID: sessionID,
@@ -156,7 +174,7 @@ func (h *ServerDetailHandler) CloseSession(w http.ResponseWriter, r *http.Reques
 	delete(h.sessions, id)
 	h.mu.Unlock()
 
-	close(session.done)
+	session.closeDone()
 	if session.cancel != nil {
 		session.cancel()
 	}
@@ -515,6 +533,27 @@ func (h *ServerDetailHandler) resolveSession(w http.ResponseWriter, r *http.Requ
 		return nil, nil, false
 	}
 	return session, session.Entry, true
+}
+
+func (h *ServerDetailHandler) resolveHomeDir(username string, entry *connpool.Entry) string {
+	fallback := "/root"
+	if username != "root" && username != "" {
+		fallback = "/home/" + username
+	}
+	if entry == nil || entry.Exec == nil {
+		return fallback
+	}
+
+	stdout, _, exitCode, err := entry.Exec.Exec(`printf '%s' "$HOME"`)
+	if err != nil && exitCode != 0 {
+		return fallback
+	}
+
+	homeDir := strings.TrimSpace(string(stdout))
+	if homeDir == "" || !strings.HasPrefix(homeDir, "/") {
+		return fallback
+	}
+	return homeDir
 }
 
 // collectServerInfo runs commands to gather static server information.

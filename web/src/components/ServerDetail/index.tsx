@@ -57,7 +57,7 @@ export function ServerDetail({
   const [deleteConfirm, setDeleteConfirm] = useState<{ entries: FileTreeNode[] } | null>(null)
 
   // Connect WebSocket for real-time metrics
-  useServerMetrics(profileId)
+  useServerMetrics(profileId, active)
 
   // Restore scroll position on mount / when becoming visible again.
   useEffect(() => {

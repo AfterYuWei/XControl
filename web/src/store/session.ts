@@ -81,9 +81,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }
 
     set((state) => ({
-      tabs: existingTab
-        ? state.tabs.map((tab) => (tab.id === tabId ? newTab : tab))
-        : [...state.tabs, newTab],
+      tabs: existingTab ? state.tabs.map((tab) => (tab.id === tabId ? newTab : tab)) : [...state.tabs, newTab],
       activeTabId: tabId,
     }))
 
@@ -99,7 +97,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       if (isHostKeyChangedError(apiErr)) {
         get().setTabHostKeyPrompt(tabId, apiErr.host_fingerprint!, apiErr.known_host_fingerprint)
       } else {
-        get().updateTabStatus(tabId, 'disconnected')
+        get().markTabError(tabId, 'create_failed', apiErr?.error?.message || '无法连接到服务器')
         console.error('Failed to create session:', err)
       }
     }
@@ -138,11 +136,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     set((state) => {
       const tabs = state.tabs.filter((t) => t.id !== tabId)
       const activeTabId =
-        state.activeTabId === tabId
-          ? tabs.length > 0
-            ? tabs[tabs.length - 1].id
-            : null
-          : state.activeTabId
+        state.activeTabId === tabId ? (tabs.length > 0 ? tabs[tabs.length - 1].id : null) : state.activeTabId
       return { tabs, activeTabId }
     })
   },
@@ -177,12 +171,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
                 ...(sessionId ? { sessionId } : {}),
               }
 
-              if (
-                status === 'connected' &&
-                tab.kind === 'terminal' &&
-                !!tab.profileId &&
-                !tab.detailAttached
-              ) {
+              if (status === 'connected' && tab.kind === 'terminal' && !!tab.profileId && !tab.detailAttached) {
                 shouldAttach = true
                 attachProfileId = tab.profileId
                 nextTab.detailAttached = true
@@ -272,9 +261,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   markTabReconnecting: (tabId, attempt, nextRetryAt) => {
     set((state) => ({
       tabs: state.tabs.map((tab) =>
-        tab.id === tabId
-          ? { ...tab, status: 'reconnecting', reconnectAttempt: attempt, nextRetryAt }
-          : tab,
+        tab.id === tabId ? { ...tab, status: 'reconnecting', reconnectAttempt: attempt, nextRetryAt } : tab,
       ),
     }))
   },

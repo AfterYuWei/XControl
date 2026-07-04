@@ -12,6 +12,7 @@ export type WSMessageType =
   | 'complete_request'
   | 'complete_response'
   | 'disconnect'
+  | 'connection_state'
 
 export interface WSMessage {
   type: WSMessageType
@@ -49,6 +50,25 @@ export interface CwdPayload {
 export interface DisconnectPayload {
   reason: string
   message: string
+}
+
+export interface ConnectionLogEntry {
+  at: number
+  level: 'info' | 'warn' | 'error' | string
+  stage: string
+  message: string
+}
+
+export interface ConnectionStatePayload {
+  session_id: string
+  status: string
+  stage: string
+  message: string
+  error?: string
+  waiting_for_host_key?: boolean
+  host_key_fingerprint?: string
+  known_host_key_fingerprint?: string
+  logs?: ConnectionLogEntry[]
 }
 
 // 动态补全:客户端请求远端执行只读脚本

@@ -5,12 +5,12 @@ import { Button } from '@/components/ui/button'
 import type { VaultItem, ProfileRef } from '@/types/vault'
 
 interface VaultListProps {
-  onEdit: (item: VaultItem) => void
+  onView: (item: VaultItem) => void
   onDelete: (item: VaultItem, refs: ProfileRef[]) => void
   onCreate: () => void
 }
 
-export function VaultList({ onEdit, onDelete, onCreate }: VaultListProps) {
+export function VaultList({ onView, onDelete, onCreate }: VaultListProps) {
   const { items, loading, error, fetchList } = useVaultStore()
 
   // 加载态
@@ -53,9 +53,9 @@ export function VaultList({ onEdit, onDelete, onCreate }: VaultListProps) {
 
   // 正常态
   return (
-    <div className="vault-list">
+      <div className="vault-list">
       {items.map((item) => (
-        <VaultItemRow key={item.id} item={item} onEdit={onEdit} onDelete={onDelete} />
+        <VaultItemRow key={item.id} item={item} onView={onView} onDelete={onDelete} />
       ))}
     </div>
   )

@@ -7,5 +7,8 @@ export const sessionApi = {
 
   list: () => api.get<Session[]>('/api/sessions'),
 
+  confirmHostKey: (id: string, fingerprint?: string) =>
+    api.post<{ status: string }>(`/api/sessions/${id}/confirm-hostkey`, { fingerprint }),
+
   close: (id: string) => api.delete<void>(`/api/sessions/${id}`),
 }

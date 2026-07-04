@@ -18,6 +18,7 @@ export interface VaultCredential {
   private_key?: string
   passphrase?: string
   certificate?: string
+  public_key?: string
 }
 
 export interface VaultCreateRequest {
@@ -27,11 +28,12 @@ export interface VaultCreateRequest {
   remark?: string
   password?: string
   private_key?: string
+  public_key?: string
   passphrase?: string
   certificate?: string
 }
 
-export interface VaultUpdateRequest extends VaultCreateRequest {}
+export type VaultUpdateRequest = VaultCreateRequest
 
 export interface GenerateKeyRequest {
   algo: 'rsa' | 'ed25519'

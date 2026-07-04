@@ -13,6 +13,7 @@ import { notify } from '@/store/notify'
 import { VaultList } from './VaultList'
 import { VaultFormDialog } from './VaultFormDialog'
 import { VaultGenerateDialog } from './VaultGenerateDialog'
+import { VaultDetailDialog } from './VaultDetailDialog'
 import type { VaultItem, ProfileRef } from '@/types/vault'
 
 const FILTER_OPTIONS = [
@@ -31,6 +32,7 @@ export function VaultView() {
   const { filterType, searchQuery, setFilterType, setSearchQuery, fetchList, remove } = useVaultStore()
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<VaultItem | null>(null)
+  const [viewing, setViewing] = useState<VaultItem | null>(null)
   const [genOpen, setGenOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -47,6 +49,10 @@ export function VaultView() {
   const handleEdit = (item: VaultItem) => {
     setEditing(item)
     setFormOpen(true)
+  }
+
+  const handleView = (item: VaultItem) => {
+    setViewing(item)
   }
 
   const handleDelete = (item: VaultItem, refs: ProfileRef[]) => {
@@ -100,7 +106,14 @@ export function VaultView() {
       </div>
 
       {/* 列表 */}
-      <VaultList onEdit={handleEdit} onDelete={handleDelete} onCreate={handleCreate} />
+      <VaultList onView={handleView} onDelete={handleDelete} onCreate={handleCreate} />
+
+      <VaultDetailDialog
+        open={!!viewing}
+        onOpenChange={(open) => !open && setViewing(null)}
+        item={viewing}
+        onEdit={handleEdit}
+      />
 
       {/* 创建/编辑弹窗 */}
       <VaultFormDialog

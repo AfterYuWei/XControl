@@ -32,6 +32,9 @@ const (
 	// network error, keepalive timeout). Carries a reason code and human-readable
 	// message so the frontend can show a status dialog and trigger auto-reconnect.
 	MsgDisconnect MessageType = "disconnect"
+
+	// Connection lifecycle updates emitted before the shell becomes interactive.
+	MsgConnectionState MessageType = "connection_state"
 )
 
 type Message struct {
@@ -72,6 +75,25 @@ type CwdPayload struct {
 type DisconnectPayload struct {
 	Reason  string `json:"reason"`
 	Message string `json:"message"`
+}
+
+type ConnectionLogPayload struct {
+	At      int64  `json:"at"`
+	Level   string `json:"level"`
+	Stage   string `json:"stage"`
+	Message string `json:"message"`
+}
+
+type ConnectionStatePayload struct {
+	SessionID               string                 `json:"session_id"`
+	Status                  string                 `json:"status"`
+	Stage                   string                 `json:"stage"`
+	Message                 string                 `json:"message"`
+	Error                   string                 `json:"error,omitempty"`
+	WaitingForHostKey       bool                   `json:"waiting_for_host_key,omitempty"`
+	HostKeyFingerprint      string                 `json:"host_key_fingerprint,omitempty"`
+	KnownHostKeyFingerprint string                 `json:"known_host_key_fingerprint,omitempty"`
+	Logs                    []ConnectionLogPayload `json:"logs,omitempty"`
 }
 
 // --- Autocomplete dynamic query payloads ---

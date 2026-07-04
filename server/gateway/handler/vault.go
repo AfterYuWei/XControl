@@ -38,6 +38,7 @@ type vaultCreateRequest struct {
 	Remark     string `json:"remark"`
 	Password   string `json:"password,omitempty"`
 	PrivateKey string `json:"private_key,omitempty"`
+	PublicKey  string `json:"public_key,omitempty"`
 	Passphrase string `json:"passphrase,omitempty"`
 	Cert       string `json:"certificate,omitempty"`
 }
@@ -52,6 +53,7 @@ type vaultUpdateRequest struct {
 	Remark     string `json:"remark"`
 	Password   string `json:"password,omitempty"`
 	PrivateKey string `json:"private_key,omitempty"`
+	PublicKey  string `json:"public_key,omitempty"`
 	Passphrase string `json:"passphrase,omitempty"`
 	Cert       string `json:"certificate,omitempty"`
 }
@@ -68,6 +70,14 @@ type generateKeyResponse struct {
 	PublicKey   string `json:"public_key"`
 	PrivateKey  string `json:"private_key"`
 	Fingerprint string `json:"fingerprint"`
+}
+
+type vaultRevealResponse struct {
+	Password   string `json:"password,omitempty"`
+	PrivateKey string `json:"private_key,omitempty"`
+	PublicKey  string `json:"public_key,omitempty"`
+	Passphrase string `json:"passphrase,omitempty"`
+	Cert       string `json:"certificate,omitempty"`
 }
 
 func (h *VaultHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -112,9 +122,11 @@ func (h *VaultHandler) Create(w http.ResponseWriter, r *http.Request) {
 	cred := &model.Credential{
 		Password:   req.Password,
 		PrivKey:    req.PrivateKey,
+		PublicKey:  req.PublicKey,
 		Passphrase: req.Passphrase,
 		Cert:       req.Cert,
 	}
+	ensurePublicKey(cred, req.Type)
 	if err := validateCredential(cred, req.Type); err != nil {
 		writeError(w, http.StatusBadRequest, "VALIDATION", err.Error())
 		return
@@ -150,13 +162,24 @@ func (h *VaultHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "VALIDATION", "invalid type")
 		return
 	}
+	existing, err := h.vault.Get(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "vault entry not found")
+		return
+	}
+	if err := validateVaultTypeUpdate(existing.Type, req.Type); err != nil {
+		writeError(w, http.StatusBadRequest, "VALIDATION", err.Error())
+		return
+	}
 
 	cred := &model.Credential{
 		Password:   req.Password,
 		PrivKey:    req.PrivateKey,
+		PublicKey:  req.PublicKey,
 		Passphrase: req.Passphrase,
 		Cert:       req.Cert,
 	}
+	ensurePublicKey(cred, req.Type)
 	if err := validateCredential(cred, req.Type); err != nil {
 		writeError(w, http.StatusBadRequest, "VALIDATION", err.Error())
 		return
@@ -220,8 +243,23 @@ func (h *VaultHandler) Reveal(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "vault entry not found")
 		return
 	}
+	publicKey := strings.TrimSpace(cred.PublicKey)
+	if publicKey == "" {
+		derivedPublicKey, derr := deriveAuthorizedPublicKey(cred)
+		if derr != nil {
+			slog.Warn("derive vault public key failed", "vault_id", id, "error", derr)
+		} else {
+			publicKey = derivedPublicKey
+		}
+	}
 	h.auditLog("vault_reveal", id, "")
-	writeJSON(w, http.StatusOK, cred)
+	writeJSON(w, http.StatusOK, vaultRevealResponse{
+		Password:   cred.Password,
+		PrivateKey: cred.PrivKey,
+		PublicKey:  publicKey,
+		Passphrase: cred.Passphrase,
+		Cert:       cred.Cert,
+	})
 }
 
 // GenerateKeyPair creates a new SSH keypair and returns it without persisting.
@@ -329,6 +367,62 @@ func validateCredential(cred *model.Credential, credType string) error {
 
 func isValidVaultType(t string) bool {
 	return t == model.VaultTypePassword || t == model.VaultTypePrivateKey || t == model.VaultTypeSSHCertificate
+}
+
+func validateVaultTypeUpdate(existingType, requestedType string) error {
+	if existingType == "" || requestedType == "" || existingType == requestedType {
+		return nil
+	}
+	return fmt.Errorf("credential type cannot be changed")
+}
+
+func deriveAuthorizedPublicKey(cred *model.Credential) (string, error) {
+	if cred == nil || strings.TrimSpace(cred.PrivKey) == "" {
+		return "", nil
+	}
+
+	var (
+		raw any
+		err error
+	)
+	if cred.Passphrase != "" {
+		raw, err = gossh.ParseRawPrivateKeyWithPassphrase([]byte(cred.PrivKey), []byte(cred.Passphrase))
+	} else {
+		raw, err = gossh.ParseRawPrivateKey([]byte(cred.PrivKey))
+	}
+	if err != nil {
+		return "", fmt.Errorf("parse private key: %w", err)
+	}
+
+	signer, err := gossh.NewSignerFromKey(raw)
+	if err != nil {
+		return "", fmt.Errorf("create signer: %w", err)
+	}
+
+	return strings.TrimSpace(string(gossh.MarshalAuthorizedKey(signer.PublicKey()))), nil
+}
+
+func ensurePublicKey(cred *model.Credential, credType string) {
+	if cred == nil {
+		return
+	}
+
+	cred.PublicKey = strings.TrimSpace(cred.PublicKey)
+	if cred.PublicKey != "" {
+		return
+	}
+
+	if credType != model.VaultTypePrivateKey && credType != model.VaultTypeSSHCertificate {
+		return
+	}
+
+	publicKey, err := deriveAuthorizedPublicKey(cred)
+	if err != nil {
+		slog.Warn("derive vault public key for storage failed", "type", credType, "error", err)
+		return
+	}
+
+	cred.PublicKey = publicKey
 }
 
 func (h *VaultHandler) auditLog(action, profileID, detail string) {

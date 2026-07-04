@@ -1,7 +1,7 @@
 export interface Session {
   id: string
   profile_id: string
-  status: 'connecting' | 'connected' | 'disconnected'
+  status: 'connecting' | 'connected' | 'disconnected' | 'error'
   created_at: string
 }
 

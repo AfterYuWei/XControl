@@ -3,6 +3,7 @@ package store
 import (
 	"crypto/sha256"
 	"database/sql"
+	"encoding/json"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -33,16 +34,16 @@ func encodePlaintext(cred *model.Credential, credType string) (plaintext, finger
 		// Password fingerprint is intentionally empty — listing shows "-".
 		return plaintext, "", nil
 	case model.VaultTypePrivateKey:
-		plaintext = cred.PrivKey
-		if cred.Passphrase != "" {
-			plaintext += "\x00" + cred.Passphrase
+		plaintext, err = marshalStructuredCredential(cred)
+		if err != nil {
+			return "", "", err
 		}
 		h := sha256.Sum256([]byte(cred.PrivKey))
 		return plaintext, hex.EncodeToString(h[:8]), nil
 	case model.VaultTypeSSHCertificate:
-		plaintext = cred.Cert + "\x00" + cred.PrivKey
-		if cred.Passphrase != "" {
-			plaintext += "\x00" + cred.Passphrase
+		plaintext, err = marshalStructuredCredential(cred)
+		if err != nil {
+			return "", "", err
 		}
 		fp, fpErr := certFingerprint(cred.Cert)
 		if fpErr != nil {
@@ -81,12 +82,18 @@ func decodePlaintext(decrypted, credType string) *model.Credential {
 	case model.VaultTypePassword:
 		cred.Password = decrypted
 	case model.VaultTypePrivateKey:
+		if structured, ok := unmarshalStructuredCredential(decrypted); ok {
+			return structured
+		}
 		parts := strings.SplitN(decrypted, "\x00", 2)
 		cred.PrivKey = parts[0]
 		if len(parts) == 2 {
 			cred.Passphrase = parts[1]
 		}
 	case model.VaultTypeSSHCertificate:
+		if structured, ok := unmarshalStructuredCredential(decrypted); ok {
+			return structured
+		}
 		parts := strings.SplitN(decrypted, "\x00", 3)
 		if len(parts) >= 1 {
 			cred.Cert = parts[0]
@@ -99,6 +106,25 @@ func decodePlaintext(decrypted, credType string) *model.Credential {
 		}
 	}
 	return cred
+}
+
+func marshalStructuredCredential(cred *model.Credential) (string, error) {
+	payload, err := json.Marshal(cred)
+	if err != nil {
+		return "", fmt.Errorf("marshal credential: %w", err)
+	}
+	return "\x01" + string(payload), nil
+}
+
+func unmarshalStructuredCredential(decrypted string) (*model.Credential, bool) {
+	if !strings.HasPrefix(decrypted, "\x01") {
+		return nil, false
+	}
+	var cred model.Credential
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(decrypted, "\x01")), &cred); err != nil {
+		return nil, false
+	}
+	return &cred, true
 }
 
 func (s *sqliteVaultStore) Store(cred *model.Credential, credType, name, username, remark string) (string, error) {
@@ -297,6 +323,10 @@ func (s *sqliteVaultStore) List(filter model.VaultListFilter) ([]*model.VaultIte
 // detectPassphrase inspects decrypted plaintext to determine whether a
 // passphrase segment is present and non-empty.
 func (s *sqliteVaultStore) detectPassphrase(decrypted, credType string) bool {
+	cred := decodePlaintext(decrypted, credType)
+	if cred != nil {
+		return cred.Passphrase != ""
+	}
 	switch credType {
 	case model.VaultTypePrivateKey:
 		parts := strings.SplitN(decrypted, "\x00", 2)

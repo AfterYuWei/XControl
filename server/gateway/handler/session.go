@@ -18,19 +18,29 @@ import (
 )
 
 type Session struct {
-	ID        string
-	ProfileID string
-	Driver    protocol.Driver
-	Shell     protocol.Shell
-	Status    string // connecting | connected | disconnected | error
-	Error     string // error message when status is disconnected
-	CreatedAt time.Time
+	ID          string
+	ProfileID   string
+	Driver      protocol.Driver
+	Shell       protocol.Shell
+	Status      string // connecting | connected | disconnected | error
+	Error       string // error message when status is disconnected
+	CreatedAt   time.Time
+	Stage       string
+	LastMessage string
+	Logs        []ConnectionLogEntry
 
 	// DisconnectReason is set when the SSH connection dies abnormally
 	// (remote_shutdown | network_error | keepalive_timeout | auth_failed | unknown).
 	// Empty for normal shell exits. Protected by mu.
-	DisconnectReason string
-	mu               sync.Mutex
+	DisconnectReason        string
+	WaitingForHostKey       bool
+	HostKeyFingerprint      string
+	KnownHostKeyFingerprint string
+	Version                 int64
+	cancelConnect           func()
+	hostKeyDecision         chan hostKeyDecision
+	subscribers             map[chan struct{}]struct{}
+	mu                      sync.Mutex
 }
 
 // IsAbnormalDisconnect reports whether the session ended due to an SSH
@@ -59,43 +69,42 @@ func humanizeDisconnectReason(reason string) string {
 	case "remote_shutdown":
 		return "远端服务器已关闭或重启"
 	case "network_error":
-		return "网络连接中断"
+		return "网络连接已中断"
 	case "keepalive_timeout":
-		return "连接无响应（保活超时）"
+		return "连接无响应，保活检测超时"
 	case "auth_failed":
-		return "认证失败（凭据可能已变更）"
+		return "认证失败，凭据可能已变更"
 	default:
-		return "未知原因"
+		return "连接因未知原因中断"
 	}
 }
 
 type SessionHandler struct {
-	sessions map[string]*Session
-	mu       sync.RWMutex
-	profiles store.ProfileStore
-	vault    store.VaultStore
+	sessions  map[string]*Session
+	mu        sync.RWMutex
+	profiles  store.ProfileStore
+	vault     store.VaultStore
 	encryptor *crypto.Encryptor
-	audit    store.AuditStore
-	pm       *protocol.Manager
+	audit     store.AuditStore
+	pm        *protocol.Manager
 }
 
 func NewSessionHandler(ps store.ProfileStore, vs store.VaultStore, enc *crypto.Encryptor, as store.AuditStore, pm *protocol.Manager) *SessionHandler {
 	return &SessionHandler{
-		sessions: make(map[string]*Session),
-		profiles: ps,
-		vault:    vs,
+		sessions:  make(map[string]*Session),
+		profiles:  ps,
+		vault:     vs,
 		encryptor: enc,
-		audit:    as,
-		pm:       pm,
+		audit:     as,
+		pm:        pm,
 	}
 }
 
 func (h *SessionHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		ProfileID                   string `json:"profile_id"`
-		Cols                        int    `json:"cols"`
-		Rows                        int    `json:"rows"`
-		ConfirmedHostKeyFingerprint string `json:"confirmed_host_key_fingerprint,omitempty"`
+		ProfileID string `json:"profile_id"`
+		Cols      int    `json:"cols"`
+		Rows      int    `json:"rows"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_JSON", err.Error())
@@ -118,161 +127,186 @@ func (h *SessionHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var password, privKey, passphrase, cert string
-	cred, err := resolveProfileCredential(profile, h.vault, h.encryptor)
-	if err != nil {
-		slog.Warn("failed to resolve profile credential", "error", err)
-	} else {
-		password = cred.Password
-		privKey = cred.PrivKey
-		passphrase = cred.Passphrase
-		cert = cred.Cert
-	}
-
-	knownHostKeyFingerprint := profileHostKeyFingerprint(profile.Options)
-	currentHostKeyFingerprint, err := sshproto.InspectHostKeyFingerprint(r.Context(), protocol.DriverOpts{
-		Host:     profile.Host,
-		Port:     profile.Port,
-		Username: profile.Username,
-	})
-	if err != nil {
-		writeError(w, http.StatusBadGateway, "HOST_KEY_CHECK_FAILED", fmt.Sprintf("check host key failed: %v", err))
-		return
-	}
-	if knownHostKeyFingerprint != "" &&
-		knownHostKeyFingerprint != currentHostKeyFingerprint &&
-		req.ConfirmedHostKeyFingerprint != currentHostKeyFingerprint {
-		writeJSON(w, http.StatusConflict, map[string]any{
-			"error": APIError{
-				Code:    "HOST_KEY_CHANGED",
-				Message: "检测到服务器主机指纹发生变化，请确认是否继续连接",
-			},
-			"host_fingerprint":       currentHostKeyFingerprint,
-			"known_host_fingerprint": knownHostKeyFingerprint,
-		})
-		return
-	}
-
 	sessionID := uuid.New().String()
-	session := &Session{
-		ID:        sessionID,
-		ProfileID: req.ProfileID,
-		Status:    "connecting",
-		CreatedAt: time.Now(),
-	}
+	ctx, cancel := context.WithCancel(context.Background())
+	session := newSession(sessionID, req.ProfileID, cancel)
 
 	h.mu.Lock()
 	h.sessions[sessionID] = session
 	h.mu.Unlock()
 
-	// Connect in background — use Background context since r.Context() is cancelled after response
-	go func() {
-		ctx := context.Background()
+	session.setStage(ConnectionStagePreparing, "info", "已读取连接配置，准备建立 SSH 会话")
 
-		opts := protocol.DriverOpts{
-			Host:               profile.Host,
-			Port:               profile.Port,
-			Username:           profile.Username,
-			Password:           password,
-			PrivKey:            privKey,
-			Passphrase:         passphrase,
-			Cert:               cert,
-			HostKeyFingerprint: currentHostKeyFingerprint,
-		}
-
-		driver, err := h.pm.Create("ssh", opts)
-		if err != nil {
-			session.Status = "disconnected"
-			session.Error = fmt.Sprintf("创建驱动失败: %v", err)
-			slog.Error("create driver failed", "error", err)
-			return
-		}
-
-		if err := driver.Connect(ctx); err != nil {
-			session.Status = "disconnected"
-			session.Error = fmt.Sprintf("SSH连接失败: %v", err)
-			slog.Error("ssh connect failed", "error", err)
-			return
-		}
-
-		session.Driver = driver
-
-		// Register a death callback on the driver so that when the underlying
-		// SSH connection dies (keepalive timeout, remote shutdown, network error),
-		// the session status is updated to "error" with the reason. The WS
-		// handler reads this to decide whether to send MsgDisconnect (abnormal)
-		// or MsgExit (normal shell exit) to the frontend.
-		if lc, ok := driver.(protocol.ConnectionLifecycle); ok {
-			lc.OnDead(func(reason string) {
-				session.mu.Lock()
-				session.Status = "error"
-				session.DisconnectReason = reason
-				session.mu.Unlock()
-				slog.Warn("session driver died", "session_id", sessionID, "reason", reason)
-			})
-		}
-
-		shellOpts := protocol.ShellOptions{
-			Cols: req.Cols,
-			Rows: req.Rows,
-		}
-		shell, err := driver.RequestShell(shellOpts)
-		if err != nil {
-			session.Status = "disconnected"
-			session.Error = fmt.Sprintf("启动Shell失败: %v", err)
-			driver.Close()
-			slog.Error("request shell failed", "error", err)
-			return
-		}
-
-		session.Shell = shell
-		session.Status = "connected"
-
-		if knownHostKeyFingerprint != currentHostKeyFingerprint {
-			if nextOptions, optErr := withProfileHostKeyFingerprint(profile.Options, currentHostKeyFingerprint); optErr != nil {
-				slog.Warn("failed to encode host key fingerprint", "profile_id", req.ProfileID, "error", optErr)
-			} else {
-				if err := h.profiles.Update(req.ProfileID, &model.ProfileUpdateRequest{Options: &nextOptions}); err != nil {
-					slog.Warn("failed to persist host key fingerprint", "profile_id", req.ProfileID, "error", err)
-				}
-			}
-		}
-
-		// Update last used
-		h.profiles.UpdateLastUsed(req.ProfileID)
-
-		// Audit log
-		h.audit.Log(&model.AuditLog{
-			ID:        uuid.New().String(),
-			ProfileID: req.ProfileID,
-			Action:    "connect",
-			Timestamp: time.Now(),
-		})
-
-		// Wait for session to end. When the shell exits, check whether the
-		// driver was marked dead (abnormal) — if so, the status is already
-		// "error" and we leave it alone; otherwise this is a normal shell exit
-		// and we mark the session as "disconnected".
-		go func() {
-			<-shell.Done()
-			session.mu.Lock()
-			if session.Status != "error" {
-				session.Status = "disconnected"
-			}
-			session.mu.Unlock()
-			h.audit.Log(&model.AuditLog{
-				ID:        uuid.New().String(),
-				ProfileID: req.ProfileID,
-				Action:    "disconnect",
-				Timestamp: time.Now(),
-			})
-		}()
-	}()
+	go h.connectSession(ctx, session, profile, req.Cols, req.Rows)
 
 	writeJSON(w, http.StatusCreated, map[string]string{
 		"session_id": sessionID,
 		"status":     session.Status,
 	})
+}
+
+func (h *SessionHandler) connectSession(ctx context.Context, session *Session, profile *model.Profile, cols, rows int) {
+	session.setStage(ConnectionStageCredential, "info", "正在准备连接凭据")
+
+	var password, privKey, passphrase, cert string
+	cred, err := resolveProfileCredential(profile, h.vault, h.encryptor)
+	if err != nil {
+		session.appendLog("warn", ConnectionStageCredential, fmt.Sprintf("读取连接凭据失败，将继续尝试连接: %v", err))
+		slog.Warn("failed to resolve profile credential", "profile_id", profile.ID, "error", err)
+	} else if cred != nil {
+		password = cred.Password
+		privKey = cred.PrivKey
+		passphrase = cred.Passphrase
+		cert = cred.Cert
+		if password == "" && privKey == "" && cert == "" {
+			session.appendLog("info", ConnectionStageCredential, "未检测到密码或私钥，将尝试无凭据连接")
+		} else {
+			session.appendLog("info", ConnectionStageCredential, "连接凭据已就绪")
+		}
+	}
+
+	session.setStage(ConnectionStageHostKeyCheck, "info", "正在检查服务器主机指纹")
+	knownHostKeyFingerprint := profileHostKeyFingerprint(profile.Options)
+	currentHostKeyFingerprint, err := sshproto.InspectHostKeyFingerprint(ctx, protocol.DriverOpts{
+		Host:     profile.Host,
+		Port:     profile.Port,
+		Username: profile.Username,
+	})
+	if err != nil {
+		session.setDisconnected(ConnectionStageHostKeyCheck, fmt.Sprintf("主机指纹检查失败: %v", err))
+		slog.Error("inspect host key failed", "profile_id", profile.ID, "error", err)
+		return
+	}
+	session.appendLog("info", ConnectionStageHostKeyCheck, fmt.Sprintf("服务器主机指纹: %s", currentHostKeyFingerprint))
+
+	if knownHostKeyFingerprint != "" && knownHostKeyFingerprint != currentHostKeyFingerprint {
+		session.setHostKeyPrompt(currentHostKeyFingerprint, knownHostKeyFingerprint)
+		select {
+		case decision := <-session.hostKeyDecision:
+			if !decision.approved {
+				session.setDisconnected(ConnectionStageHostKeyConfirm, "用户取消了主机指纹确认")
+				return
+			}
+			session.clearHostKeyPrompt("新的主机指纹已确认，继续建立连接")
+		case <-ctx.Done():
+			session.setDisconnected(ConnectionStageHostKeyConfirm, "连接已取消")
+			return
+		}
+	}
+
+	session.setStage(ConnectionStageEstablishingSSH, "info", "正在建立 TCP 连接并协商 SSH 安全通道")
+	opts := protocol.DriverOpts{
+		Host:               profile.Host,
+		Port:               profile.Port,
+		Username:           profile.Username,
+		Password:           password,
+		PrivKey:            privKey,
+		Passphrase:         passphrase,
+		Cert:               cert,
+		HostKeyFingerprint: currentHostKeyFingerprint,
+	}
+
+	driver, err := h.pm.Create("ssh", opts)
+	if err != nil {
+		session.setDisconnected(ConnectionStageEstablishingSSH, fmt.Sprintf("创建 SSH 驱动失败: %v", err))
+		slog.Error("create driver failed", "profile_id", profile.ID, "error", err)
+		return
+	}
+
+	if err := driver.Connect(ctx); err != nil {
+		session.setDisconnected(ConnectionStageEstablishingSSH, fmt.Sprintf("SSH 握手或认证失败: %v", err))
+		slog.Error("ssh connect failed", "profile_id", profile.ID, "error", err)
+		return
+	}
+
+	session.mu.Lock()
+	session.Driver = driver
+	session.mu.Unlock()
+	session.appendLog("info", ConnectionStageEstablishingSSH, "SSH 握手完成，认证通过")
+
+	if lc, ok := driver.(protocol.ConnectionLifecycle); ok {
+		lc.OnDead(func(reason string) {
+			message := humanizeDisconnectReason(reason)
+			session.setAbnormalDisconnect(reason, message)
+			slog.Warn("session driver died", "session_id", session.ID, "reason", reason)
+		})
+	}
+
+	session.setStage(ConnectionStageStartingShell, "info", "正在启动远程 Shell")
+	shellOpts := protocol.ShellOptions{
+		Cols: cols,
+		Rows: rows,
+	}
+	shell, err := driver.RequestShell(shellOpts)
+	if err != nil {
+		session.setDisconnected(ConnectionStageStartingShell, fmt.Sprintf("启动 Shell 失败: %v", err))
+		driver.Close()
+		slog.Error("request shell failed", "profile_id", profile.ID, "error", err)
+		return
+	}
+
+	session.mu.Lock()
+	session.Shell = shell
+	session.mu.Unlock()
+	session.setConnected(ConnectionStageStartingShell, "远程 Shell 已启动，等待终端附着")
+
+	if knownHostKeyFingerprint != currentHostKeyFingerprint {
+		if nextOptions, optErr := withProfileHostKeyFingerprint(profile.Options, currentHostKeyFingerprint); optErr != nil {
+			slog.Warn("failed to encode host key fingerprint", "profile_id", profile.ID, "error", optErr)
+		} else if err := h.profiles.Update(profile.ID, &model.ProfileUpdateRequest{Options: &nextOptions}); err != nil {
+			slog.Warn("failed to persist host key fingerprint", "profile_id", profile.ID, "error", err)
+		} else {
+			session.appendLog("info", ConnectionStageHostKeyCheck, "新的主机指纹已保存到连接配置")
+		}
+	}
+
+	h.profiles.UpdateLastUsed(profile.ID)
+	h.audit.Log(&model.AuditLog{
+		ID:        uuid.New().String(),
+		ProfileID: profile.ID,
+		Action:    "connect",
+		Timestamp: time.Now(),
+	})
+
+	go func() {
+		<-shell.Done()
+		session.mu.Lock()
+		if session.Status != "error" {
+			session.Status = "disconnected"
+			session.Stage = string(ConnectionStageDisconnected)
+			session.LastMessage = "会话已结束"
+			session.appendLogLocked("info", ConnectionStageDisconnected, "远程 Shell 已结束")
+		}
+		session.mu.Unlock()
+		h.audit.Log(&model.AuditLog{
+			ID:        uuid.New().String(),
+			ProfileID: profile.ID,
+			Action:    "disconnect",
+			Timestamp: time.Now(),
+		})
+	}()
+}
+
+func (h *SessionHandler) ConfirmHostKey(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	session := h.GetSession(id)
+	if session == nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "session not found")
+		return
+	}
+
+	var req struct {
+		Fingerprint string `json:"fingerprint"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_JSON", err.Error())
+		return
+	}
+	if err := session.confirmHostKey(req.Fingerprint); err != nil {
+		writeError(w, http.StatusConflict, "HOST_KEY_CONFIRM_FAILED", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "accepted"})
 }
 
 func (h *SessionHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -311,6 +345,7 @@ func (h *SessionHandler) Close(w http.ResponseWriter, r *http.Request) {
 	delete(h.sessions, id)
 	h.mu.Unlock()
 
+	session.cancelPendingConnection()
 	if session.Shell != nil {
 		session.Shell.Close()
 	}
@@ -335,8 +370,8 @@ func (h *SessionHandler) RemoveSession(id string) {
 	}
 	h.mu.Unlock()
 
-	// Close SSH resources if they exist
 	if ok {
+		session.cancelPendingConnection()
 		if session.Shell != nil {
 			session.Shell.Close()
 		}
@@ -350,7 +385,7 @@ func (h *SessionHandler) SendError(sessionID string, code, message string) {
 	// This will be used by the WS handler
 }
 
-// handleResize is called by the WebSocket handler
+// HandleResize is called by the WebSocket handler.
 func (h *SessionHandler) HandleResize(sessionID string, cols, rows int) {
 	session := h.GetSession(sessionID)
 	if session == nil || session.Shell == nil {

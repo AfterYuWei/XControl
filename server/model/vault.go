@@ -24,6 +24,7 @@ type Vault struct {
 type Credential struct {
 	Password   string `json:"password,omitempty"`
 	PrivKey    string `json:"private_key,omitempty"`
+	PublicKey  string `json:"public_key,omitempty"`
 	Passphrase string `json:"passphrase,omitempty"`
 	Cert       string `json:"certificate,omitempty"` // SSH certificate (OpenSSH format)
 }

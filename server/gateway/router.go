@@ -91,6 +91,7 @@ func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS) http.Handle
 	// Session routes
 	mux.HandleFunc("POST /api/sessions", sessionH.Create)
 	mux.HandleFunc("GET /api/sessions", sessionH.List)
+	mux.HandleFunc("POST /api/sessions/{id}/confirm-hostkey", sessionH.ConfirmHostKey)
 	mux.HandleFunc("DELETE /api/sessions/{id}", sessionH.Close)
 
 	// WebSocket

@@ -9,6 +9,12 @@ export interface WindowControlAPI {
   onMaximizeChange: (callback: (isMaximized: boolean) => void) => () => void
 }
 
+export interface DesktopStorageAPI {
+  getItem: (key: string) => string | null
+  setItem: (key: string, value: string) => boolean
+  removeItem: (key: string) => boolean
+}
+
 export interface XControlDesktop {
   desktop: true
   // 平台标识：darwin=macOS, win32=Windows, linux=Linux
@@ -19,6 +25,7 @@ export interface XControlDesktop {
     node: string
   }
   window: WindowControlAPI
+  storage: DesktopStorageAPI
 }
 
 declare global {

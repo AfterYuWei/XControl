@@ -277,9 +277,19 @@
   font: 400 11px / 1.4 var(--mono);
   color: var(--fg-1);
   background: var(--bg-1);
-  border: 1px solid var(--accent);
+  border: 1px solid var(--border);
   border-radius: 3px;
   outline: none;
+  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+.sdetail-path-input:hover:not(:focus) {
+  border-color: var(--input-hover-border);
+  background: var(--input-hover-bg);
+}
+.sdetail-path-input:focus {
+  border-color: var(--input-focus-border);
+  background: var(--input-focus-bg);
+  box-shadow: var(--input-focus-shadow);
 }
 
 .sdetail-act-btn-danger {

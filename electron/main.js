@@ -9,6 +9,36 @@ let backendProcess = null
 let mainWindow = null
 let backendPort = 0
 
+function getSettingsFilePath() {
+  return path.join(app.getPath('userData'), 'settings.json')
+}
+
+function readSettingsStore() {
+  const file = getSettingsFilePath()
+  try {
+    if (!fs.existsSync(file)) return {}
+    const raw = fs.readFileSync(file, 'utf8')
+    if (!raw.trim()) return {}
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch (error) {
+    console.error('read settings store failed', error)
+    return {}
+  }
+}
+
+function writeSettingsStore(store) {
+  const file = getSettingsFilePath()
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(file, JSON.stringify(store, null, 2), 'utf8')
+    return true
+  } catch (error) {
+    console.error('write settings store failed', error)
+    return false
+  }
+}
+
 // 后端可执行文件路径：打包后在 resources 目录，开发时取 server 目录。
 // 跨平台后端文件名：Windows 为 xcontrol-server.exe，macOS/Linux 为 xcontrol-server（无后缀）。
 function getBackendExecutable() {
@@ -180,6 +210,23 @@ ipcMain.handle('window:maximizeToggle', () => {
 })
 ipcMain.handle('window:close', () => win()?.close())
 ipcMain.handle('window:isMaximized', () => (win() ? win().isMaximized() : false))
+
+ipcMain.on('settings-storage:get', (event, key) => {
+  const store = readSettingsStore()
+  event.returnValue = Object.prototype.hasOwnProperty.call(store, key) ? store[key] : null
+})
+
+ipcMain.on('settings-storage:set', (event, key, value) => {
+  const store = readSettingsStore()
+  store[key] = value
+  event.returnValue = writeSettingsStore(store)
+})
+
+ipcMain.on('settings-storage:remove', (event, key) => {
+  const store = readSettingsStore()
+  delete store[key]
+  event.returnValue = writeSettingsStore(store)
+})
 
 // 单实例锁，避免重复启动导致后端端口抢占
 const gotLock = app.requestSingleInstanceLock()

@@ -198,20 +198,20 @@
 :root.dark .pf-field > input,
 :root.dark .pf-field > textarea,
 :root.dark .pf-field > div > select {
-  transition: border-color 0.12s, box-shadow 0.12s;
+  transition: border-color 0.18s, box-shadow 0.18s, background-color 0.18s;
 }
-:root.light .pf-field input:focus-visible,
-:root.light .pf-field textarea:focus-visible,
-:root.light .pf-field select:focus-visible {
-  border-color: #000 !important;
-  box-shadow: 0 0 0 1px #000 !important;
-  outline: none !important;
+.pf-field input:hover:not(:disabled):not(:focus-visible),
+.pf-field textarea:hover:not(:disabled):not(:focus-visible),
+.pf-field select:hover:not(:disabled):not(:focus-visible) {
+  border-color: var(--input-hover-border) !important;
+  background: var(--input-hover-bg) !important;
 }
-:root.dark .pf-field input:focus-visible,
-:root.dark .pf-field textarea:focus-visible,
-:root.dark .pf-field select:focus-visible {
-  border-color: #fff !important;
-  box-shadow: 0 0 0 1px #fff !important;
+.pf-field input:focus-visible,
+.pf-field textarea:focus-visible,
+.pf-field select:focus-visible {
+  border-color: var(--input-focus-border) !important;
+  background: var(--input-focus-bg) !important;
+  box-shadow: var(--input-focus-shadow) !important;
   outline: none !important;
 }
 /* Error message. */

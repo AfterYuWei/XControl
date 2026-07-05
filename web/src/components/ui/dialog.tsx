@@ -31,7 +31,7 @@ const DialogContent = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      "relative z-50 w-full max-w-lg rounded-lg bg-background p-6 shadow-modal",
+      "xctrl-dialog-surface relative z-50 w-full max-w-lg rounded-lg p-6",
       className
     )}
     {...props}

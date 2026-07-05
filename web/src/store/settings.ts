@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware'
 
 type Theme = 'light' | 'dark' | 'system'
 
@@ -59,6 +59,26 @@ function applyTheme(theme: Theme) {
   const root = document.documentElement
   root.classList.remove('light', 'dark')
   root.classList.add(resolved)
+}
+
+function createSettingsStorage(): StateStorage {
+  if (typeof window !== 'undefined' && window.xcontrol?.desktop) {
+    return {
+      getItem: (name) => window.xcontrol?.storage.getItem(name) ?? null,
+      setItem: (name, value) => {
+        window.xcontrol?.storage.setItem(name, value)
+      },
+      removeItem: (name) => {
+        window.xcontrol?.storage.removeItem(name)
+      },
+    }
+  }
+
+  return {
+    getItem: (name) => localStorage.getItem(name),
+    setItem: (name, value) => localStorage.setItem(name, value),
+    removeItem: (name) => localStorage.removeItem(name),
+  }
 }
 
 // Watch OS-level theme changes so "system" mode reacts in real time.
@@ -131,6 +151,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: 'xcontrol-settings',
+      storage: createJSONStorage(createSettingsStorage),
     }
   )
 )

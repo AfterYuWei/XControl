@@ -131,14 +131,19 @@
   color: var(--fg);
   font: 400 var(--sans-size) / 1 var(--sans);
   outline: none;
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color 0.18s, background 0.18s, box-shadow 0.18s;
 }
 .header-search input::placeholder {
   color: var(--fg-4);
 }
+.header-search input:hover:not(:focus) {
+  border-color: var(--input-hover-border);
+  background: var(--input-hover-bg);
+}
 .header-search input:focus {
-  border-color: var(--accent);
-  background: var(--bg-panel);
+  border-color: var(--input-focus-border);
+  background: var(--input-focus-bg);
+  box-shadow: var(--input-focus-shadow);
 }
 .header-search-clear {
   position: absolute;
@@ -309,14 +314,19 @@
   color: var(--fg);
   font: 400 var(--sans-size) / 1 var(--sans);
   outline: none;
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color 0.18s, background 0.18s, box-shadow 0.18s;
 }
 .search-wrap input::placeholder {
   color: var(--fg-4);
 }
+.search-wrap input:hover:not(:focus) {
+  border-color: var(--input-hover-border);
+  background: var(--input-hover-bg);
+}
 .search-wrap input:focus {
-  border-color: var(--accent);
-  background: var(--bg-panel);
+  border-color: var(--input-focus-border);
+  background: var(--input-focus-bg);
+  box-shadow: var(--input-focus-shadow);
 }
 .search-wrap-close {
   position: absolute;

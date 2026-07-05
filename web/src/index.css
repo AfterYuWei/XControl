@@ -103,6 +103,16 @@
   --accent-hi: #0761d1;            /* link-deep */
   --accent-bg: rgba(0, 112, 243, 0.08);
   --accent-bg2: rgba(0, 112, 243, 0.04);
+  --input-hover-bg: color-mix(in srgb, var(--bg-input) 92%, var(--bg-hover));
+  --input-focus-bg: color-mix(in srgb, var(--bg-input) 94%, white 6%);
+  --input-hover-border: color-mix(in srgb, var(--border) 84%, var(--accent) 16%);
+  --input-focus-border: color-mix(in srgb, var(--accent) 78%, white 22%);
+  --input-focus-shadow:
+    0 0 0 1px var(--input-focus-border),
+    0 0 0 4px rgba(0, 112, 243, 0.12),
+    0 10px 24px -18px rgba(0, 112, 243, 0.35);
+  --input-selection-bg: rgba(0, 112, 243, 0.18);
+  --input-selection-fg: var(--fg);
   --link: #0070f3;                 /* link */
   --link-deep: #0761d1;            /* link-deep */
   --link-soft: #d3e5ff;            /* link-soft */
@@ -167,18 +177,33 @@
     0 2px 2px rgba(0, 0, 0, 0.04),
     0 8px 16px -4px rgba(0, 0, 0, 0.08),
     0 0 0 1px rgba(0, 0, 0, 0.04);
+  --dialog-bg: var(--bg-panel);
+  --dialog-border: color-mix(in srgb, var(--border) 94%, rgba(0, 0, 0, 0.08));
+  --dialog-surface-top: var(--dialog-bg);
+  --btn-primary-border: color-mix(in srgb, var(--accent-hi) 78%, white 22%);
+  --btn-primary-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+  --btn-outline-bg: var(--bg-panel);
+  --btn-outline-border: color-mix(in srgb, var(--border) 94%, rgba(0, 0, 0, 0.06));
+  --btn-outline-hover-bg: var(--bg-hover);
+  --btn-outline-hover-border: color-mix(in srgb, var(--border) 72%, var(--accent) 28%);
+  --btn-outline-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+  --btn-secondary-bg: var(--bg-elevated);
+  --btn-secondary-border: color-mix(in srgb, var(--border) 90%, rgba(0, 0, 0, 0.05));
+  --btn-secondary-hover-bg: var(--bg-hover);
+  --btn-secondary-hover-border: color-mix(in srgb, var(--border) 74%, var(--accent) 26%);
+  --btn-secondary-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
 }
 
 /* ═══════════════════ DARK THEME ═══════════════════ */
 .dark {
   --bg: #0a0a0a;                   /* canvas */
-  --bg-panel: #111111;             /* canvas-elevated */
-  --bg-elevated: #1a1a1a;          /* accents-4 */
-  --bg-hover: #1a1a1a;             /* accents-4 */
-  --bg-active: #2a2a2a;            /* accents-7 */
-  --bg-input: #0d0d0d;             /* darker input bg */
-  --border: #333333;               /* accents-8 */
-  --border-subtle: #262626;        /* accents-7 */
+  --bg-panel: #101012;             /* canvas-elevated */
+  --bg-elevated: #151518;          /* accents-4 */
+  --bg-hover: #18181c;             /* accents-4 */
+  --bg-active: #202126;            /* accents-7 */
+  --bg-input: #0c0c0f;             /* darker input bg */
+  --border: #34353c;               /* accents-8 */
+  --border-subtle: #26272d;        /* accents-7 */
   --fg: #ededed;                   /* foreground */
   --fg-2: #a3a3a3;                 /* foreground-secondary */
   --fg-3: #737373;                 /* foreground-tertiary */
@@ -188,6 +213,16 @@
   --accent-hi: #3291ff;            /* link hover */
   --accent-bg: rgba(0, 112, 243, 0.12);
   --accent-bg2: rgba(0, 112, 243, 0.06);
+  --input-hover-bg: color-mix(in srgb, var(--bg-input) 90%, var(--bg-elevated));
+  --input-focus-bg: color-mix(in srgb, var(--bg-input) 92%, white 8%);
+  --input-hover-border: color-mix(in srgb, var(--border) 76%, var(--accent-hi) 24%);
+  --input-focus-border: color-mix(in srgb, var(--accent-hi) 78%, white 12%);
+  --input-focus-shadow:
+    0 0 0 1px var(--input-focus-border),
+    0 0 0 4px rgba(50, 145, 255, 0.18),
+    0 14px 28px -20px rgba(50, 145, 255, 0.5);
+  --input-selection-bg: rgba(50, 145, 255, 0.26);
+  --input-selection-fg: #f8fbff;
   --link: #3291ff;                 /* link (dark) */
   --link-deep: #0761d1;
   --link-soft: rgba(50, 145, 255, 0.16);
@@ -224,18 +259,40 @@
      白色描边在暗色面板上保持可见 */
   --shadow-surface:
     0 1px 1px rgba(0, 0, 0, 0.4),
-    0 0 0 1px rgba(255, 255, 255, 0.05);
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.025);
   --shadow-surface-hover:
     0 1px 2px rgba(0, 0, 0, 0.4),
-    0 0 0 1px rgba(255, 255, 255, 0.08);
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
   --shadow-floating:
-    0 2px 2px rgba(0, 0, 0, 0.4),
-    0 8px 16px -4px rgba(0, 0, 0, 0.55),
-    0 0 0 1px rgba(255, 255, 255, 0.05);
+    0 8px 24px -18px rgba(0, 0, 0, 0.68),
+    0 2px 5px rgba(0, 0, 0, 0.38),
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
   --shadow-modal:
-    0 2px 2px rgba(0, 0, 0, 0.4),
-    0 8px 16px -4px rgba(0, 0, 0, 0.55),
-    0 0 0 1px rgba(255, 255, 255, 0.05);
+    0 18px 52px -34px rgba(0, 0, 0, 0.82),
+    0 10px 20px -16px rgba(0, 0, 0, 0.52),
+    0 2px 5px rgba(0, 0, 0, 0.38),
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  --dialog-bg: #0d0d10;
+  --dialog-border: color-mix(in srgb, var(--border) 82%, white 18%);
+  --dialog-surface-top: var(--dialog-bg);
+  --btn-primary-border: color-mix(in srgb, var(--accent-hi) 84%, white 16%);
+  --btn-primary-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.36),
+    0 0 0 1px rgba(255, 255, 255, 0.02);
+  --btn-outline-bg: color-mix(in srgb, var(--bg-panel) 94%, var(--bg-elevated) 6%);
+  --btn-outline-border: color-mix(in srgb, var(--border) 82%, white 18%);
+  --btn-outline-hover-bg: color-mix(in srgb, var(--bg-elevated) 94%, white 6%);
+  --btn-outline-hover-border: color-mix(in srgb, var(--border) 62%, var(--accent-hi) 38%);
+  --btn-outline-shadow: 0 1px 1px rgba(0, 0, 0, 0.32);
+  --btn-secondary-bg: color-mix(in srgb, var(--bg-elevated) 95%, white 5%);
+  --btn-secondary-border: color-mix(in srgb, var(--border) 78%, white 22%);
+  --btn-secondary-hover-bg: color-mix(in srgb, var(--bg-active) 92%, white 8%);
+  --btn-secondary-hover-border: color-mix(in srgb, var(--border) 60%, var(--accent-hi) 40%);
+  --btn-secondary-shadow: 0 1px 1px rgba(0, 0, 0, 0.32);
 }
 
 @layer base {
@@ -256,6 +313,13 @@
   body {
     @apply bg-background text-foreground;
     font-family: var(--sans);
+  }
+  :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), textarea, select) {
+    caret-color: var(--accent);
+  }
+  :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), textarea)::selection {
+    background: var(--input-selection-bg);
+    color: var(--input-selection-fg);
   }
   * {
     scrollbar-width: thin;
@@ -305,6 +369,28 @@
   .shadow-surface-hover { box-shadow: var(--shadow-surface-hover); }
   .shadow-floating { box-shadow: var(--shadow-floating); }
   .shadow-modal { box-shadow: var(--shadow-modal); }
+  .xctrl-dialog-surface {
+    border: 1px solid var(--dialog-border);
+    background: var(--dialog-bg);
+    box-shadow: var(--shadow-modal);
+  }
+  .xctrl-input-shell {
+    transition:
+      border-color 0.18s ease,
+      box-shadow 0.18s ease,
+      background-color 0.18s ease,
+      color 0.18s ease;
+  }
+  .xctrl-input-shell:hover:not(:disabled):not(:focus-visible) {
+    background: var(--input-hover-bg);
+    border-color: var(--input-hover-border);
+  }
+  .xctrl-input-shell:focus-visible {
+    background: var(--input-focus-bg);
+    border-color: var(--input-focus-border) !important;
+    box-shadow: var(--input-focus-shadow) !important;
+    outline: none;
+  }
 }
 
 /* ═══════════════════ COMPONENT STYLES ═══════════════════ */

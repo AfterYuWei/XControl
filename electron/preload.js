@@ -25,4 +25,9 @@ contextBridge.exposeInMainWorld('xcontrol', {
       return () => ipcRenderer.removeListener('window:maximized', handler)
     },
   },
+  storage: {
+    getItem: (key) => ipcRenderer.sendSync('settings-storage:get', key),
+    setItem: (key, value) => ipcRenderer.sendSync('settings-storage:set', key, value),
+    removeItem: (key) => ipcRenderer.sendSync('settings-storage:remove', key),
+  },
 })

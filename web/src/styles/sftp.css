@@ -278,12 +278,22 @@
   flex: 1;
   height: 24px;
   background: var(--bg-input);
-  border: 1px solid var(--accent);
+  border: 1px solid var(--border);
   border-radius: var(--r-xs);
   color: var(--fg);
   font: 400 11.5px / 1 var(--mono);
   padding: 0 6px;
   outline: none;
+  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+.sftp-crumb-input:hover:not(:focus) {
+  border-color: var(--input-hover-border);
+  background: var(--input-hover-bg);
+}
+.sftp-crumb-input:focus {
+  border-color: var(--input-focus-border);
+  background: var(--input-focus-bg);
+  box-shadow: var(--input-focus-shadow);
 }
 
 /* ===== FILE LIST ===== */

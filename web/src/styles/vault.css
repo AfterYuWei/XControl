@@ -50,11 +50,18 @@
   border: 1px solid var(--border);
   border-radius: 6px;
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color 0.18s, background 0.18s, box-shadow 0.18s;
+}
+
+.vault-toolbar-search:hover:not(:focus) {
+  border-color: var(--input-hover-border);
+  background: var(--input-hover-bg);
 }
 
 .vault-toolbar-search:focus {
-  border-color: var(--accent);
+  border-color: var(--input-focus-border);
+  background: var(--input-focus-bg);
+  box-shadow: var(--input-focus-shadow);
 }
 
 .vault-toolbar-search::placeholder {
@@ -381,7 +388,7 @@
   padding: 14px;
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
-  background: linear-gradient(180deg, var(--bg-panel) 0%, color-mix(in srgb, var(--bg-panel) 82%, var(--bg-elevated)) 100%);
+  background: color-mix(in srgb, var(--dialog-bg) 96%, var(--bg-elevated));
   box-shadow: var(--shadow-surface);
 }
 
@@ -404,7 +411,7 @@
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: var(--r);
-  background: var(--bg-panel);
+  background: color-mix(in srgb, var(--dialog-bg) 96%, var(--bg-elevated));
 }
 
 .vault-gen-certificate-input {
@@ -434,7 +441,7 @@
   padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: var(--r);
-  background: color-mix(in srgb, var(--bg-panel) 88%, var(--bg-elevated));
+  background: color-mix(in srgb, var(--dialog-bg) 93%, var(--bg-elevated));
 }
 
 .vault-gen-summary-item-wide {
@@ -644,10 +651,18 @@
   border-radius: 6px;
   outline: none;
   margin-bottom: 10px;
+  transition: border-color 0.18s, background 0.18s, box-shadow 0.18s;
+}
+
+.vault-select-search:hover:not(:focus) {
+  border-color: var(--input-hover-border);
+  background: var(--input-hover-bg);
 }
 
 .vault-select-search:focus {
-  border-color: var(--accent);
+  border-color: var(--input-focus-border);
+  background: var(--input-focus-bg);
+  box-shadow: var(--input-focus-shadow);
 }
 
 .vault-select-list {
@@ -1017,8 +1032,7 @@
   padding: 14px;
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
-  background:
-    linear-gradient(180deg, var(--bg-panel) 0%, color-mix(in srgb, var(--bg-panel) 84%, var(--bg-elevated)) 100%);
+  background: color-mix(in srgb, var(--dialog-bg) 97%, var(--bg-elevated));
   box-shadow: var(--shadow-surface);
 }
 
@@ -1191,7 +1205,7 @@
   padding: 10px 12px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--r);
-  background: color-mix(in srgb, var(--bg-panel) 90%, var(--bg-elevated));
+  background: color-mix(in srgb, var(--dialog-bg) 94%, var(--bg-elevated));
 }
 
 .vault-form-rail-summary-label {
@@ -1246,7 +1260,7 @@
   padding: 12px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--r);
-  background: color-mix(in srgb, var(--bg-panel) 92%, var(--bg-elevated));
+  background: color-mix(in srgb, var(--dialog-bg) 95%, var(--bg-elevated));
 }
 
 .vault-form-password-summary-label {

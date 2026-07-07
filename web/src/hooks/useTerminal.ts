@@ -183,14 +183,14 @@ export function useTerminal(options: UseTerminalOptions) {
       if (inside && text) {
         // Right-click on the selection: copy it and paste into the command line.
         navigator.clipboard.writeText(text).catch(() => {})
-        terminal.input(text)
+        terminal.paste(text)
         terminal.clearSelection()
         return
       }
       // Right-click elsewhere: drop any stale highlight, then paste.
       terminal.clearSelection()
       navigator.clipboard.readText().then((clip) => {
-        if (clip) terminal.input(clip)
+        if (clip) terminal.paste(clip)
       }).catch(() => {})
     }
     terminalElement?.addEventListener('mousedown', handleMouseDown, true)

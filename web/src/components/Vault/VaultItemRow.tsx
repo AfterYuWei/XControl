@@ -1,39 +1,63 @@
 import { useState } from 'react'
-import { AlertTriangle, Eye, KeyRound, Trash2 } from 'lucide-react'
+import { Lock, KeyRound, ScrollText, Copy, Pencil, Trash2, AlertTriangle } from 'lucide-react'
 import { vaultApi } from '@/api/vault'
 import { notify } from '@/store/notify'
-import { VAULT_TYPE_LABELS, type ProfileRef, type VaultItem } from '@/types/vault'
-import { VAULT_TYPE_ICONS } from '@/lib/vaultIcons'
+import { VAULT_TYPE_LABELS, type VaultItem, type VaultType, type ProfileRef } from '@/types/vault'
 
 interface VaultItemRowProps {
   item: VaultItem
-  onView: (item: VaultItem) => void
+  onEdit: (item: VaultItem) => void
   onDelete: (item: VaultItem, refs: ProfileRef[]) => void
+}
+
+const TYPE_ICON: Record<VaultType, typeof Lock> = {
+  password: Lock,
+  private_key: KeyRound,
+  ssh_certificate: ScrollText,
 }
 
 function formatDate(iso: string): string {
   try {
-    const value = new Date(iso)
-    return value.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
+    const d = new Date(iso)
+    return d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
   } catch {
     return ''
   }
 }
 
-export function VaultItemRow({ item, onView, onDelete }: VaultItemRowProps) {
-  const [checkingDeleteRefs, setCheckingDeleteRefs] = useState(false)
-  const Icon = VAULT_TYPE_ICONS[item.type]
+export function VaultItemRow({ item, onEdit, onDelete }: VaultItemRowProps) {
+  const [copying, setCopying] = useState(false)
+  const Icon = TYPE_ICON[item.type]
   const displayName = item.name || '未命名'
 
+  const handleCopy = async () => {
+    setCopying(true)
+    try {
+      const cred = await vaultApi.reveal(item.id)
+      // Copy the most relevant field based on type
+      const text =
+        item.type === 'password' ? cred.password :
+        item.type === 'private_key' ? cred.private_key :
+        cred.certificate
+      if (!text) {
+        notify.warning('无可复制内容')
+        return
+      }
+      await navigator.clipboard.writeText(text)
+      notify.success('已复制到剪贴板,建议 30s 后清理')
+    } catch {
+      notify.error('复制失败')
+    } finally {
+      setCopying(false)
+    }
+  }
+
   const handleDelete = async () => {
-    setCheckingDeleteRefs(true)
     try {
       const refs = await vaultApi.references(item.id)
       onDelete(item, refs)
     } catch {
       notify.error('查询引用失败')
-    } finally {
-      setCheckingDeleteRefs(false)
     }
   }
 
@@ -45,9 +69,11 @@ export function VaultItemRow({ item, onView, onDelete }: VaultItemRowProps) {
       <div className="vault-row-main">
         <div className="vault-row-title">
           <span className="vault-row-name">{displayName}</span>
-          <span className={`vault-row-badge vault-row-badge-${item.type}`}>{VAULT_TYPE_LABELS[item.type]}</span>
+          <span className={`vault-row-badge vault-row-badge-${item.type}`}>
+            {VAULT_TYPE_LABELS[item.type]}
+          </span>
           {item.has_passphrase && (
-            <span className="vault-row-badge vault-row-badge-passphrase" title="包含 passphrase">
+            <span className="vault-row-badge vault-row-badge-passphrase" title="含 passphrase">
               <KeyRound size={10} /> PP
             </span>
           )}
@@ -55,35 +81,48 @@ export function VaultItemRow({ item, onView, onDelete }: VaultItemRowProps) {
         <div className="vault-row-meta">
           {item.username && (
             <>
-              <span className="vault-row-user" title="用户名">
-                {item.username}
-              </span>
-              <span className="vault-row-sep">路</span>
+              <span className="vault-row-user" title="用户名">{item.username}</span>
+              <span className="vault-row-sep">·</span>
             </>
           )}
+          <span className="vault-row-fp" title="指纹">
+            {item.fingerprint ? `指纹 ${item.fingerprint}` : '无指纹'}
+          </span>
+          <span className="vault-row-sep">·</span>
           <span className="vault-row-refs" title="被引用次数">
             引用 {item.ref_count}
           </span>
-          <span className="vault-row-sep">路</span>
+          <span className="vault-row-sep">·</span>
           <span className="vault-row-date">{formatDate(item.updated_at)}</span>
           {item.remark && (
             <>
-              <span className="vault-row-sep">路</span>
-              <span className="vault-row-remark" title={item.remark}>
-                {item.remark}
-              </span>
+              <span className="vault-row-sep">·</span>
+              <span className="vault-row-remark" title={item.remark}>{item.remark}</span>
             </>
           )}
         </div>
       </div>
       <div className="vault-row-actions">
-        <button className="vault-act" onClick={() => onView(item)} title="查看" aria-label="查看">
-          <Eye size={13} />
+        <button
+          className="vault-act"
+          onClick={handleCopy}
+          disabled={copying}
+          title="复制凭据"
+          aria-label="复制凭据"
+        >
+          <Copy size={13} />
+        </button>
+        <button
+          className="vault-act"
+          onClick={() => onEdit(item)}
+          title="编辑"
+          aria-label="编辑"
+        >
+          <Pencil size={13} />
         </button>
         <button
           className="vault-act vault-act-danger"
           onClick={handleDelete}
-          disabled={checkingDeleteRefs}
           title="删除"
           aria-label="删除"
         >

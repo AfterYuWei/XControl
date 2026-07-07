@@ -1,6 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Eye, EyeOff, Upload } from 'lucide-react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -10,12 +14,12 @@ import { useProfileStore } from '@/store/profile'
 import { SERVER_ICONS, resolveServerIcon } from '@/lib/serverIcons'
 import { VaultSelectButton } from '@/components/Vault/VaultSelectButton'
 import type { Profile, ProfileCreateRequest } from '@/types/profile'
-import type { VaultItem } from '@/types/vault'
 
 interface ProfileFormProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   profile?: Profile | null
+  /** Preset group when creating a new profile from a group's "+" button. */
   presetGroupId?: string
 }
 
@@ -40,7 +44,6 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
         note: profile.note,
       }
     }
-
     return {
       name: '',
       host: '',
@@ -59,50 +62,42 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [passwordVisible, setPasswordVisible] = useState(false)
+
+  // Icon popover state
   const [iconOpen, setIconOpen] = useState(false)
-  const [uploadingKey, setUploadingKey] = useState(false)
-  const [selectedVaultItem, setSelectedVaultItem] = useState<VaultItem | null>(null)
-  const [vaultUsernameDirty, setVaultUsernameDirty] = useState(false)
-  const [lastAppliedVaultUsername, setLastAppliedVaultUsername] = useState('')
   const iconBtnRef = useRef<HTMLButtonElement>(null)
   const iconPopoverRef = useRef<HTMLDivElement>(null)
-  const privateKeyFileRef = useRef<HTMLInputElement>(null)
 
   const closeIconPopover = useCallback(() => setIconOpen(false), [])
 
   useEffect(() => {
     if (!iconOpen) return
-
-    const handleMouseDown = (event: MouseEvent) => {
+    const handle = (e: MouseEvent) => {
       if (
-        iconBtnRef.current &&
-        !iconBtnRef.current.contains(event.target as Node) &&
-        iconPopoverRef.current &&
-        !iconPopoverRef.current.contains(event.target as Node)
+        iconBtnRef.current && !iconBtnRef.current.contains(e.target as Node) &&
+        iconPopoverRef.current && !iconPopoverRef.current.contains(e.target as Node)
       ) {
         closeIconPopover()
       }
     }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeIconPopover()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeIconPopover()
     }
-
-    document.addEventListener('mousedown', handleMouseDown)
-    document.addEventListener('keydown', handleKeyDown)
+    document.addEventListener('mousedown', handle)
+    document.addEventListener('keydown', onKey)
     return () => {
-      document.removeEventListener('mousedown', handleMouseDown)
-      document.removeEventListener('keydown', handleKeyDown)
+      document.removeEventListener('mousedown', handle)
+      document.removeEventListener('keydown', onKey)
     }
   }, [iconOpen, closeIconPopover])
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault()
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
     setLoading(true)
     setError('')
 
     try {
+      // 根据认证方式清理对侧字段：vault 模式只发 vault_id，inline 模式清 vault_id
       const payload: ProfileCreateRequest = { ...form }
       if (payload.auth_type === 'vault') {
         payload.password = ''
@@ -111,7 +106,6 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
       } else {
         payload.vault_id = ''
       }
-
       if (isEditing && profile) {
         await updateProfile(profile.id, payload)
       } else {
@@ -125,26 +119,9 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
     }
   }
 
-  const handlePrivateKeyUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-
-    setUploadingKey(true)
-    setError('')
-    try {
-      const text = await file.text()
-      setForm((prev) => ({ ...prev, private_key: text }))
-    } catch {
-      setError('私钥文件读取失败')
-    } finally {
-      setUploadingKey(false)
-      event.target.value = ''
-    }
-  }
-
   const groupOptions = [
     { value: '', label: '无分组' },
-    ...groups.map((group) => ({ value: group.id, label: `${group.icon} ${group.name}` })),
+    ...groups.map((g) => ({ value: g.id, label: `${g.icon} ${g.name}` })),
   ]
 
   const authOptions = [
@@ -154,53 +131,27 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
   ]
 
   const CurrentIcon = resolveServerIcon(form.icon)
-  const showPasswordAuth = form.auth_type === 'password'
-  const showKeyAuth = form.auth_type === 'key'
-  const vaultHasUsername = !!selectedVaultItem?.username?.trim()
-  const vaultUsernameHelpText = selectedVaultItem
-    ? vaultHasUsername
-      ? '已从 Vault 回显用户名，可按需修改，仅作用于当前服务器。'
-      : '当前 Vault 凭据未设置用户名，请在此填写服务器登录用户名。'
-    : '选择 Vault 凭据后，请确认当前服务器使用的登录用户名。'
-
-  const handleVaultSelection = (item: VaultItem) => {
-    const incomingUsername = item.username?.trim() || ''
-    const currentUsername = form.username.trim()
-    const shouldApplyVaultUsername =
-      incomingUsername !== '' &&
-      (!vaultUsernameDirty || currentUsername === '' || form.username === lastAppliedVaultUsername)
-
-    setLastAppliedVaultUsername(incomingUsername)
-    setForm((prev) => ({
-      ...prev,
-      vault_id: item.id,
-      username: shouldApplyVaultUsername ? incomingUsername : prev.username,
-    }))
-
-    if (shouldApplyVaultUsername) {
-      setVaultUsernameDirty(false)
-    }
-  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent onClose={() => onOpenChange(false)} className="max-w-lg">
+        {/* Header — title left, close button fixed top-right */}
         <DialogHeader className="mb-6">
           <DialogTitle>{isEditing ? '编辑连接' : '新建连接'}</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} id="profile-form" className="pf-form">
+          {/* ── 名称（带图标前缀） ── */}
           <div className="pf-field">
-            <Label htmlFor="name" className="pf-label">
-              名称
-            </Label>
+            <Label htmlFor="name" className="pf-label">名称</Label>
             <div className="pf-input-group">
+              {/* 图标前缀 — 点击弹出 Popover 选择 */}
               <div className="pf-icon-prefix-wrap">
                 <button
                   ref={iconBtnRef}
                   type="button"
                   className="pf-icon-prefix"
-                  onClick={() => setIconOpen((value) => !value)}
+                  onClick={() => setIconOpen((v) => !v)}
                   aria-label="选择服务器图标"
                   aria-expanded={iconOpen}
                   title="点击更换图标"
@@ -211,20 +162,20 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
                   <div ref={iconPopoverRef} className="pf-icon-popover" role="dialog">
                     <div className="pf-icon-popover-title">选择图标</div>
                     <div className="pf-icon-popover-grid">
-                      {SERVER_ICONS.map((definition) => {
-                        const Icon = definition.Icon
-                        const active = (form.icon || 'server') === definition.key
+                      {SERVER_ICONS.map((def) => {
+                        const Icon = def.Icon
+                        const active = (form.icon || 'server') === def.key
                         return (
                           <button
-                            key={definition.key}
+                            key={def.key}
                             type="button"
-                            title={definition.label}
+                            title={def.label}
                             onClick={() => {
-                              setForm({ ...form, icon: definition.key })
+                              setForm({ ...form, icon: def.key })
                               closeIconPopover()
                             }}
                             className={`pf-icon-popover-cell ${active ? 'active' : ''}`}
-                            aria-label={`选择图标 ${definition.label}`}
+                            aria-label={`选择图标 ${def.label}`}
                             aria-pressed={active}
                           >
                             <Icon size={16} />
@@ -238,7 +189,7 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
               <Input
                 id="name"
                 value={form.name}
-                onChange={(event) => setForm({ ...form, name: event.target.value })}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
                 placeholder="生产服务器"
                 required
                 className="pf-input-mono"
@@ -246,195 +197,135 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
             </div>
           </div>
 
+          {/* ── 主机 + 端口（3:1 网格） ── */}
           <div className="pf-grid-2">
             <div className="pf-field">
-              <Label htmlFor="host" className="pf-label">
-                主机
-              </Label>
+              <Label htmlFor="host" className="pf-label">主机</Label>
               <Input
                 id="host"
                 value={form.host}
-                onChange={(event) => setForm({ ...form, host: event.target.value })}
+                onChange={(e) => setForm({ ...form, host: e.target.value })}
                 placeholder="192.168.1.100"
                 required
                 className="pf-input-mono"
               />
             </div>
             <div className="pf-field">
-              <Label htmlFor="port" className="pf-label">
-                端口
-              </Label>
+              <Label htmlFor="port" className="pf-label">端口</Label>
               <Input
                 id="port"
                 type="number"
                 value={form.port}
-                onChange={(event) => setForm({ ...form, port: parseInt(event.target.value, 10) || 22 })}
+                onChange={(e) => setForm({ ...form, port: parseInt(e.target.value) || 22 })}
                 className="pf-input-mono"
               />
             </div>
           </div>
 
-          <div className="pf-field">
-            <Label className="pf-label">认证方式</Label>
-            <Select
-              options={authOptions}
-              value={form.auth_type}
-              onChange={(value) => setForm({ ...form, auth_type: value as 'password' | 'key' | 'vault' })}
-            />
+          {/* ── 用户名 + 认证方式（1:1 网格） ── */}
+          <div className="pf-grid-2 pf-grid-equal">
+            <div className="pf-field">
+              <Label htmlFor="username" className="pf-label">用户名</Label>
+              <Input
+                id="username"
+                value={form.username}
+                onChange={(e) => setForm({ ...form, username: e.target.value })}
+                placeholder="root"
+                required
+                className="pf-input-mono"
+              />
+            </div>
+            <div className="pf-field">
+              <Label className="pf-label">认证方式</Label>
+              <Select
+                options={authOptions}
+                value={form.auth_type}
+                onChange={(v) => setForm({ ...form, auth_type: v as 'password' | 'key' | 'vault' })}
+              />
+            </div>
           </div>
 
-          {form.auth_type === 'vault' ? (
-            <div className="pf-field">
-              <Label className="pf-label">凭据选择</Label>
-              <VaultSelectButton
-                vaultId={form.vault_id}
-                onItemResolved={setSelectedVaultItem}
-                onChange={handleVaultSelection}
-              />
-              <div className="pf-help-text">{vaultUsernameHelpText}</div>
-              <div className="pf-field" style={{ marginTop: '12px' }}>
-                <Label htmlFor="vault-username" className="pf-label">
-                  用户名
-                </Label>
-                <Input
-                  id="vault-username"
-                  value={form.username}
-                  onChange={(event) => {
-                    setVaultUsernameDirty(true)
-                    setForm({ ...form, username: event.target.value })
-                  }}
-                  placeholder="root"
-                  required
-                  className="pf-input-mono"
+          {/* ── 凭据（通栏）：vault 模式显示选择器，否则显示密码/私钥 ── */}
+          <div className="pf-field">
+            {form.auth_type === 'vault' ? (
+              <>
+                <Label className="pf-label">凭据选择</Label>
+                <VaultSelectButton
+                  vaultId={form.vault_id}
+                  onChange={(item) => setForm({ ...form, vault_id: item.id, username: item.username || form.username })}
                 />
-              </div>
-            </div>
-          ) : (
-            <>
-              {showPasswordAuth && (
-                <div className="pf-grid-2 pf-grid-equal">
-                  <div className="pf-field">
-                    <Label htmlFor="username" className="pf-label">
-                      用户名
-                    </Label>
-                    <Input
-                      id="username"
-                      value={form.username}
-                      onChange={(event) => setForm({ ...form, username: event.target.value })}
-                      placeholder="root"
-                      required
-                      className="pf-input-mono"
-                    />
-                  </div>
-                  <div className="pf-field">
-                    <Label htmlFor="password" className="pf-label">
-                      密码
-                    </Label>
-                    <div className="pf-input-group pf-input-group-action">
-                      <Input
-                        id="password"
-                        type={passwordVisible ? 'text' : 'password'}
-                        value={form.password}
-                        onChange={(event) => setForm({ ...form, password: event.target.value })}
-                        placeholder={isEditing ? '留空则不修改' : ''}
-                        className="pf-input-mono"
-                      />
-                      <button
-                        type="button"
-                        className="pf-inline-action"
-                        onClick={() => setPasswordVisible((value) => !value)}
-                        aria-label={passwordVisible ? '隐藏密码' : '显示密码'}
-                        title={passwordVisible ? '隐藏密码' : '显示密码'}
-                      >
-                        {passwordVisible ? <EyeOff size={14} /> : <Eye size={14} />}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
+              </>
+            ) : (
+              <>
+                <Label htmlFor="password" className="pf-label">
+                  {form.auth_type === 'password' ? '密码' : '私钥'}
+                </Label>
+                {form.auth_type === 'password' ? (
+                  <Input
+                    id="password"
+                    type="password"
+                    value={form.password}
+                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                    placeholder={isEditing ? '留空则不修改' : ''}
+                    className="pf-input-mono"
+                  />
+                ) : (
+                  <Textarea
+                    id="private_key"
+                    value={form.private_key}
+                    onChange={(e) => setForm({ ...form, private_key: e.target.value })}
+                    placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                    rows={3}
+                    className="pf-input-mono pf-key-textarea"
+                  />
+                )}
+              </>
+            )}
+          </div>
 
-              {showKeyAuth && (
-                <>
-                  <div className="pf-field">
-                    <Label htmlFor="username" className="pf-label">
-                      用户名
-                    </Label>
-                    <Input
-                      id="username"
-                      value={form.username}
-                      onChange={(event) => setForm({ ...form, username: event.target.value })}
-                      placeholder="root"
-                      required
-                      className="pf-input-mono"
-                    />
-                  </div>
-
-                  <div className="pf-field">
-                    <div className="pf-field-head">
-                      <Label htmlFor="private_key" className="pf-label">
-                        私钥
-                      </Label>
-                      <button
-                        type="button"
-                        className="pf-upload-btn"
-                        onClick={() => privateKeyFileRef.current?.click()}
-                        disabled={uploadingKey}
-                      >
-                        <Upload size={13} />
-                        {uploadingKey ? '读取中...' : '上传文件'}
-                      </button>
-                    </div>
-                    <input
-                      ref={privateKeyFileRef}
-                      type="file"
-                      accept=".pem,.key,.txt,*/*"
-                      className="hidden"
-                      onChange={handlePrivateKeyUpload}
-                    />
-                    <Textarea
-                      id="private_key"
-                      value={form.private_key}
-                      onChange={(event) => setForm({ ...form, private_key: event.target.value })}
-                      placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-                      rows={4}
-                      className="pf-input-mono pf-key-textarea"
-                    />
-                  </div>
-                </>
-              )}
-            </>
-          )}
-
+          {/* ── 分组（通栏） ── */}
           <div className="pf-field">
             <Label className="pf-label">分组</Label>
             <Select
               options={groupOptions}
               value={form.group_id || ''}
-              onChange={(value) => setForm({ ...form, group_id: value })}
+              onChange={(v) => setForm({ ...form, group_id: v })}
             />
           </div>
 
+          {/* ── 备注（通栏文本域） ── */}
           <div className="pf-field">
-            <Label htmlFor="note" className="pf-label">
-              备注
-            </Label>
+            <Label htmlFor="note" className="pf-label">备注</Label>
             <Textarea
               id="note"
               value={form.note}
-              onChange={(event) => setForm({ ...form, note: event.target.value })}
+              onChange={(e) => setForm({ ...form, note: e.target.value })}
               placeholder="可选备注信息"
               rows={3}
             />
           </div>
 
-          {error && <div className="pf-error">{error}</div>}
+          {error && (
+            <div className="pf-error">{error}</div>
+          )}
         </form>
 
+        {/* Footer — 取消左对齐、创建右对齐 */}
         <div className="pf-footer">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="pf-btn-cancel">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            className="pf-btn-cancel"
+          >
             取消
           </Button>
-          <Button type="submit" form="profile-form" disabled={loading} className="pf-btn-submit">
+          <Button
+            type="submit"
+            form="profile-form"
+            disabled={loading}
+            className="pf-btn-submit"
+          >
             {loading ? '保存中...' : isEditing ? '保存' : '创建'}
           </Button>
         </div>

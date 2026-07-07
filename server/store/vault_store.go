@@ -3,7 +3,6 @@ package store
 import (
 	"crypto/sha256"
 	"database/sql"
-	"encoding/json"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -34,16 +33,16 @@ func encodePlaintext(cred *model.Credential, credType string) (plaintext, finger
 		// Password fingerprint is intentionally empty — listing shows "-".
 		return plaintext, "", nil
 	case model.VaultTypePrivateKey:
-		plaintext, err = marshalStructuredCredential(cred)
-		if err != nil {
-			return "", "", err
+		plaintext = cred.PrivKey
+		if cred.Passphrase != "" {
+			plaintext += "\x00" + cred.Passphrase
 		}
 		h := sha256.Sum256([]byte(cred.PrivKey))
 		return plaintext, hex.EncodeToString(h[:8]), nil
 	case model.VaultTypeSSHCertificate:
-		plaintext, err = marshalStructuredCredential(cred)
-		if err != nil {
-			return "", "", err
+		plaintext = cred.Cert + "\x00" + cred.PrivKey
+		if cred.Passphrase != "" {
+			plaintext += "\x00" + cred.Passphrase
 		}
 		fp, fpErr := certFingerprint(cred.Cert)
 		if fpErr != nil {
@@ -82,18 +81,12 @@ func decodePlaintext(decrypted, credType string) *model.Credential {
 	case model.VaultTypePassword:
 		cred.Password = decrypted
 	case model.VaultTypePrivateKey:
-		if structured, ok := unmarshalStructuredCredential(decrypted); ok {
-			return structured
-		}
 		parts := strings.SplitN(decrypted, "\x00", 2)
 		cred.PrivKey = parts[0]
 		if len(parts) == 2 {
 			cred.Passphrase = parts[1]
 		}
 	case model.VaultTypeSSHCertificate:
-		if structured, ok := unmarshalStructuredCredential(decrypted); ok {
-			return structured
-		}
 		parts := strings.SplitN(decrypted, "\x00", 3)
 		if len(parts) >= 1 {
 			cred.Cert = parts[0]
@@ -106,25 +99,6 @@ func decodePlaintext(decrypted, credType string) *model.Credential {
 		}
 	}
 	return cred
-}
-
-func marshalStructuredCredential(cred *model.Credential) (string, error) {
-	payload, err := json.Marshal(cred)
-	if err != nil {
-		return "", fmt.Errorf("marshal credential: %w", err)
-	}
-	return "\x01" + string(payload), nil
-}
-
-func unmarshalStructuredCredential(decrypted string) (*model.Credential, bool) {
-	if !strings.HasPrefix(decrypted, "\x01") {
-		return nil, false
-	}
-	var cred model.Credential
-	if err := json.Unmarshal([]byte(strings.TrimPrefix(decrypted, "\x01")), &cred); err != nil {
-		return nil, false
-	}
-	return &cred, true
 }
 
 func (s *sqliteVaultStore) Store(cred *model.Credential, credType, name, username, remark string) (string, error) {
@@ -187,12 +161,12 @@ func (s *sqliteVaultStore) Delete(id string) error {
 
 func (s *sqliteVaultStore) RefCount(id string) (int, error) {
 	var count int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM profiles WHERE auth_type = 'vault' AND vault_id = ?`, id).Scan(&count)
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM profiles WHERE vault_id = ?`, id).Scan(&count)
 	return count, err
 }
 
 func (s *sqliteVaultStore) References(id string) ([]model.ProfileRef, error) {
-	rows, err := s.db.Query(`SELECT id, name FROM profiles WHERE auth_type = 'vault' AND vault_id = ?`, id)
+	rows, err := s.db.Query(`SELECT id, name FROM profiles WHERE vault_id = ?`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -212,8 +186,7 @@ func (s *sqliteVaultStore) References(id string) ([]model.ProfileRef, error) {
 func (s *sqliteVaultStore) Get(id string) (*model.VaultItem, error) {
 	var (
 		vType, data, name, username, remark, fingerprint string
-		createdAt                                        time.Time
-		updatedAt                                        sql.NullTime
+		createdAt, updatedAt                             time.Time
 	)
 	err := s.db.QueryRow(
 		`SELECT type, data, name, username, remark, fingerprint, created_at, updated_at FROM vault WHERE id = ?`,
@@ -228,10 +201,6 @@ func (s *sqliteVaultStore) Get(id string) (*model.VaultItem, error) {
 	if decrypted, derr := s.encryptor.Decrypt(data); derr == nil {
 		hasPassphrase = s.detectPassphrase(decrypted, vType)
 	}
-	finalUpdatedAt := createdAt
-	if updatedAt.Valid {
-		finalUpdatedAt = updatedAt.Time
-	}
 
 	return &model.VaultItem{
 		ID:            id,
@@ -243,41 +212,27 @@ func (s *sqliteVaultStore) Get(id string) (*model.VaultItem, error) {
 		RefCount:      refCount,
 		HasPassphrase: hasPassphrase,
 		CreatedAt:     createdAt,
-		UpdatedAt:     finalUpdatedAt,
+		UpdatedAt:     updatedAt,
 	}, nil
 }
 
 func (s *sqliteVaultStore) List(filter model.VaultListFilter) ([]*model.VaultItem, error) {
-	query := `SELECT
-		v.id,
-		v.type,
-		v.data,
-		v.name,
-		v.username,
-		v.remark,
-		v.fingerprint,
-		v.created_at,
-		v.updated_at,
-		COUNT(p.id) AS ref_count
-	FROM vault v
-	LEFT JOIN profiles p ON p.vault_id = v.id AND p.auth_type = 'vault'`
+	query := `SELECT id, type, data, name, username, remark, fingerprint, created_at, updated_at FROM vault`
 	args := []any{}
 	where := []string{}
 	if filter.Type != "" {
-		where = append(where, "v.type = ?")
+		where = append(where, "type = ?")
 		args = append(args, filter.Type)
 	}
 	if filter.Q != "" {
-		where = append(where, "(v.name LIKE ? OR v.remark LIKE ? OR v.username LIKE ?)")
+		where = append(where, "(name LIKE ? OR remark LIKE ? OR username LIKE ?)")
 		pattern := "%" + filter.Q + "%"
 		args = append(args, pattern, pattern, pattern)
 	}
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
 	}
-	query += `
-	GROUP BY v.id, v.type, v.data, v.name, v.username, v.remark, v.fingerprint, v.created_at, v.updated_at
-	ORDER BY v.updated_at DESC`
+	query += " ORDER BY updated_at DESC"
 
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
@@ -289,20 +244,15 @@ func (s *sqliteVaultStore) List(filter model.VaultListFilter) ([]*model.VaultIte
 	for rows.Next() {
 		var (
 			vID, vType, data, name, username, remark, fingerprint string
-			createdAt                                             time.Time
-			updatedAt                                             sql.NullTime
-			refCount                                              int
+			createdAt, updatedAt                                  time.Time
 		)
-		if err := rows.Scan(&vID, &vType, &data, &name, &username, &remark, &fingerprint, &createdAt, &updatedAt, &refCount); err != nil {
+		if err := rows.Scan(&vID, &vType, &data, &name, &username, &remark, &fingerprint, &createdAt, &updatedAt); err != nil {
 			return nil, err
 		}
+		refCount, _ := s.RefCount(vID)
 		hasPassphrase := false
 		if decrypted, derr := s.encryptor.Decrypt(data); derr == nil {
 			hasPassphrase = s.detectPassphrase(decrypted, vType)
-		}
-		finalUpdatedAt := createdAt
-		if updatedAt.Valid {
-			finalUpdatedAt = updatedAt.Time
 		}
 		items = append(items, &model.VaultItem{
 			ID:            vID,
@@ -314,7 +264,7 @@ func (s *sqliteVaultStore) List(filter model.VaultListFilter) ([]*model.VaultIte
 			RefCount:      refCount,
 			HasPassphrase: hasPassphrase,
 			CreatedAt:     createdAt,
-			UpdatedAt:     finalUpdatedAt,
+			UpdatedAt:     updatedAt,
 		})
 	}
 	return items, rows.Err()
@@ -323,10 +273,6 @@ func (s *sqliteVaultStore) List(filter model.VaultListFilter) ([]*model.VaultIte
 // detectPassphrase inspects decrypted plaintext to determine whether a
 // passphrase segment is present and non-empty.
 func (s *sqliteVaultStore) detectPassphrase(decrypted, credType string) bool {
-	cred := decodePlaintext(decrypted, credType)
-	if cred != nil {
-		return cred.Passphrase != ""
-	}
 	switch credType {
 	case model.VaultTypePrivateKey:
 		parts := strings.SplitN(decrypted, "\x00", 2)

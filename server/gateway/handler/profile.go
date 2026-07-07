@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"fmt"
 	"net/http"
 	"time"
 
@@ -64,29 +63,49 @@ func (h *ProfileHandler) Create(w http.ResponseWriter, r *http.Request) {
 		req.Icon = "server"
 	}
 
-	vaultID, inlineCredential, err := h.prepareCredentialOnCreate(&req)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "VALIDATION", err.Error())
-		return
+	// Store credential in vault: either reference an existing vault entry
+	// (vault_id) or create a new one from inline password/private_key.
+	var vaultID string
+	if req.VaultID != "" {
+		if _, err := h.vault.Get(req.VaultID); err != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_VAULT", "vault entry not found")
+			return
+		}
+		vaultID = req.VaultID
+	} else if req.Password != "" || req.PrivKey != "" {
+		cred := &model.Credential{
+			Password:   req.Password,
+			PrivKey:    req.PrivKey,
+			Passphrase: req.Passphrase,
+		}
+		credType := "password"
+		if req.PrivKey != "" {
+			credType = "private_key"
+		}
+		var err error
+		vaultID, err = h.vault.Store(cred, credType, "", "", "")
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "VAULT_ERROR", err.Error())
+			return
+		}
 	}
 
 	now := time.Now()
 	profile := &model.Profile{
-		ID:               uuid.New().String(),
-		Name:             req.Name,
-		Host:             req.Host,
-		Port:             req.Port,
-		Username:         req.Username,
-		AuthType:         req.AuthType,
-		Icon:             req.Icon,
-		VaultID:          vaultID,
-		InlineCredential: inlineCredential,
-		GroupID:          req.GroupID,
-		Tags:             req.Tags,
-		Options:          req.Options,
-		Note:             req.Note,
-		CreatedAt:        now,
-		UpdatedAt:        now,
+		ID:        uuid.New().String(),
+		Name:      req.Name,
+		Host:      req.Host,
+		Port:      req.Port,
+		Username:  req.Username,
+		AuthType:  req.AuthType,
+		Icon:      req.Icon,
+		VaultID:   vaultID,
+		GroupID:   req.GroupID,
+		Tags:      req.Tags,
+		Options:   req.Options,
+		Note:      req.Note,
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
 	if profile.Tags == nil {
 		profile.Tags = []string{}
@@ -110,15 +129,36 @@ func (h *ProfileHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	current, err := h.profiles.Get(id)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "profile not found")
-		return
-	}
+	// Handle credential update — empty string means "keep unchanged"
+	hasNewPassword := req.Password != nil && *req.Password != ""
+	hasNewKey := req.PrivKey != nil && *req.PrivKey != ""
+	if hasNewPassword || hasNewKey {
+		cred := &model.Credential{}
+		credType := "password"
+		if hasNewPassword {
+			cred.Password = *req.Password
+		}
+		if hasNewKey {
+			cred.PrivKey = *req.PrivKey
+			credType = "private_key"
+		}
+		if req.Passphrase != nil {
+			cred.Passphrase = *req.Passphrase
+		}
 
-	if err := h.prepareCredentialOnUpdate(current, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "VALIDATION", err.Error())
-		return
+		newVaultID, err := h.vault.Store(cred, credType, "", "", "")
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "VAULT_ERROR", err.Error())
+			return
+		}
+		// Clean up old vault entry
+		oldProfile, _ := h.profiles.Get(id)
+		if oldProfile != nil && oldProfile.VaultID != "" {
+			if refs, _ := h.vault.RefCount(oldProfile.VaultID); refs <= 1 {
+				h.vault.Delete(oldProfile.VaultID)
+			}
+		}
+		req.VaultID = &newVaultID
 	}
 
 	if err := h.profiles.Update(id, &req); err != nil {
@@ -137,115 +177,16 @@ func (h *ProfileHandler) Update(w http.ResponseWriter, r *http.Request) {
 func (h *ProfileHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
+	profile, _ := h.profiles.Get(id)
+	if profile != nil && profile.VaultID != "" {
+		if refs, _ := h.vault.RefCount(profile.VaultID); refs <= 1 {
+			h.vault.Delete(profile.VaultID)
+		}
+	}
+
 	if err := h.profiles.Delete(id); err != nil {
 		writeError(w, http.StatusInternalServerError, "DB_ERROR", err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func (h *ProfileHandler) prepareCredentialOnCreate(req *model.ProfileCreateRequest) (vaultID string, inlineCredential string, err error) {
-	switch req.AuthType {
-	case "vault":
-		if req.VaultID == "" {
-			return "", "", fmt.Errorf("vault_id is required for vault auth")
-		}
-		if _, err := h.vault.Get(req.VaultID); err != nil {
-			return "", "", fmt.Errorf("vault entry not found")
-		}
-		return req.VaultID, "", nil
-	case "password":
-		if req.Password == "" {
-			return "", "", fmt.Errorf("password is required for password auth")
-		}
-		inlineCredential, err = store.EncodeInlineCredential(h.encryptor, &model.Credential{
-			Password: req.Password,
-		})
-		return "", inlineCredential, err
-	case "key":
-		if req.PrivKey == "" {
-			return "", "", fmt.Errorf("private_key is required for key auth")
-		}
-		inlineCredential, err = store.EncodeInlineCredential(h.encryptor, &model.Credential{
-			PrivKey:    req.PrivKey,
-			Passphrase: req.Passphrase,
-		})
-		return "", inlineCredential, err
-	case "agent":
-		return "", "", nil
-	default:
-		return "", "", fmt.Errorf("unsupported auth_type: %s", req.AuthType)
-	}
-}
-
-func (h *ProfileHandler) prepareCredentialOnUpdate(current *model.Profile, req *model.ProfileUpdateRequest) error {
-	nextAuthType := current.AuthType
-	if req.AuthType != nil && *req.AuthType != "" {
-		nextAuthType = *req.AuthType
-	}
-
-	switch nextAuthType {
-	case "vault":
-		if req.VaultID != nil {
-			if *req.VaultID == "" {
-				return fmt.Errorf("vault_id is required for vault auth")
-			}
-			if _, err := h.vault.Get(*req.VaultID); err != nil {
-				return fmt.Errorf("vault entry not found")
-			}
-		} else if current.VaultID == "" {
-			return fmt.Errorf("vault_id is required for vault auth")
-		}
-		empty := ""
-		req.InlineCredential = &empty
-		return nil
-
-	case "password", "key", "agent":
-		cred, err := resolveProfileCredential(current, h.vault, h.encryptor)
-		if err != nil {
-			return err
-		}
-		if cred == nil {
-			cred = &model.Credential{}
-		}
-
-		switch nextAuthType {
-		case "password":
-			if req.Password != nil && *req.Password != "" {
-				cred.Password = *req.Password
-			}
-			if cred.Password == "" {
-				return fmt.Errorf("password is required for password auth")
-			}
-			cred.PrivKey = ""
-			cred.Passphrase = ""
-			cred.Cert = ""
-		case "key":
-			if req.PrivKey != nil && *req.PrivKey != "" {
-				cred.PrivKey = *req.PrivKey
-			}
-			if req.Passphrase != nil {
-				cred.Passphrase = *req.Passphrase
-			}
-			if cred.PrivKey == "" {
-				return fmt.Errorf("private_key is required for key auth")
-			}
-			cred.Password = ""
-			cred.Cert = ""
-		case "agent":
-			cred = &model.Credential{}
-		}
-
-		inlineCredential, err := store.EncodeInlineCredential(h.encryptor, cred)
-		if err != nil {
-			return err
-		}
-		req.InlineCredential = &inlineCredential
-		empty := ""
-		req.VaultID = &empty
-		return nil
-
-	default:
-		return fmt.Errorf("unsupported auth_type: %s", nextAuthType)
-	}
 }

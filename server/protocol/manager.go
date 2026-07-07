@@ -20,7 +20,7 @@ type DriverOpts struct {
 	PrivKey            string
 	Passphrase         string
 	Cert               string      // optional SSH certificate (OpenSSH format)
-	HostKeyFingerprint string      // expected SSH host key fingerprint (SHA256:...)
+	HostKeyFingerprint string      // optional pinned SSH host key fingerprint
 	JumpHost           *DriverOpts // optional jump host
 }
 

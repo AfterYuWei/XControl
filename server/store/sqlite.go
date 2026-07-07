@@ -54,6 +54,7 @@ func migrate(db *sql.DB) error {
 			username     TEXT NOT NULL DEFAULT 'root',
 			auth_type    TEXT NOT NULL DEFAULT 'password',
 			vault_id     TEXT DEFAULT '',
+			inline_credential TEXT DEFAULT '',
 			group_id     TEXT DEFAULT '',
 			tags         TEXT DEFAULT '[]',
 			options      TEXT DEFAULT '{}',

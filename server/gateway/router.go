@@ -20,10 +20,6 @@ import (
 func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS) http.Handler {
 	mux := http.NewServeMux()
 
-	if err := store.BackfillProfileInlineCredentials(db, encryptor); err != nil {
-		panic(err)
-	}
-
 	// Initialize stores
 	profileStore := store.NewProfileStore(db)
 	groupStore := store.NewGroupStore(db)
@@ -55,8 +51,8 @@ func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS) http.Handle
 	sessionH := handler.NewSessionHandler(profileStore, vaultStore, encryptor, auditStore, pm)
 	wsH := handler.NewWSHandler(hub, sessionH)
 	transferMgr := handler.NewTransferManager(sftpHub)
-	sftpH := handler.NewSftpHandler(profileStore, vaultStore, encryptor, auditStore, pm, sftpHub, transferMgr, pool)
-	serverDetailH := handler.NewServerDetailHandler(profileStore, vaultStore, encryptor, pool)
+	sftpH := handler.NewSftpHandler(profileStore, vaultStore, auditStore, pm, sftpHub, transferMgr, pool)
+	serverDetailH := handler.NewServerDetailHandler(profileStore, vaultStore, pool)
 	editH := handler.NewEditHandler(sftpH, serverDetailH)
 
 	// Profile routes
@@ -91,7 +87,6 @@ func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS) http.Handle
 	// Session routes
 	mux.HandleFunc("POST /api/sessions", sessionH.Create)
 	mux.HandleFunc("GET /api/sessions", sessionH.List)
-	mux.HandleFunc("POST /api/sessions/{id}/confirm-hostkey", sessionH.ConfirmHostKey)
 	mux.HandleFunc("DELETE /api/sessions/{id}", sessionH.Close)
 
 	// WebSocket

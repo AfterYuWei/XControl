@@ -65,8 +65,9 @@ func (h *WSHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Inject OSC 7 configuration before metadata and terminal output.
-	h.injectOSC7Config(session)
+	// Inject shell init before metadata and terminal output so locale/cwd
+	// tracking are ready before the user starts typing.
+	h.injectShellInit(session)
 	session.setConnected(ConnectionStageReady, "终端已就绪，开始接收远程输出")
 	h.sendConnectionState(wsConn, session.snapshot())
 
@@ -444,18 +445,21 @@ func trimIncompleteUTF8(buf []byte) []byte {
 	return buf[len(buf)-n:]
 }
 
-// injectOSC7Config injects OSC 7 terminal directory tracking configuration.
-func (h *WSHandler) injectOSC7Config(session *Session) {
+// injectShellInit injects a one-time shell init snippet that prefers a UTF-8
+// locale and enables OSC 7 directory tracking for prompt updates.
+func (h *WSHandler) injectShellInit(session *Session) {
 	if session == nil || session.Shell == nil {
 		return
 	}
 
-	osc7Cmd := ` __osc7_cwd() { printf "\033]7;file://%s%s\007" "$(hostname)" "$PWD"; }; `
-	osc7Cmd += `if [ -n "$ZSH_VERSION" ]; then precmd_functions+=(__osc7_cwd); `
-	osc7Cmd += `elif [ -n "$BASH_VERSION" ]; then `
-	osc7Cmd += `[[ "$PROMPT_COMMAND" != *__osc7_cwd* ]] && PROMPT_COMMAND="__osc7_cwd${PROMPT_COMMAND:+;$PROMPT_COMMAND}"; fi`
-	session.Shell.Write([]byte(osc7Cmd + "\n"))
-	slog.Debug("osc7 config command injected", "cmd_len", len(osc7Cmd)+1)
+	initCmd := `__xcontrol_set_utf8_locale() { __xcontrol_locale_current="${LC_ALL:-${LC_CTYPE:-$LANG}}"; case "$__xcontrol_locale_current" in *[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*) return ;; esac; if command -v locale >/dev/null 2>&1; then for __xcontrol_locale in C.UTF-8 C.utf8 en_US.UTF-8 en_US.utf8 zh_CN.UTF-8 zh_CN.utf8; do if locale -a 2>/dev/null | grep -Fqxi "$__xcontrol_locale"; then export LANG="$__xcontrol_locale" LC_CTYPE="$__xcontrol_locale"; return; fi; done; fi; export LANG="C.UTF-8" LC_CTYPE="C.UTF-8"; }; `
+	initCmd += `__osc7_cwd() { printf "\033]7;file://%s%s\007" "$(hostname)" "$PWD"; }; `
+	initCmd += `__xcontrol_set_utf8_locale; `
+	initCmd += `if [ -n "$ZSH_VERSION" ]; then precmd_functions+=(__osc7_cwd); `
+	initCmd += `elif [ -n "$BASH_VERSION" ]; then `
+	initCmd += `[[ "$PROMPT_COMMAND" != *__osc7_cwd* ]] && PROMPT_COMMAND="__osc7_cwd${PROMPT_COMMAND:+;$PROMPT_COMMAND}"; fi`
+	session.Shell.Write([]byte(initCmd + "\n"))
+	slog.Debug("shell init command injected", "cmd_len", len(initCmd)+1)
 
 	time.Sleep(200 * time.Millisecond)
 }

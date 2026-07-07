@@ -22,9 +22,9 @@ func init() {
 // keepaliveMaxFailures is the consecutive failure count that marks the connection dead.
 // keepaliveRequestTimeout is the max wait for a single keepalive reply.
 const (
-	keepaliveInterval        = 30 * time.Second
-	keepaliveMaxFailures     = 3
-	keepaliveRequestTimeout  = 10 * time.Second
+	keepaliveInterval       = 30 * time.Second
+	keepaliveMaxFailures    = 3
+	keepaliveRequestTimeout = 10 * time.Second
 )
 
 type Driver struct {
@@ -33,12 +33,12 @@ type Driver struct {
 	info   protocol.ConnectionInfo
 
 	// Lifecycle management: keepalive probing + connection death detection
-	doneCh     chan struct{}    // closed on Close() to signal goroutines to exit
-	closeOnce  sync.Once        // guards doneCh from being closed twice
-	dead       atomic.Bool      // set when the connection is detected dead
-	deadReason string           // reason code (remote_shutdown | keepalive_timeout | ...)
+	doneCh     chan struct{} // closed on Close() to signal goroutines to exit
+	closeOnce  sync.Once     // guards doneCh from being closed twice
+	dead       atomic.Bool   // set when the connection is detected dead
+	deadReason string        // reason code (remote_shutdown | keepalive_timeout | ...)
 	deadCbs    []func(reason string)
-	cbMu       sync.Mutex       // protects deadCbs and deadReason
+	cbMu       sync.Mutex // protects deadCbs and deadReason
 }
 
 func NewDriver(opts protocol.DriverOpts) (protocol.Driver, error) {
@@ -205,7 +205,17 @@ func (d *Driver) RequestShell(opts protocol.ShellOptions) (protocol.Shell, error
 	}
 
 	// Request UTF-8 locale — server must have "AcceptEnv LANG" in sshd_config
-	session.Setenv("LANG", "en_US.UTF-8")
+	for _, env := range []struct {
+		key   string
+		value string
+	}{
+		{key: "LANG", value: "en_US.UTF-8"},
+		{key: "LC_CTYPE", value: "en_US.UTF-8"},
+	} {
+		if err := session.Setenv(env.key, env.value); err != nil {
+			slog.Debug("ssh session setenv rejected", "key", env.key, "error", err)
+		}
+	}
 
 	stdin, err := session.StdinPipe()
 	if err != nil {

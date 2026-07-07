@@ -1,13 +1,25 @@
 # 前端构建产物（embed 进后端，不纳入版本库）
 server/web_dist/
 
-# 后端二进制
+# 后端二进制（含历史遗留的旧名称）
 server/xcontrol-server
 server/xcontrol-server.exe
+server/sshx
+server/sshx-server
 
 # 运行时数据（数据库、密钥）
 server/data/
 data/
+
+# 日志文件
+*.log
+
+# IDE 配置
+.idea/
+.vscode/
+
+# 截图 / 粘贴图片
+.netcatty-paste-images/
 
 # Electron 构建产物（electron/.gitignore 已忽略 node_modules/release）
 

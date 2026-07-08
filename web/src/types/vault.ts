@@ -16,6 +16,7 @@ export interface VaultItem {
 export interface VaultCredential {
   password?: string
   private_key?: string
+  public_key?: string
   passphrase?: string
   certificate?: string
 }

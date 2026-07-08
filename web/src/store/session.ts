@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { sessionApi } from '@/api/session'
 import { useServerDetailStore } from '@/store/serverDetail'
 
-export type TabKind = 'terminal' | 'sftp'
+export type TabKind = 'terminal' | 'sftp' | 'vault'
 
 export type TabStatus = 'connecting' | 'connected' | 'disconnected' | 'error' | 'reconnecting'
 
@@ -23,6 +23,8 @@ interface TerminalTab {
   errorMessage?: string     // human-readable disconnect message
   reconnectAttempt?: number // current reconnect attempt (1-based)
   nextRetryAt?: number      // timestamp (ms) of next scheduled retry
+  hostKeyFingerprint?: string
+  knownHostKeyFingerprint?: string
 }
 
 interface SessionStore {
@@ -31,7 +33,7 @@ interface SessionStore {
   loading: boolean
 
   // Actions
-  openTab: (profileId: string, profileName: string, host?: string, port?: number, username?: string) => Promise<string>
+  openTab: (profileId: string, profileName: string, host?: string, port?: number, username?: string, reuseTabId?: string) => Promise<string>
   openSftpTab: () => string
   openVaultTab: () => string
   closeTab: (tabId: string) => void
@@ -44,6 +46,7 @@ interface SessionStore {
   markTabError: (tabId: string, reason: string, message: string) => void
   markTabReconnecting: (tabId: string, attempt: number, nextRetryAt: number) => void
   clearTabError: (tabId: string) => void
+  clearTabHostKeyPrompt: (tabId: string) => void
 }
 
 export const useSessionStore = create<SessionStore>((set, get) => ({
@@ -51,25 +54,51 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   activeTabId: null,
   loading: false,
 
-  openTab: async (profileId, profileName, host, port, username) => {
-    const tabId = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+  openTab: async (profileId, profileName, host, port, username, reuseTabId) => {
+    const tabId = reuseTabId || `tab-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 
-    const newTab: TerminalTab = {
-      id: tabId,
-      kind: 'terminal',
-      profileId,
-      profileName,
-      sessionId: null,
-      status: 'connecting',
-      host,
-      port,
-      username,
+    if (reuseTabId) {
+      set((state) => ({
+        tabs: state.tabs.map((tab) =>
+          tab.id === reuseTabId
+            ? {
+                ...tab,
+                profileId,
+                profileName,
+                host,
+                port,
+                username,
+                status: 'connecting' as TabStatus,
+                sessionId: null,
+                errorReason: undefined,
+                errorMessage: undefined,
+                reconnectAttempt: undefined,
+                nextRetryAt: undefined,
+                hostKeyFingerprint: undefined,
+                knownHostKeyFingerprint: undefined,
+              }
+            : tab
+        ),
+        activeTabId: reuseTabId,
+      }))
+    } else {
+      const newTab: TerminalTab = {
+        id: tabId,
+        kind: 'terminal',
+        profileId,
+        profileName,
+        sessionId: null,
+        status: 'connecting',
+        host,
+        port,
+        username,
+      }
+
+      set((state) => ({
+        tabs: [...state.tabs, newTab],
+        activeTabId: tabId,
+      }))
     }
-
-    set((state) => ({
-      tabs: [...state.tabs, newTab],
-      activeTabId: tabId,
-    }))
 
     try {
       const response = await sessionApi.create({
@@ -231,6 +260,16 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       tabs: state.tabs.map((tab) =>
         tab.id === tabId
           ? { ...tab, errorReason: undefined, errorMessage: undefined, reconnectAttempt: undefined, nextRetryAt: undefined }
+          : tab
+      ),
+    }))
+  },
+
+  clearTabHostKeyPrompt: (tabId) => {
+    set((state) => ({
+      tabs: state.tabs.map((tab) =>
+        tab.id === tabId
+          ? { ...tab, hostKeyFingerprint: undefined, knownHostKeyFingerprint: undefined }
           : tab
       ),
     }))

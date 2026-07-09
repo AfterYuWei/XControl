@@ -13,14 +13,12 @@ import { notify } from '@/store/notify'
 import { VaultList } from './VaultList'
 import { VaultFormDialog } from './VaultFormDialog'
 import { VaultGenerateDialog } from './VaultGenerateDialog'
-import { VaultDetailDialog } from './VaultDetailDialog'
 import type { VaultItem, ProfileRef } from '@/types/vault'
 
 const FILTER_OPTIONS = [
   { value: 'all', label: '全部' },
   { value: 'password', label: '密码' },
   { value: 'private_key', label: '私钥' },
-  { value: 'ssh_certificate', label: 'SSH 证书' },
 ]
 
 interface DeleteTarget {
@@ -32,7 +30,6 @@ export function VaultView() {
   const { filterType, searchQuery, setFilterType, setSearchQuery, fetchList, remove } = useVaultStore()
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<VaultItem | null>(null)
-  const [viewing, setViewing] = useState<VaultItem | null>(null)
   const [genOpen, setGenOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -49,10 +46,6 @@ export function VaultView() {
   const handleEdit = (item: VaultItem) => {
     setEditing(item)
     setFormOpen(true)
-  }
-
-  const handleView = (item: VaultItem) => {
-    setViewing(item)
   }
 
   const handleDelete = (item: VaultItem, refs: ProfileRef[]) => {
@@ -91,7 +84,7 @@ export function VaultView() {
         <input
           type="text"
           className="vault-toolbar-search"
-          placeholder="搜索名称/备注…"
+          placeholder="搜索名称/用户名/备注…"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
@@ -106,14 +99,7 @@ export function VaultView() {
       </div>
 
       {/* 列表 */}
-      <VaultList onView={handleView} onDelete={handleDelete} onCreate={handleCreate} />
-
-      <VaultDetailDialog
-        open={!!viewing}
-        onOpenChange={(open) => !open && setViewing(null)}
-        item={viewing}
-        onEdit={handleEdit}
-      />
+      <VaultList onEdit={handleEdit} onDelete={handleDelete} onCreate={handleCreate} />
 
       {/* 创建/编辑弹窗 */}
       <VaultFormDialog

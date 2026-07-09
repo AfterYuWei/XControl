@@ -81,7 +81,171 @@
   padding: 6px 8px;
 }
 
-/* ── 列表行 ── */
+/* ── 网格容器 ── */
+.vault-grid {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+  align-content: start;
+}
+
+/* ── 卡片 ── */
+.vault-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--bg-panel);
+  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
+}
+
+.vault-card:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-surface);
+}
+
+.vault-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.vault-card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.vault-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.vault-card-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+
+.vault-card-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 6px;
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.vault-card-badge-password {
+  background: var(--blue-bg);
+  color: var(--blue);
+}
+
+.vault-card-badge-private_key {
+  background: var(--purple-bg);
+  color: var(--purple);
+}
+
+.vault-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vault-card-field {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.vault-card-label {
+  color: var(--fg-4);
+  flex-shrink: 0;
+  width: 48px;
+}
+
+.vault-card-value {
+  color: var(--fg-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-card-remark {
+  max-width: 160px;
+}
+
+.vault-card-footer {
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.vault-card-passphrase {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--orange);
+}
+
+.vault-card-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.vault-card-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--fg-4);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.vault-card-act:hover {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.vault-card-act-danger:hover {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+.vault-card-act:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── 旧列表行样式（保留用于 VaultSelectDialog） ── */
 .vault-row {
   display: flex;
   align-items: center;
@@ -1364,5 +1528,163 @@
   .vault-sheet-body {
     overflow-y: auto;
     padding-right: 4px;
+  }
+}
+
+/* ── 表单布局优化：上下两层 ── */
+
+/* 基本信息 - 上层 */
+.vault-form-basic {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--dialog-bg) 97%, var(--bg-elevated));
+  box-shadow: var(--shadow-surface);
+}
+
+.vault-form-basic-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 12px;
+}
+
+.vault-form-remark {
+  grid-column: 1 / -1;
+}
+
+/* 分隔线 */
+.vault-form-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 4px 0;
+}
+
+/* 凭据详情 - 下层 */
+.vault-form-credential {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 密码面板 */
+.vault-form-password-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--dialog-bg) 97%, var(--bg-elevated));
+  box-shadow: var(--shadow-surface);
+}
+
+.vault-form-password-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.vault-form-password-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vault-form-password-toggle {
+  padding: 6px;
+}
+
+.vault-form-password-title {
+  color: var(--fg-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.vault-form-password-input {
+  height: 40px;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+}
+
+.vault-form-password-hint {
+  color: var(--fg-4);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* 私钥面板 */
+.vault-form-key-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--dialog-bg) 97%, var(--bg-elevated));
+  box-shadow: var(--shadow-surface);
+}
+
+.vault-form-key-panel-pub {
+  background: color-mix(in srgb, var(--dialog-bg) 95%, var(--bg-elevated));
+}
+
+.vault-form-key-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.vault-form-key-title {
+  color: var(--fg-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.vault-form-key-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vault-form-key-textarea {
+  resize: none;
+  overflow: auto;
+  background: var(--bg-input) !important;
+  border-color: var(--border) !important;
+}
+
+.vault-form-key-hidden {
+  -webkit-text-security: disc;
+  text-security: disc;
+}
+
+.vault-form-key-textarea-short {
+  min-height: 72px;
+  max-height: 92px;
+}
+
+/* Passphrase 行 */
+.vault-form-passphrase-row {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--dialog-bg) 97%, var(--bg-elevated));
+  box-shadow: var(--shadow-surface);
+}
+
+.vault-form-passphrase-field {
+  gap: 6px;
+}
+
+/* 响应式：窄屏 */
+@media (max-width: 720px) {
+  .vault-form-basic-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .vault-form-remark {
+    grid-column: auto;
   }
 }

@@ -13,6 +13,15 @@ interface VaultSelectDialogProps {
   onSelect: (item: VaultItem) => void
 }
 
+function formatDate(iso: string): string {
+  try {
+    const value = new Date(iso)
+    return value.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
+  } catch {
+    return ''
+  }
+}
+
 export function VaultSelectDialog({ open, onOpenChange, selectedId, onSelect }: VaultSelectDialogProps) {
   const [items, setItems] = useState<VaultItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -83,13 +92,11 @@ export function VaultSelectDialog({ open, onOpenChange, selectedId, onSelect }: 
                       <span className={`vault-row-badge vault-row-badge-${item.type}`}>{VAULT_TYPE_LABELS[item.type]}</span>
                     </div>
                     <div className="vault-row-meta">
-                      {item.username && (
-                        <>
-                          <span className="vault-row-user">{item.username}</span>
-                          <span className="vault-row-sep">·</span>
-                        </>
-                      )}
+                      <span className="vault-row-user">{item.username || '-'}</span>
+                      <span className="vault-row-sep">·</span>
                       <span>引用 {item.ref_count}</span>
+                      <span className="vault-row-sep">·</span>
+                      <span className="vault-row-date">{formatDate(item.updated_at)}</span>
                     </div>
                   </div>
                   {isSelected && <Check size={14} style={{ color: 'var(--accent)' }} />}

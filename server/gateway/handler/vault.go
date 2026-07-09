@@ -111,6 +111,10 @@ func (h *VaultHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "VALIDATION", "name is required")
 		return
 	}
+	if req.Username == "" {
+		writeError(w, http.StatusBadRequest, "VALIDATION", "username is required")
+		return
+	}
 	if !isValidVaultType(req.Type) {
 		writeError(w, http.StatusBadRequest, "VALIDATION", "invalid type")
 		return
@@ -152,6 +156,10 @@ func (h *VaultHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Name == "" {
 		writeError(w, http.StatusBadRequest, "VALIDATION", "name is required")
+		return
+	}
+	if req.Username == "" {
+		writeError(w, http.StatusBadRequest, "VALIDATION", "username is required")
 		return
 	}
 	if !isValidVaultType(req.Type) {

@@ -58,17 +58,17 @@ export function VaultItemRow({ item, onView, onDelete }: VaultItemRowProps) {
               <span className="vault-row-user" title="用户名">
                 {item.username}
               </span>
-              <span className="vault-row-sep">路</span>
+              <span className="vault-row-sep">·</span>
             </>
           )}
           <span className="vault-row-refs" title="被引用次数">
             引用 {item.ref_count}
           </span>
-          <span className="vault-row-sep">路</span>
+          <span className="vault-row-sep">·</span>
           <span className="vault-row-date">{formatDate(item.updated_at)}</span>
           {item.remark && (
             <>
-              <span className="vault-row-sep">路</span>
+              <span className="vault-row-sep">·</span>
               <span className="vault-row-remark" title={item.remark}>
                 {item.remark}
               </span>

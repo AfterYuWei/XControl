@@ -1,7 +1,7 @@
-/* ===== NOTIFY (右上角统一通知中心) — 遵循 DESIGN.md Geist 规范 ===== */
+/* ===== NOTIFY (右下角统一通知中心) — 遵循 DESIGN.md Geist 规范 ===== */
 .xctrl-notify-root {
   position: fixed;
-  top: 44px;             /* 避开标题栏 header */
+  bottom: 20px;         /* 距离底部留白 */
   right: 16px;
   z-index: 300;          /* 高于 header/modal,确保错误提示始终可见 */
   display: flex;
@@ -99,7 +99,7 @@
     right: 12px;
     max-width: none;
     width: auto;
-    top: 52px;
+    bottom: 16px;
   }
 }
 

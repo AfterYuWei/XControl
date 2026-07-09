@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { vaultApi } from '@/api/vault'
-import { notify } from '@/store/notify'
+import { toast } from 'sonner'
 import type {
   VaultItem,
   VaultCreateRequest,
@@ -44,7 +44,7 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
       set({ items: items ?? [], loading: false })
     } catch (err) {
       set({ error: (err as Error).message, loading: false })
-      notify.error('加载凭据列表失败')
+      toast.error('加载凭据列表失败')
     }
   },
 
@@ -61,21 +61,21 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
   create: async (data) => {
     const item = await vaultApi.create(data)
     await get().fetchList()
-    notify.success('凭据已创建')
+    toast.success('凭据已创建')
     return item
   },
 
   update: async (id, data) => {
     const item = await vaultApi.update(id, data)
     await get().fetchList()
-    notify.success('凭据已更新')
+    toast.success('凭据已更新')
     return item
   },
 
   remove: async (id) => {
     await vaultApi.delete(id)
     await get().fetchList()
-    notify.success('凭据已删除')
+    toast.success('凭据已删除')
   },
 
   references: async (id) => {

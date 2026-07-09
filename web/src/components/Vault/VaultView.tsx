@@ -9,7 +9,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { useVaultStore } from '@/store/vault'
-import { notify } from '@/store/notify'
+import { toast } from 'sonner'
 import { VaultList } from './VaultList'
 import { VaultFormDialog } from './VaultFormDialog'
 import { VaultGenerateDialog } from './VaultGenerateDialog'
@@ -60,7 +60,7 @@ export function VaultView() {
       setDeleteTarget(null)
     } catch (err) {
       const msg = (err as { error?: { message?: string } })?.error?.message ?? (err as Error).message
-      notify.error(msg || '删除失败')
+      toast.error(msg || '删除失败')
     } finally {
       setDeleting(false)
     }

@@ -4,7 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { getTerminalTheme } from '@/lib/terminalThemes'
-import { notify } from '@/store/notify'
+import { toast } from 'sonner'
 
 interface UseTerminalOptions {
   containerRef: React.RefObject<HTMLDivElement | null>
@@ -65,15 +65,15 @@ export function useTerminal(options: UseTerminalOptions) {
       // 监听 WebGL 上下文丢失（如 GPU 驱动崩溃、资源紧张）
       webglAddon.onContextLoss(() => {
         webglAddon.dispose()
-        notify.warning('WebGL 加速已失效，已切换到 Canvas 渲染器', {
-          title: '终端渲染降级',
+        toast.warning('终端渲染降级', {
+          description: 'WebGL 加速已失效，已切换到 Canvas 渲染器',
           duration: 8000,
         })
       })
     } catch {
       // WebGL 不支持（如无 GPU、驱动问题、虚拟机环境）
-      notify.warning('当前环境不支持 WebGL，已使用 Canvas 渲染器', {
-        title: '终端渲染降级',
+      toast.warning('终端渲染降级', {
+        description: '当前环境不支持 WebGL，已使用 Canvas 渲染器',
         duration: 8000,
       })
     }

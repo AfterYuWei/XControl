@@ -11,7 +11,7 @@ import type {
   ConflictResolution,
   SftpConflictInfo,
 } from '@/types/sftp'
-import { toast } from '@/store/notify'
+import { toast } from 'sonner'
 
 /* ────────────────────────────────────────────────────────────────
  * The local machine, modelled as a server so both panes are symmetric.
@@ -554,7 +554,7 @@ export function createSftpStore(): SftpStoreApi {
     openEditor: async (pane, path) => {
       const tab = activeTabOf(get(), pane)
       if (!tab?.sessionId) {
-        toast('当前标签页未连接')
+        toast.warning('当前标签页未连接')
         return
       }
       // Delegate to the unified editor store

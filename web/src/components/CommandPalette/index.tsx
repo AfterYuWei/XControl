@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { Search, Plus, X as XIcon, PanelLeft, Server, RefreshCw, FolderTree, Copy } from 'lucide-react'
 import { useProfileStore } from '@/store/profile'
 import { useSessionStore } from '@/store/session'
-import { toast } from '@/store/notify'
+import { toast } from 'sonner'
 import type { Profile } from '@/types/profile'
 
 interface CommandPaletteProps {
@@ -46,14 +46,14 @@ export function CommandPalette({
       })
     })
     const cmds: PalItem[] = [
-      { type: 'cmd', label: 'New Tab', kbd: '⌘T', action: () => toast('Use the + button to open a new tab') },
+      { type: 'cmd', label: 'New Tab', kbd: '⌘T', action: () => toast.info('Use the + button to open a new tab') },
       { type: 'cmd', label: 'Close Tab', kbd: '⌘W', action: () => useSessionStore.getState().closeTab(useSessionStore.getState().activeTabId ?? '') },
       { type: 'cmd', label: 'Toggle Sidebar', kbd: '⌘B', action: onToggleSidebar },
-      { type: 'cmd', label: 'Reconnect', action: () => toast('Reconnecting…') },
-      { type: 'cmd', label: 'Open SFTP', action: () => toast('SFTP browser opened') },
+      { type: 'cmd', label: 'Reconnect', action: () => toast.info('Reconnecting…') },
+      { type: 'cmd', label: 'Open SFTP', action: () => toast.info('SFTP browser opened') },
       { type: 'cmd', label: 'Copy SSH Command', action: () => {
         const at = tabs.find((t) => t.id === useSessionStore.getState().activeTabId)
-        if (at?.host) toast(`Copied: ssh ${at.username ?? 'root'}@${at.host}`)
+        if (at?.host) toast.success(`Copied: ssh ${at.username ?? 'root'}@${at.host}`)
       } },
     ]
     cmds.forEach((c) => {

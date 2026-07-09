@@ -4,9 +4,9 @@ import { Sidebar } from '@/components/Sidebar'
 import { TerminalView } from '@/components/Terminal'
 import { StatusBar } from '@/components/StatusBar'
 import { CommandPalette } from '@/components/CommandPalette'
-import { Notify } from '@/components/Notify'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { SettingsDialog } from '@/components/SettingsDialog'
+import { Toaster } from '@/components/ui/toast'
 import { useProfileStore } from '@/store/profile'
 import { useSessionStore } from '@/store/session'
 import { useSettingsStore } from '@/store/settings'
@@ -248,8 +248,8 @@ export function Layout() {
       {/* 设置面板 */}
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
 
-      {/* Notify — 右上角统一通知中心 */}
-      <Notify />
+      {/* Toast — 右下角通知弹窗 */}
+      <Toaster />
     </div>
   )
 }

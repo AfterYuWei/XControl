@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Copy, Check, Dices } from 'lucide-react'
-import { notify } from '@/store/notify'
+import { toast } from 'sonner'
 
 interface VaultPasswordGeneratorProps {
   onApply: (pwd: string) => void
@@ -54,10 +54,10 @@ export function VaultPasswordGenerator({ onApply }: VaultPasswordGeneratorProps)
     try {
       await navigator.clipboard.writeText(result)
       setCopied(true)
-      notify.success('已复制')
+      toast.success('已复制')
       setTimeout(() => setCopied(false), 1500)
     } catch {
-      notify.error('复制失败')
+      toast.error('复制失败')
     }
   }
 

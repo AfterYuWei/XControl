@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { vaultApi } from '@/api/vault'
-import { notify } from '@/store/notify'
+import { toast } from 'sonner'
 import { useVaultStore } from '@/store/vault'
 import { VAULT_TYPE_LABELS, type VaultCreateRequest, type VaultItem, type VaultType } from '@/types/vault'
 import { VaultPasswordGenerator } from './VaultPasswordGenerator'
@@ -165,21 +165,21 @@ function VaultFormDialogInner({ item, onOpenChange }: VaultFormDialogInnerProps)
           passphrase: credential.passphrase ?? '',
         }))
       })
-      .catch(() => notify.warning('加载凭据内容失败，请重新输入'))
+      .catch(() => toast.warning('加载凭据内容失败，请重新输入'))
   }, [item])
 
   const readFile = (file: File, field: 'private_key' | 'public_key') => {
     if (file.size > 100 * 1024) {
-      notify.warning('文件过大，请控制在 100KB 以内')
+      toast.warning('文件过大，请控制在 100KB 以内')
       return
     }
 
     const reader = new FileReader()
     reader.onload = () => {
       setForm((current) => ({ ...current, [field]: String(reader.result ?? '') }))
-      notify.success('文件已导入')
+      toast.success('文件已导入')
     }
-    reader.onerror = () => notify.error('读取文件失败')
+    reader.onerror = () => toast.error('读取文件失败')
     reader.readAsText(file)
   }
 

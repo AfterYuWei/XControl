@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Check } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { vaultApi } from '@/api/vault'
-import { notify } from '@/store/notify'
+import { toast } from 'sonner'
 import { VAULT_TYPE_LABELS, type VaultItem } from '@/types/vault'
 import { VAULT_TYPE_ICONS } from '@/lib/vaultIcons'
 
@@ -33,7 +33,7 @@ export function VaultSelectDialog({ open, onOpenChange, selectedId, onSelect }: 
     vaultApi
       .list()
       .then((list) => setItems(list ?? []))
-      .catch(() => notify.error('加载凭据列表失败'))
+      .catch(() => toast.error('加载凭据列表失败'))
       .finally(() => setLoading(false))
   }, [open])
 

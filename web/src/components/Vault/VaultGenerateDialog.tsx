@@ -8,7 +8,7 @@ import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { vaultApi } from '@/api/vault'
 import { useVaultStore } from '@/store/vault'
-import { notify } from '@/store/notify'
+import { toast } from 'sonner'
 import type { GenerateKeyResponse } from '@/types/vault'
 
 interface VaultGenerateDialogProps {
@@ -61,7 +61,7 @@ export function VaultGenerateDialog({ open, onOpenChange }: VaultGenerateDialogP
 
   const validateRequiredFields = () => {
     if (name.trim() && username.trim()) return true
-    notify.warning('请先填写名称和用户名')
+    toast.warning('请先填写名称和用户名')
     return false
   }
 
@@ -80,10 +80,10 @@ export function VaultGenerateDialog({ open, onOpenChange }: VaultGenerateDialogP
         passphrase: passphrase || undefined,
       })
       setResult(response)
-      notify.success('SSH 密钥对已生成')
+      toast.success('SSH 密钥对已生成')
     } catch (err) {
       const message = (err as { error?: { message?: string } })?.error?.message ?? (err as Error).message
-      notify.error(message || '生成失败')
+      toast.error(message || '生成失败')
     } finally {
       setLoading(false)
     }
@@ -95,10 +95,10 @@ export function VaultGenerateDialog({ open, onOpenChange }: VaultGenerateDialogP
     try {
       await navigator.clipboard.writeText(text)
       setCopiedField(field)
-      notify.success('已复制')
+      toast.success('已复制')
       setTimeout(() => setCopiedField(''), 1500)
     } catch {
-      notify.error('复制失败')
+      toast.error('复制失败')
     }
   }
 
@@ -119,10 +119,10 @@ export function VaultGenerateDialog({ open, onOpenChange }: VaultGenerateDialogP
         remark: comment.trim() || undefined,
       })
       handleClose(false)
-      notify.success('已保存到 Vault')
+      toast.success('已保存到 Vault')
     } catch (err) {
       const message = (err as { error?: { message?: string } })?.error?.message ?? (err as Error).message
-      notify.error(message || '保存失败')
+      toast.error(message || '保存失败')
     } finally {
       setSaving(false)
     }

@@ -6,7 +6,7 @@ import { ServerDetail } from '@/components/ServerDetail'
 import { useProfileStore } from '@/store/profile'
 import { useSessionStore } from '@/store/session'
 import { useSidebarDetailStore, GLOBAL_PAGE_KEY } from '@/store/sidebarDetail'
-import { toast } from '@/store/notify'
+import { toast } from 'sonner'
 import { resolveServerIcon } from '@/lib/serverIcons'
 import { resolveGroupIcon } from '@/lib/groupIcons'
 import type { Profile } from '@/types/profile'
@@ -135,9 +135,9 @@ export function Sidebar() {
     if (confirm(`确定删除连接 "${profile.name}"?`)) {
       try {
         await deleteProfile(profile.id)
-        toast('连接已删除')
+        toast.success('连接已删除')
       } catch (err) {
-        toast((err as Error).message || '删除失败')
+        toast.error((err as Error).message || '删除失败')
       }
     }
     setProfileMenu(null)
@@ -178,15 +178,15 @@ export function Sidebar() {
     // Front-end guard: backend also enforces 409, but this gives instant UX.
     const count = profiles.filter((p) => p.group_id === group.id).length
     if (count > 0) {
-      toast(`该分组下仍有 ${count} 台服务器，请先移动或删除后再删除分组`)
+      toast.warning(`该分组下仍有 ${count} 台服务器，请先移动或删除后再删除分组`)
       return
     }
     if (confirm(`确定删除分组 "${group.name}"?`)) {
       try {
         await deleteGroup(group.id)
-        toast('分组已删除')
+        toast.success('分组已删除')
       } catch (err) {
-        toast((err as Error).message || '删除失败')
+        toast.error((err as Error).message || '删除失败')
       }
     }
   }
@@ -219,9 +219,9 @@ export function Sidebar() {
       const label = targetGroupId
         ? groups.find((g) => g.id === targetGroupId)?.name || '分组'
         : '服务器管理'
-      toast(`已移动到「${label}」`)
+      toast.success(`已移动到「${label}」`)
     } catch (err) {
-      toast((err as Error).message || '移动失败')
+      toast.error((err as Error).message || '移动失败')
     }
   }
 

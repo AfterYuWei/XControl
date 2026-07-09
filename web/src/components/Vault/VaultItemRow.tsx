@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { AlertTriangle, Pencil, KeyRound, Trash2 } from 'lucide-react'
 import { vaultApi } from '@/api/vault'
-import { notify } from '@/store/notify'
+import { toast } from 'sonner'
 import { VAULT_TYPE_LABELS, type ProfileRef, type VaultItem } from '@/types/vault'
 import { VAULT_TYPE_ICONS } from '@/lib/vaultIcons'
 
@@ -31,7 +31,7 @@ export function VaultItemRow({ item, onEdit, onDelete }: VaultItemRowProps) {
       const refs = await vaultApi.references(item.id)
       onDelete(item, refs)
     } catch {
-      notify.error('查询引用失败')
+      toast.error('查询引用失败')
     } finally {
       setCheckingDeleteRefs(false)
     }

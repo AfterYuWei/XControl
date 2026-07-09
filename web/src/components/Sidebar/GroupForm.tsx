@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { useProfileStore } from '@/store/profile'
-import { toast } from '@/store/notify'
+import { toast } from 'sonner'
 import { GROUP_ICONS } from '@/lib/groupIcons'
 import type { Group } from '@/types/group'
 
@@ -48,10 +48,10 @@ export function GroupForm({ open, onOpenChange, group, defaultParentId }: GroupF
           parent_id: parentId,
           icon,
         })
-        toast('分组已更新')
+        toast.success('分组已更新')
       } else {
         await createGroup({ name: name.trim(), parent_id: parentId, icon })
-        toast('分组已创建')
+        toast.success('分组已创建')
       }
       onOpenChange(false)
     } catch (err) {

@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { editApi } from '@/api/edit'
 import type { LineEnding } from '@/types/sftp'
-import { toast } from '@/store/notify'
+import { toast } from 'sonner'
 
 /** Session type determines which API to use for file operations. */
 export type EditorSessionType = 'sftp' | 'serverDetail'
@@ -125,7 +125,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       }))
     } catch (err) {
       const msg = extractApiError(err, '打开文件失败')
-      toast(msg)
+      toast.error(msg)
 
       // Remove the failed tab
       set((state) => {
@@ -206,7 +206,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
             : t
         ),
       }))
-      toast('已保存')
+      toast.success('已保存')
     } catch (err) {
       const code = extractApiCode(err)
       if (code === 'FILE_MODIFIED') {
@@ -215,7 +215,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
             t.id === tabId ? { ...t, saving: false, conflict: true } : t
           ),
         }))
-        toast('文件已被其他进程修改，请重新加载')
+        toast.warning('文件已被其他进程修改，请重新加载')
       } else {
         const msg = extractApiError(err, '保存失败')
         set((state) => ({
@@ -223,7 +223,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
             t.id === tabId ? { ...t, saving: false, error: msg } : t
           ),
         }))
-        toast(msg)
+        toast.error(msg)
       }
     }
   },
@@ -265,7 +265,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           t.id === tabId ? { ...t, loading: false, error: msg } : t
         ),
       }))
-      toast(msg)
+      toast.error(msg)
     }
   },
 }))

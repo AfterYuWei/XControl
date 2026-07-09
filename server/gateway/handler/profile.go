@@ -219,7 +219,6 @@ func (h *ProfileHandler) prepareCredentialOnUpdate(current *model.Profile, req *
 			}
 			cred.PrivKey = ""
 			cred.Passphrase = ""
-			cred.Cert = ""
 		case "key":
 			if req.PrivKey != nil && *req.PrivKey != "" {
 				cred.PrivKey = *req.PrivKey
@@ -231,7 +230,6 @@ func (h *ProfileHandler) prepareCredentialOnUpdate(current *model.Profile, req *
 				return fmt.Errorf("private_key is required for key auth")
 			}
 			cred.Password = ""
-			cred.Cert = ""
 		case "agent":
 			cred = &model.Credential{}
 		}

@@ -51,7 +51,6 @@ const EMPTY_FORM: VaultCreateRequest = {
   private_key: '',
   public_key: '',
   passphrase: '',
-  certificate: '',
 }
 
 function buildInitialForm(item?: VaultItem | null): VaultCreateRequest {
@@ -66,7 +65,6 @@ function buildInitialForm(item?: VaultItem | null): VaultCreateRequest {
     private_key: '',
     public_key: '',
     passphrase: '',
-    certificate: '',
   }
 }
 
@@ -253,7 +251,6 @@ function VaultFormDialogInner({ item, onOpenChange }: VaultFormDialogInnerProps)
   const [error, setError] = useState('')
   const [showGenerator, setShowGenerator] = useState(false)
   const publicKeyFileRef = useRef<HTMLInputElement>(null)
-  const certFileRef = useRef<HTMLInputElement>(null)
   const privateKeyFileRef = useRef<HTMLInputElement>(null)
   const typeLabel = VAULT_TYPE_LABELS[form.type]
 
@@ -269,13 +266,12 @@ function VaultFormDialogInner({ item, onOpenChange }: VaultFormDialogInnerProps)
           private_key: credential.private_key ?? '',
           public_key: credential.public_key ?? '',
           passphrase: credential.passphrase ?? '',
-          certificate: credential.certificate ?? '',
         }))
       })
       .catch(() => notify.warning('加载凭据内容失败，请重新输入'))
   }, [item])
 
-  const readFile = (file: File, field: 'private_key' | 'public_key' | 'certificate') => {
+  const readFile = (file: File, field: 'private_key' | 'public_key') => {
     if (file.size > 100 * 1024) {
       notify.warning('文件过大，请控制在 100KB 以内')
       return
@@ -450,7 +446,7 @@ function VaultFormDialogInner({ item, onOpenChange }: VaultFormDialogInnerProps)
               </section>
 
               <UploadTextareaField
-                label={form.type === 'ssh_certificate' ? '配套私钥' : '私钥'}
+                label="私钥"
                 value={form.private_key ?? ''}
                 placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
                 required
@@ -461,21 +457,6 @@ function VaultFormDialogInner({ item, onOpenChange }: VaultFormDialogInnerProps)
                 onChange={(value) => updateField('private_key', value)}
                 onPickFile={(file) => readFile(file, 'private_key')}
               />
-
-              {form.type === 'ssh_certificate' ? (
-                <UploadTextareaField
-                  label="证书"
-                  value={form.certificate ?? ''}
-                  placeholder="ssh-ed25519-cert-v01@openssh.com AAAA..."
-                  required
-                  rows={3}
-                  accept=".cer,.crt,.pub,.cert"
-                  inputRef={certFileRef}
-                  outputClassName="vault-sheet-output-medium"
-                  onChange={(value) => updateField('certificate', value)}
-                  onPickFile={(file) => readFile(file, 'certificate')}
-                />
-              ) : null}
             </>
           )}
         </div>

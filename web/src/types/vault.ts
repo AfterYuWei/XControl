@@ -1,4 +1,4 @@
-export type VaultType = 'password' | 'private_key' | 'ssh_certificate'
+export type VaultType = 'password' | 'private_key'
 
 export interface VaultItem {
   id: string
@@ -17,7 +17,6 @@ export interface VaultCredential {
   password?: string
   private_key?: string
   passphrase?: string
-  certificate?: string
   public_key?: string
 }
 
@@ -30,7 +29,6 @@ export interface VaultCreateRequest {
   private_key?: string
   public_key?: string
   passphrase?: string
-  certificate?: string
 }
 
 export type VaultUpdateRequest = VaultCreateRequest
@@ -55,7 +53,6 @@ export interface ProfileRef {
 export const VAULT_TYPE_LABELS: Record<VaultType, string> = {
   password: '密码',
   private_key: '私钥',
-  ssh_certificate: 'SSH 证书',
 }
 
 export const VAULT_TYPE_ALL = 'all' as const

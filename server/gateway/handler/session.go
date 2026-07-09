@@ -148,7 +148,7 @@ func (h *SessionHandler) Create(w http.ResponseWriter, r *http.Request) {
 func (h *SessionHandler) connectSession(ctx context.Context, session *Session, profile *model.Profile, cols, rows int) {
 	session.setStage(ConnectionStageCredential, "info", "正在准备连接凭据")
 
-	var password, privKey, passphrase, cert string
+	var password, privKey, passphrase string
 	cred, err := resolveProfileCredential(profile, h.vault, h.encryptor)
 	if err != nil {
 		session.appendLog("warn", ConnectionStageCredential, fmt.Sprintf("读取连接凭据失败，将继续尝试连接: %v", err))
@@ -157,8 +157,7 @@ func (h *SessionHandler) connectSession(ctx context.Context, session *Session, p
 		password = cred.Password
 		privKey = cred.PrivKey
 		passphrase = cred.Passphrase
-		cert = cred.Cert
-		if password == "" && privKey == "" && cert == "" {
+		if password == "" && privKey == "" {
 			session.appendLog("info", ConnectionStageCredential, "未检测到密码或私钥，将尝试无凭据连接")
 		} else {
 			session.appendLog("info", ConnectionStageCredential, "连接凭据已就绪")
@@ -202,7 +201,6 @@ func (h *SessionHandler) connectSession(ctx context.Context, session *Session, p
 		Password:           password,
 		PrivKey:            privKey,
 		Passphrase:         passphrase,
-		Cert:               cert,
 		HostKeyFingerprint: currentHostKeyFingerprint,
 	}
 

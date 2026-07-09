@@ -114,7 +114,7 @@ func (h *ServerDetailHandler) CreateSession(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	var password, privKey, passphrase, cert string
+	var password, privKey, passphrase string
 	cred, err := resolveProfileCredential(profile, h.vault, h.encryptor)
 	if err != nil {
 		slog.Warn("server detail: failed to resolve credential", "error", err)
@@ -122,7 +122,6 @@ func (h *ServerDetailHandler) CreateSession(w http.ResponseWriter, r *http.Reque
 		password = cred.Password
 		privKey = cred.PrivKey
 		passphrase = cred.Passphrase
-		cert = cred.Cert
 	}
 
 	opts := protocol.DriverOpts{
@@ -132,7 +131,6 @@ func (h *ServerDetailHandler) CreateSession(w http.ResponseWriter, r *http.Reque
 		Password:           password,
 		PrivKey:            privKey,
 		Passphrase:         passphrase,
-		Cert:               cert,
 		HostKeyFingerprint: profileHostKeyFingerprint(profile.Options),
 	}
 

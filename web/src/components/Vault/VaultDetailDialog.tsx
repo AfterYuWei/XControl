@@ -289,7 +289,7 @@ export function VaultDetailDialog({ open, onOpenChange, item, onEdit }: VaultDet
                 />
               ) : null}
 
-              {(item.type === 'private_key' || item.type === 'ssh_certificate') && publicKeyValue ? (
+              {item.type === 'private_key' && publicKeyValue ? (
                 <DetailPanel
                   title="公钥"
                   value={publicKeyValue}
@@ -322,19 +322,6 @@ export function VaultDetailDialog({ open, onOpenChange, item, onEdit }: VaultDet
                   rows={8}
                   panelClassName="vault-sheet-panel-span-2"
                   outputClassName="vault-sheet-output-large vault-detail-output-private"
-                  onCopy={handleCopy}
-                />
-              ) : null}
-
-              {credential.certificate ? (
-                <DetailPanel
-                  title="证书"
-                  value={credential.certificate}
-                  field="cert"
-                  copiedField={copiedField}
-                  rows={4}
-                  panelClassName="vault-sheet-panel-span-2"
-                  outputClassName="vault-sheet-output-medium"
                   onCopy={handleCopy}
                 />
               ) : null}

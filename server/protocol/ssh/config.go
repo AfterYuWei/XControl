@@ -50,36 +50,10 @@ func BuildSSHConfig(opts protocol.DriverOpts) (*gossh.ClientConfig, error) {
 		if err != nil {
 			return nil, fmt.Errorf("parse private key: %w", err)
 		}
-
-		// If an SSH certificate is provided, wrap the signer so the client
-		// presents the certificate for authentication. The certificate's
-		// public key must match the private key's public key.
-		if opts.Cert != "" {
-			certSigner, certErr := buildCertSigner(opts.Cert, signer)
-			if certErr != nil {
-				return nil, fmt.Errorf("build cert signer: %w", certErr)
-			}
-			signer = certSigner
-		}
 		config.Auth = append(config.Auth, gossh.PublicKeys(signer))
 	}
 
 	return config, nil
-}
-
-// buildCertSigner parses an OpenSSH certificate (authorized-keys format) and
-// combines it with the private key signer to produce a certificate-backed
-// signer usable with gossh.PublicKeys.
-func buildCertSigner(certPEM string, priv gossh.Signer) (gossh.Signer, error) {
-	pubKey, _, _, _, err := gossh.ParseAuthorizedKey([]byte(certPEM))
-	if err != nil {
-		return nil, fmt.Errorf("parse certificate: %w", err)
-	}
-	cert, ok := pubKey.(*gossh.Certificate)
-	if !ok {
-		return nil, fmt.Errorf("provided key is not an SSH certificate")
-	}
-	return gossh.NewCertSigner(cert, priv)
 }
 
 // ConnectViaJump dials the target SSH server through a jump host. Exported for

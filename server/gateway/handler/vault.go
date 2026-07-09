@@ -40,7 +40,6 @@ type vaultCreateRequest struct {
 	PrivateKey string `json:"private_key,omitempty"`
 	PublicKey  string `json:"public_key,omitempty"`
 	Passphrase string `json:"passphrase,omitempty"`
-	Cert       string `json:"certificate,omitempty"`
 }
 
 // vaultUpdateRequest is the payload for PUT /api/vault/{id}. All fields are
@@ -55,7 +54,6 @@ type vaultUpdateRequest struct {
 	PrivateKey string `json:"private_key,omitempty"`
 	PublicKey  string `json:"public_key,omitempty"`
 	Passphrase string `json:"passphrase,omitempty"`
-	Cert       string `json:"certificate,omitempty"`
 }
 
 // generateKeyRequest is the payload for POST /api/vault/generate.
@@ -77,7 +75,6 @@ type vaultRevealResponse struct {
 	PrivateKey string `json:"private_key,omitempty"`
 	PublicKey  string `json:"public_key,omitempty"`
 	Passphrase string `json:"passphrase,omitempty"`
-	Cert       string `json:"certificate,omitempty"`
 }
 
 func (h *VaultHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -124,7 +121,6 @@ func (h *VaultHandler) Create(w http.ResponseWriter, r *http.Request) {
 		PrivKey:    req.PrivateKey,
 		PublicKey:  req.PublicKey,
 		Passphrase: req.Passphrase,
-		Cert:       req.Cert,
 	}
 	ensurePublicKey(cred, req.Type)
 	if err := validateCredential(cred, req.Type); err != nil {
@@ -177,7 +173,6 @@ func (h *VaultHandler) Update(w http.ResponseWriter, r *http.Request) {
 		PrivKey:    req.PrivateKey,
 		PublicKey:  req.PublicKey,
 		Passphrase: req.Passphrase,
-		Cert:       req.Cert,
 	}
 	ensurePublicKey(cred, req.Type)
 	if err := validateCredential(cred, req.Type); err != nil {
@@ -258,7 +253,6 @@ func (h *VaultHandler) Reveal(w http.ResponseWriter, r *http.Request) {
 		PrivateKey: cred.PrivKey,
 		PublicKey:  publicKey,
 		Passphrase: cred.Passphrase,
-		Cert:       cred.Cert,
 	})
 }
 
@@ -355,10 +349,6 @@ func validateCredential(cred *model.Credential, credType string) error {
 		if cred.PrivKey == "" {
 			return fmt.Errorf("private_key is required for private_key type")
 		}
-	case model.VaultTypeSSHCertificate:
-		if cred.Cert == "" || cred.PrivKey == "" {
-			return fmt.Errorf("certificate and private_key are required for ssh_certificate type")
-		}
 	default:
 		return fmt.Errorf("unsupported type: %s", credType)
 	}
@@ -366,7 +356,7 @@ func validateCredential(cred *model.Credential, credType string) error {
 }
 
 func isValidVaultType(t string) bool {
-	return t == model.VaultTypePassword || t == model.VaultTypePrivateKey || t == model.VaultTypeSSHCertificate
+	return t == model.VaultTypePassword || t == model.VaultTypePrivateKey
 }
 
 func validateVaultTypeUpdate(existingType, requestedType string) error {
@@ -412,7 +402,7 @@ func ensurePublicKey(cred *model.Credential, credType string) {
 		return
 	}
 
-	if credType != model.VaultTypePrivateKey && credType != model.VaultTypeSSHCertificate {
+	if credType != model.VaultTypePrivateKey {
 		return
 	}
 

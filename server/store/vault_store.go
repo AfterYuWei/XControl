@@ -40,16 +40,6 @@ func encodePlaintext(cred *model.Credential, credType string) (plaintext, finger
 		}
 		h := sha256.Sum256([]byte(cred.PrivKey))
 		return plaintext, hex.EncodeToString(h[:8]), nil
-	case model.VaultTypeSSHCertificate:
-		plaintext, err = marshalStructuredCredential(cred)
-		if err != nil {
-			return "", "", err
-		}
-		fp, fpErr := certFingerprint(cred.Cert)
-		if fpErr != nil {
-			return "", "", fmt.Errorf("compute cert fingerprint: %w", fpErr)
-		}
-		return plaintext, fp, nil
 	default:
 		return "", "", fmt.Errorf("unsupported vault type: %s", credType)
 	}
@@ -89,20 +79,6 @@ func decodePlaintext(decrypted, credType string) *model.Credential {
 		cred.PrivKey = parts[0]
 		if len(parts) == 2 {
 			cred.Passphrase = parts[1]
-		}
-	case model.VaultTypeSSHCertificate:
-		if structured, ok := unmarshalStructuredCredential(decrypted); ok {
-			return structured
-		}
-		parts := strings.SplitN(decrypted, "\x00", 3)
-		if len(parts) >= 1 {
-			cred.Cert = parts[0]
-		}
-		if len(parts) >= 2 {
-			cred.PrivKey = parts[1]
-		}
-		if len(parts) >= 3 {
-			cred.Passphrase = parts[2]
 		}
 	}
 	return cred
@@ -331,9 +307,6 @@ func (s *sqliteVaultStore) detectPassphrase(decrypted, credType string) bool {
 	case model.VaultTypePrivateKey:
 		parts := strings.SplitN(decrypted, "\x00", 2)
 		return len(parts) == 2 && parts[1] != ""
-	case model.VaultTypeSSHCertificate:
-		parts := strings.SplitN(decrypted, "\x00", 3)
-		return len(parts) == 3 && parts[2] != ""
 	}
 	return false
 }

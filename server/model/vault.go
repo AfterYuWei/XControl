@@ -4,9 +4,8 @@ import "time"
 
 // Vault type constants.
 const (
-	VaultTypePassword       = "password"
-	VaultTypePrivateKey     = "private_key"
-	VaultTypeSSHCertificate = "ssh_certificate"
+	VaultTypePassword   = "password"
+	VaultTypePrivateKey = "private_key"
 )
 
 type Vault struct {
@@ -26,7 +25,6 @@ type Credential struct {
 	PrivKey    string `json:"private_key,omitempty"`
 	PublicKey  string `json:"public_key,omitempty"`
 	Passphrase string `json:"passphrase,omitempty"`
-	Cert       string `json:"certificate,omitempty"` // SSH certificate (OpenSSH format)
 }
 
 // VaultItem is the list/detail response payload without ciphertext.

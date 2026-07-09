@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react'
-import { ArrowLeft, Check, Copy, Upload } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { ArrowLeft, Check, Copy } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -27,15 +27,12 @@ export function VaultGenerateDialog({ open, onOpenChange }: VaultGenerateDialogP
   const [name, setName] = useState('')
   const [username, setUsername] = useState('')
   const [comment, setComment] = useState('')
-  const [certificate, setCertificate] = useState('')
   const [algo, setAlgo] = useState('ed25519')
   const [passphrase, setPassphrase] = useState('')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [uploadingCertificate, setUploadingCertificate] = useState(false)
   const [result, setResult] = useState<GenerateKeyResponse | null>(null)
   const [copiedField, setCopiedField] = useState<'public' | 'private' | ''>('')
-  const certificateFileRef = useRef<HTMLInputElement>(null)
 
   const isResultStep = result !== null
   const canGenerate = name.trim().length > 0 && username.trim().length > 0 && !loading
@@ -52,7 +49,6 @@ export function VaultGenerateDialog({ open, onOpenChange }: VaultGenerateDialogP
 
   const resetState = () => {
     setResult(null)
-    setCertificate('')
     setPassphrase('')
     setCopiedField('')
     setComment('')
@@ -61,7 +57,6 @@ export function VaultGenerateDialog({ open, onOpenChange }: VaultGenerateDialogP
     setAlgo('ed25519')
     setLoading(false)
     setSaving(false)
-    setUploadingCertificate(false)
   }
 
   const validateRequiredFields = () => {
@@ -107,24 +102,6 @@ export function VaultGenerateDialog({ open, onOpenChange }: VaultGenerateDialogP
     }
   }
 
-  const handleCertificateUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-
-    setUploadingCertificate(true)
-
-    try {
-      const text = await file.text()
-      setCertificate(text)
-      notify.success('证书已导入')
-    } catch {
-      notify.error('读取证书文件失败')
-    } finally {
-      setUploadingCertificate(false)
-      event.target.value = ''
-    }
-  }
-
   const handleSave = async () => {
     if (!result) return
     if (!validateRequiredFields()) return
@@ -135,11 +112,10 @@ export function VaultGenerateDialog({ open, onOpenChange }: VaultGenerateDialogP
       await create({
         name: name.trim(),
         username: username.trim(),
-        type: certificate.trim() ? 'ssh_certificate' : 'private_key',
+        type: 'private_key',
         private_key: result.private_key,
         public_key: publicKeyLine || undefined,
         passphrase: passphrase || undefined,
-        certificate: certificate.trim() || undefined,
         remark: comment.trim() || undefined,
       })
       handleClose(false)
@@ -215,37 +191,6 @@ export function VaultGenerateDialog({ open, onOpenChange }: VaultGenerateDialogP
                       onChange={(event) => setComment(event.target.value)}
                       placeholder="例如：ops@netcatty"
                       className="pf-input-mono"
-                    />
-                  </div>
-                </div>
-
-                <div className="vault-gen-certificate">
-                  <div className="pf-field">
-                    <div className="pf-field-head">
-                      <Label className="pf-label">SSH 证书（可选）</Label>
-                      <button
-                        type="button"
-                        className="pf-upload-btn"
-                        onClick={() => certificateFileRef.current?.click()}
-                        disabled={uploadingCertificate}
-                      >
-                        <Upload size={13} />
-                        {uploadingCertificate ? '上传中...' : '上传证书'}
-                      </button>
-                    </div>
-                    <Textarea
-                      value={certificate}
-                      onChange={(event) => setCertificate(event.target.value)}
-                      placeholder="可粘贴 OpenSSH certificate 内容"
-                      rows={2}
-                      className="pf-input-mono pf-key-textarea vault-gen-certificate-input"
-                    />
-                    <input
-                      ref={certificateFileRef}
-                      type="file"
-                      accept=".pub,.txt,.crt,.cert,.pem"
-                      hidden
-                      onChange={handleCertificateUpload}
                     />
                   </div>
                 </div>

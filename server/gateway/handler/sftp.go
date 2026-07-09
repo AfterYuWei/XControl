@@ -41,7 +41,6 @@ type SftpSession struct {
 	Password   string
 	PrivKey    string
 	Passphrase string
-	Cert       string
 
 	// cancel is the session-level context cancel function, used to cancel
 	// the background connection goroutine created in CreateSession.
@@ -140,7 +139,7 @@ func (h *SftpHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func() {
-		var password, privKey, passphrase, cert string
+		var password, privKey, passphrase string
 		cred, err := resolveProfileCredential(profile, h.vault, h.encryptor)
 		if err != nil {
 			slog.Warn("failed to resolve profile credential", "error", err)
@@ -148,7 +147,6 @@ func (h *SftpHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 			password = cred.Password
 			privKey = cred.PrivKey
 			passphrase = cred.Passphrase
-			cert = cred.Cert
 		}
 
 		// Retain connection info for direct server-to-server transfer
@@ -158,7 +156,6 @@ func (h *SftpHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 		session.Password = password
 		session.PrivKey = privKey
 		session.Passphrase = passphrase
-		session.Cert = cert
 
 		opts := protocol.DriverOpts{
 			Host:               profile.Host,
@@ -167,7 +164,6 @@ func (h *SftpHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 			Password:           password,
 			PrivKey:            privKey,
 			Passphrase:         passphrase,
-			Cert:               cert,
 			HostKeyFingerprint: profileHostKeyFingerprint(profile.Options),
 		}
 

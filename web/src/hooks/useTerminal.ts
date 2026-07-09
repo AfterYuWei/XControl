@@ -2,7 +2,9 @@ import { useEffect, useRef, useCallback } from 'react'
 import { Terminal, type IBufferRange } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
+import { WebglAddon } from '@xterm/addon-webgl'
 import { getTerminalTheme } from '@/lib/terminalThemes'
+import { notify } from '@/store/notify'
 
 interface UseTerminalOptions {
   containerRef: React.RefObject<HTMLDivElement | null>
@@ -53,6 +55,29 @@ export function useTerminal(options: UseTerminalOptions) {
     terminal.loadAddon(webLinksAddon)
 
     terminal.open(containerRef.current)
+
+    // 尝试加载 WebGL 渲染器以提升高频更新性能（如进度条、实时日志）
+    // 如果 WebGL 不可用，会自动回退到 Canvas 渲染器
+    try {
+      const webglAddon = new WebglAddon()
+      terminal.loadAddon(webglAddon)
+
+      // 监听 WebGL 上下文丢失（如 GPU 驱动崩溃、资源紧张）
+      webglAddon.onContextLoss(() => {
+        webglAddon.dispose()
+        notify.warning('WebGL 加速已失效，已切换到 Canvas 渲染器', {
+          title: '终端渲染降级',
+          duration: 8000,
+        })
+      })
+    } catch {
+      // WebGL 不支持（如无 GPU、驱动问题、虚拟机环境）
+      notify.warning('当前环境不支持 WebGL，已使用 Canvas 渲染器', {
+        title: '终端渲染降级',
+        duration: 8000,
+      })
+    }
+
     fitAddon.fit()
 
     // Wait for fonts to finish loading before the final fit. xterm.js measures

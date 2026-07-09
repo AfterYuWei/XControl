@@ -208,14 +208,22 @@ export function useTerminal(options: UseTerminalOptions) {
       if (inside && text) {
         // Right-click on the selection: copy it and paste into the command line.
         navigator.clipboard.writeText(text).catch(() => {})
-        terminal.input(text)
+        // Use bracketed paste wrapper to prevent multi-line commands from auto-executing.
+        // This matches the behavior when Bracketed Paste Mode is enabled on the remote shell.
+        terminal.input(`\x1b[200~${text}\x1b[201~`)
         terminal.clearSelection()
         return
       }
       // Right-click elsewhere: drop any stale highlight, then paste.
       terminal.clearSelection()
       navigator.clipboard.readText().then((clip) => {
-        if (clip) terminal.input(clip)
+        if (clip) {
+          // Use bracketed paste wrapper to prevent multi-line commands from auto-executing.
+          // When the remote shell has Bracketed Paste Mode enabled (sent via \x1b[?2004h),
+          // it will recognize these escape sequences and treat the pasted content as a
+          // single unit instead of executing each line as a separate command.
+          terminal.input(`\x1b[200~${clip}\x1b[201~`)
+        }
       }).catch(() => {})
     }
     terminalElement?.addEventListener('mousedown', handleMouseDown, true)

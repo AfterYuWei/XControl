@@ -237,15 +237,13 @@ func (h *WSHandler) writePump(ctx context.Context, conn *ws.Conn, session *Sessi
 
 	buf := make([]byte, 4096)
 	var osc7Buffer []byte
-	var utf8Carry []byte // Incomplete UTF-8 trailing bytes from previous read
+	var utf8Carry []byte
 
 	// Filter control for injected OSC 7 config command
-	// Uses a buffer to handle network packet fragmentation
 	isFilteringInit := true
-	initTarget := []byte(`__osc7_cwd`) // Match unique function name (robust against ANSI color codes)
+	initTarget := []byte(`PROMPT_COMMAND='printf`)
 	var initFilterBuf []byte
-	var totalInitSeen int // Total bytes seen by the init filter (for safety fallback)
-	var readCount int     // Read counter for debugging
+	var totalInitSeen int
 
 	for {
 		select {
@@ -285,11 +283,8 @@ func (h *WSHandler) writePump(ctx context.Context, conn *ws.Conn, session *Sessi
 					return
 				}
 			}
-			if n > 0 {
-				readCount++
-				hasCmdInRead := bytes.Contains(buf[:n], []byte("__osc7_cwd"))
-				slog.Debug("writePump: shell read", "read_count", readCount, "n", n, "is_filtering", isFilteringInit, "contains_osc7_cmd", hasCmdInRead)
 
+			if n > 0 {
 				data := append(utf8Carry, buf[:n]...)
 				utf8Carry = trimIncompleteUTF8(data)
 				if len(utf8Carry) > 0 {
@@ -302,7 +297,6 @@ func (h *WSHandler) writePump(ctx context.Context, conn *ws.Conn, session *Sessi
 
 					if firstIdx := bytes.Index(initFilterBuf, initTarget); firstIdx != -1 {
 						lastIdx := bytes.LastIndex(initFilterBuf, initTarget)
-						slog.Debug("init filter: target found", "first_idx", firstIdx, "last_idx", lastIdx, "buf_len", len(initFilterBuf), "total_seen", totalInitSeen)
 						lineStart := firstIdx
 						for lineStart > 0 && initFilterBuf[lineStart-1] != '\n' {
 							lineStart--
@@ -316,17 +310,11 @@ func (h *WSHandler) writePump(ctx context.Context, conn *ws.Conn, session *Sessi
 							data = cleanedData
 							isFilteringInit = false
 							initFilterBuf = nil
-							slog.Debug("init filter: command echo lines removed", "line_start", lineStart, "line_end", lineEnd, "removed_bytes", lineEnd-lineStart, "data_len", len(data))
 						} else {
 							data = append([]byte{}, initFilterBuf[:lineStart]...)
 							initFilterBuf = append([]byte{}, initFilterBuf[lineStart:]...)
 						}
 					} else {
-						preview := initFilterBuf
-						if len(preview) > 300 {
-							preview = preview[:300]
-						}
-						slog.Debug("init filter: target not found", "buf_len", len(initFilterBuf), "total_seen", totalInitSeen, "buf_preview", string(preview))
 						keepLen := len(initTarget) - 1
 						if len(initFilterBuf) > keepLen {
 							data = append([]byte{}, initFilterBuf[:len(initFilterBuf)-keepLen]...)
@@ -336,7 +324,6 @@ func (h *WSHandler) writePump(ctx context.Context, conn *ws.Conn, session *Sessi
 						}
 
 						if totalInitSeen > 10240 {
-							slog.Debug("init filter: safety fallback triggered, disabling filter", "total_seen", totalInitSeen, "buf_len", len(initFilterBuf))
 							isFilteringInit = false
 							data = append(data, initFilterBuf...)
 							initFilterBuf = nil
@@ -355,8 +342,7 @@ func (h *WSHandler) writePump(ctx context.Context, conn *ws.Conn, session *Sessi
 				}
 
 				if len(data) > 0 {
-					hasCmd := bytes.Contains(data, []byte("__osc7_cwd"))
-					slog.Debug("writePump: sending data to frontend", "data_len", len(data), "contains_osc7_cmd", hasCmd)
+					data = filterBracketedPaste(data)
 					h.sendWSMessage(wsConn.WS(), ws.MsgOutput, string(data), nil)
 				}
 			}
@@ -444,19 +430,36 @@ func trimIncompleteUTF8(buf []byte) []byte {
 	return buf[len(buf)-n:]
 }
 
-// injectOSC7Config injects OSC 7 terminal directory tracking configuration.
+// filterBracketedPaste removes bracketed paste mode sequences from shell output.
+// Handles complete sequences (ESC[?2004h/l with '?' prefix) and any resulting errors.
+func filterBracketedPaste(data []byte) []byte {
+	// Remove complete bracketed paste sequences: ESC[?2004h and ESC[?2004l
+	// Note: modern terminals use ? prefix (e.g., \x1b[?2004h)
+	data = bytes.ReplaceAll(data, []byte{0x1b, '[', '?', '2', '0', '0', '4', 'h'}, nil)
+	data = bytes.ReplaceAll(data, []byte{0x1b, '[', '?', '2', '0', '0', '4', 'l'}, nil)
+
+	// Also handle sequences without '?' (older terminal implementations)
+	data = bytes.ReplaceAll(data, []byte{0x1b, '[', '2', '0', '0', '4', 'h'}, nil)
+	data = bytes.ReplaceAll(data, []byte{0x1b, '[', '2', '0', '0', '4', 'l'}, nil)
+
+	// Remove shell error output caused by broken bracketed paste handling
+	// This happens when shell outputs the sequence incorrectly
+	data = bytes.ReplaceAll(data, []byte("-bash: 2004h: command not found\n"), nil)
+	data = bytes.ReplaceAll(data, []byte("-bash: 2004h: command not found\r\n"), nil)
+	data = bytes.ReplaceAll(data, []byte("-bash: 2004l: command not found\n"), nil)
+	data = bytes.ReplaceAll(data, []byte("-bash: 2004l: command not found\r\n"), nil)
+
+	return data
+}
+
+// injectOSC7Config sets PROMPT_COMMAND for OSC 7 directory tracking.
 func (h *WSHandler) injectOSC7Config(session *Session) {
 	if session == nil || session.Shell == nil {
 		return
 	}
 
-	osc7Cmd := ` __osc7_cwd() { printf "\033]7;file://%s%s\007" "$(hostname)" "$PWD"; }; `
-	osc7Cmd += `if [ -n "$ZSH_VERSION" ]; then precmd_functions+=(__osc7_cwd); `
-	osc7Cmd += `elif [ -n "$BASH_VERSION" ]; then `
-	osc7Cmd += `[[ "$PROMPT_COMMAND" != *__osc7_cwd* ]] && PROMPT_COMMAND="__osc7_cwd${PROMPT_COMMAND:+;$PROMPT_COMMAND}"; fi`
+	osc7Cmd := ` PROMPT_COMMAND='printf "\033]7;file://%s%s\007" "` + "`hostname`" + `" "$PWD"'`
 	session.Shell.Write([]byte(osc7Cmd + "\n"))
-	slog.Debug("osc7 config command injected", "cmd_len", len(osc7Cmd)+1)
-
 	time.Sleep(200 * time.Millisecond)
 }
 

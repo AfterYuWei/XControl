@@ -1,7 +1,8 @@
 /* ===== TERMINAL ===== */
-/* Terminal container uses fixed dark variables (--term-*) so it stays dark
-   regardless of the global light/dark theme. The xterm instance inside is
-   themed via useTerminal.ts and is also pinned to a dark palette. */
+/* Terminal container adapts its background/border to the active terminal theme.
+   The border color is set equal to the terminal background (driven from
+   TerminalView.tsx) so the container, its padding ring, and the xterm canvas
+   form one continuous color — no visible seam, for an immersive feel. */
 .term-wrap {
   flex: 1;
   display: flex;
@@ -14,9 +15,9 @@
   margin: 0 8px;
   min-height: 0;
   align-self: stretch;
-  /* Inner padding keeps xterm content clear of the 12px rounded corners so
-     text and the scrollbar never overlap the curved border. The padding area
-     shows var(--term-bg), matching the xterm background seamlessly. */
+  /* Inner padding keeps xterm content clear of the rounded corners so text and
+     the scrollbar never overlap the curved edge. The padding ring uses
+     var(--term-bg), matching the xterm background seamlessly. */
   padding: 10px;
   border-radius: var(--r-lg);
   border: 1px solid var(--term-border);

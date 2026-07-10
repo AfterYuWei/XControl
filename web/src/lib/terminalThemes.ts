@@ -355,3 +355,8 @@ export const terminalThemes: TerminalTheme[] = [
 export function getTerminalTheme(id: string): ITheme {
   return terminalThemes.find((t) => t.id === id)?.theme ?? terminalThemes[0].theme
 }
+
+/** 获取主题元信息（包含背景色与分类） */
+export function getTerminalThemeMeta(id: string): TerminalTheme {
+  return terminalThemes.find((t) => t.id === id) ?? terminalThemes[0]
+}

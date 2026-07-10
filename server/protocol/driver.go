@@ -1,6 +1,9 @@
 package protocol
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Driver is the unified interface for all remote connection protocols.
 type Driver interface {
@@ -57,4 +60,14 @@ type ConnectionLifecycle interface {
 	IsDead() bool
 	DeadReason() string
 	OnDead(cb func(reason string))
+}
+
+// Pinger is an optional interface for drivers that can measure the round-trip
+// time to the remote host. The WS handler uses it to report real SSH latency
+// instead of the renderer-to-backend WS RTT (which is ~0ms in desktop mode
+// where the backend runs locally). Drivers that don't implement it fall back
+// to an immediate pong and the frontend measures the WS RTT. Callers type-
+// assert to discover support.
+type Pinger interface {
+	Ping(ctx context.Context) (time.Duration, error)
 }

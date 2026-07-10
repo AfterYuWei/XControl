@@ -316,9 +316,39 @@ func (d *Driver) SSHClient() *gossh.Client {
 	return d.client
 }
 
+// Ping measures the round-trip time to the remote SSH server by sending a
+// keepalive@openssh.com global request (the same mechanism used by keepalive
+// probing) and waiting for the reply. This reflects the true network latency
+// to the remote host, which is what the status bar should display —
+// especially in desktop (Electron) mode where the backend runs locally and a
+// renderer-to-backend WS ping would always read ~0ms.
+func (d *Driver) Ping(ctx context.Context) (time.Duration, error) {
+	if d.client == nil {
+		return 0, fmt.Errorf("not connected")
+	}
+	start := time.Now()
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := d.client.SendRequest("keepalive@openssh.com", true, nil)
+		done <- err
+	}()
+	select {
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	case err := <-done:
+		if err != nil {
+			return 0, err
+		}
+		return time.Since(start), nil
+	}
+}
+
 // compile-time assertion that Driver implements CommandExecutor
 var _ protocol.CommandExecutor = (*Driver)(nil)
 var _ protocol.ContextCommandExecutor = (*Driver)(nil)
 
 // compile-time assertion that Driver implements ConnectionLifecycle
 var _ protocol.ConnectionLifecycle = (*Driver)(nil)
+
+// compile-time assertion that Driver implements Pinger (SSH RTT measurement)
+var _ protocol.Pinger = (*Driver)(nil)

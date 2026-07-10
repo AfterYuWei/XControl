@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/coder/websocket"
+	"github.com/yuweinfo/xcontrol/protocol"
 	sshproto "github.com/yuweinfo/xcontrol/protocol/ssh"
 	"github.com/yuweinfo/xcontrol/ws"
 )
@@ -210,7 +211,10 @@ func (h *WSHandler) readPump(ctx context.Context, conn *ws.Conn, session *Sessio
 			}
 
 		case ws.MsgPing:
-			h.sendWSMessage(wsConn.WS(), ws.MsgPong, "", nil)
+			// Forward the ping through the SSH connection so the measured RTT
+			// reflects the real latency to the remote host. Handled async to
+			// avoid blocking input/resize processing on high-latency links.
+			go h.handlePing(wsConn.WS(), session)
 
 		case ws.MsgCompleteRequest:
 			// 异步处理，避免补全请求阻塞后续 input/resize。
@@ -463,4 +467,43 @@ func (h *WSHandler) sendWSMessage(wsConn *websocket.Conn, msgType ws.MessageType
 		return
 	}
 	wsConn.Write(context.Background(), websocket.MessageText, jsonData)
+}
+
+// handlePing measures the real round-trip latency to the remote SSH host by
+// forwarding the heartbeat ping through the SSH connection, then replies with
+// a pong. The frontend measures the full RTT (renderer→backend→SSH→backend→
+// renderer), which equals the true end-to-end latency regardless of where the
+// backend runs — fixing the desktop-mode case where a local backend made the
+// old WS-only ping always read ~1ms.
+//
+// When the driver doesn't support remote ping (no Pinger) or the ping fails,
+// it replies immediately so the frontend falls back to WS RTT measurement.
+// Runs in its own goroutine to avoid blocking input processing.
+func (h *WSHandler) handlePing(wsConn *websocket.Conn, session *Session) {
+	session.mu.Lock()
+	driver := session.Driver
+	session.mu.Unlock()
+
+	if driver == nil {
+		h.sendWSMessage(wsConn, ws.MsgPong, "", nil)
+		return
+	}
+
+	pinger, ok := driver.(protocol.Pinger)
+	if !ok {
+		h.sendWSMessage(wsConn, ws.MsgPong, "", nil)
+		return
+	}
+
+	// Bound the ping so a degraded connection can't pile up goroutines across
+	// heartbeat cycles (the frontend pings every 5s).
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := pinger.Ping(ctx); err != nil {
+		slog.Debug("ssh ping failed", "session_id", session.ID, "error", err)
+	}
+	// Reply regardless of success: the frontend computes RTT from the elapsed
+	// wall-clock time, so a slow/failed ping is reflected as high latency
+	// rather than a permanently stuck measurement.
+	h.sendWSMessage(wsConn, ws.MsgPong, "", nil)
 }

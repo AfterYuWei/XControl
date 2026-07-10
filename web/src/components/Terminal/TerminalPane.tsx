@@ -58,7 +58,10 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     clearTabHostKeyPrompt,
   } = useSessionStore()
   const { profiles } = useProfileStore()
-  const { fontSize, fontFamily, fontFamilyCN, terminalTheme, terminalPopupMenu } = useSettingsStore()
+  const { fontSize, fontFamily, fontFamilyCN, terminalTheme, terminalPopupMenu, setFontSize } = useSettingsStore()
+
+  // 默认字体大小（用于显示相对变化）
+  const DEFAULT_FONT_SIZE = 13
 
   const [showDialog, setShowDialog] = useState(false)
   const [connectionError, setConnectionError] = useState('')
@@ -70,7 +73,9 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   const [localLogs, setLocalLogs] = useState<ConnectionLogEntry[]>([])
   const [backendLogs, setBackendLogs] = useState<ConnectionLogEntry[]>([])
   const [hostKeyPrompt, setHostKeyPrompt] = useState<{ current?: string; known?: string }>({})
+  const [fontSizeHint, setFontSizeHint] = useState<{ show: boolean; size: number }>({ show: false, size: fontSize })
   const hasSpecificError = useRef(false)
+  const fontSizeHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const wsStatusRef = useRef<WSStatus>('connecting')
   const sendInputRef = useRef<(data: string) => void>(() => {})
@@ -116,6 +121,26 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     [backendLogs, localLogs],
   )
 
+  const handleFontSizeChange = useCallback((delta: number) => {
+    const newSize = Math.min(32, Math.max(8, fontSize + delta))
+    setFontSize(newSize)
+
+    // 显示字体大小提示
+    if (fontSizeHintTimeoutRef.current) {
+      clearTimeout(fontSizeHintTimeoutRef.current)
+    }
+    setFontSizeHint({ show: true, size: newSize })
+    fontSizeHintTimeoutRef.current = setTimeout(() => {
+      setFontSizeHint({ show: false, size: newSize })
+    }, 1500)
+  }, [fontSize, setFontSize])
+
+  const handleTerminalResize = useCallback((cols: number, rows: number) => {
+    if (tab.sessionId && wsStatusRef.current === 'connected') {
+      sendResizeRef.current(cols, rows)
+    }
+  }, [tab.sessionId])
+
   const { write, writeln, clear, reset, fit, getSize, getTerminal } = useTerminal({
     containerRef,
     fontSize,
@@ -128,6 +153,8 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
         if (!consumed) sendInputRef.current(data)
       }
     },
+    onFontSizeChange: handleFontSizeChange,
+    onResize: handleTerminalResize,
   })
 
   const clearReconnectTimer = useCallback(() => {
@@ -420,6 +447,10 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
         clearTimeout(reconnectTimerRef.current)
         reconnectTimerRef.current = null
       }
+      if (fontSizeHintTimeoutRef.current !== null) {
+        clearTimeout(fontSizeHintTimeoutRef.current)
+        fontSizeHintTimeoutRef.current = null
+      }
     }
   }, [])
 
@@ -430,6 +461,35 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
       <div ref={containerRef} className="h-full w-full" />
 
       <CompletionPanel popup={popup} getTerminal={getTerminal} containerRef={containerRef} />
+
+      {/* 字体大小悬浮提示 */}
+      {fontSizeHint.show && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 12,
+            right: 12,
+            padding: '6px 12px',
+            background: 'var(--bg-panel)',
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            fontFamily: 'ui-sans-serif, system-ui',
+            fontSize: 12,
+            color: 'var(--fg)',
+            zIndex: 50,
+            opacity: fontSizeHint.show ? 1 : 0,
+            transition: 'opacity 0.15s ease',
+          }}
+        >
+          <span style={{ fontWeight: 600 }}>{fontSizeHint.size}px</span>
+          <span style={{ color: 'var(--fg-4)', marginLeft: 8 }}>
+            {fontSizeHint.size === DEFAULT_FONT_SIZE
+              ? '默认'
+              : `${fontSizeHint.size > DEFAULT_FONT_SIZE ? '+' : ''}${fontSizeHint.size - DEFAULT_FONT_SIZE}`}
+          </span>
+        </div>
+      )}
 
       <ConnectionDialog
         key={showDialog ? `${tab.id}-${dialogStatus}-${tab.sessionId ?? 'pending'}` : 'closed'}

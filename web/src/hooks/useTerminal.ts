@@ -13,13 +13,17 @@ interface UseTerminalOptions {
   fontFamilyCN?: string
   terminalTheme?: string
   onData?: (data: string) => void
+  onFontSizeChange?: (delta: number) => void // Ctrl+滚轮缩放时调用，delta 为 ±1
+  onResize?: (cols: number, rows: number) => void // 终端尺寸变化时调用（字体变化、容器resize）
 }
 
 export function useTerminal(options: UseTerminalOptions) {
-  const { containerRef, fontSize = 14, fontFamily, fontFamilyCN, terminalTheme = 'default', onData } = options
+  const { containerRef, fontSize = 14, fontFamily, fontFamilyCN, terminalTheme = 'default', onData, onFontSizeChange, onResize } = options
   const terminalRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const onDataRef = useRef(onData)
+  const onFontSizeChangeRef = useRef(onFontSizeChange)
+  const onResizeRef = useRef(onResize)
 
   // Build combined font-family string (EN first, then CN fallback)
   const buildFontFamily = useCallback(() => {
@@ -31,6 +35,14 @@ export function useTerminal(options: UseTerminalOptions) {
   useEffect(() => {
     onDataRef.current = onData
   })
+
+  useEffect(() => {
+    onFontSizeChangeRef.current = onFontSizeChange
+  }, [onFontSizeChange])
+
+  useEffect(() => {
+    onResizeRef.current = onResize
+  }, [onResize])
 
   // Create terminal once per container
   useEffect(() => {
@@ -230,6 +242,16 @@ export function useTerminal(options: UseTerminalOptions) {
     terminalElement?.addEventListener('mouseup', handleMouseUp)
     terminalElement?.addEventListener('contextmenu', handleContextMenu, true)
 
+    // Ctrl+滚轮缩放终端字体
+    const handleWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey) return
+      event.preventDefault()
+      event.stopPropagation()
+      const delta = event.deltaY > 0 ? -1 : 1 // 向下滚动变小，向上滚动变大
+      onFontSizeChangeRef.current?.(delta)
+    }
+    terminalElement?.addEventListener('wheel', handleWheel, { passive: false })
+
     const handleResize = () => {
       fitAddon.fit()
     }
@@ -241,6 +263,7 @@ export function useTerminal(options: UseTerminalOptions) {
       terminalElement?.removeEventListener('mousedown', handleMouseDown, true)
       terminalElement?.removeEventListener('mouseup', handleMouseUp)
       terminalElement?.removeEventListener('contextmenu', handleContextMenu, true)
+      terminalElement?.removeEventListener('wheel', handleWheel)
       terminal.dispose()
       terminalRef.current = null
       fitAddonRef.current = null
@@ -254,7 +277,9 @@ export function useTerminal(options: UseTerminalOptions) {
     terminal.options.fontSize = fontSize
     terminal.options.fontFamily = buildFontFamily()
     fitAddonRef.current?.fit()
-  }, [fontSize, fontFamily, fontFamilyCN])
+    // 字体变化后通知父组件新的终端尺寸
+    onResizeRef.current?.(terminal.cols, terminal.rows)
+  }, [fontSize, fontFamily, fontFamilyCN, buildFontFamily])
 
   // Update terminal theme without recreating terminal
   useEffect(() => {

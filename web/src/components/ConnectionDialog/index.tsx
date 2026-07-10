@@ -253,9 +253,17 @@ export function ConnectionDialog({
 
   if (!open) return null
 
+  // 连接中、重连中或等待确认主机指纹时不允许点击外部关闭
+  const canCloseByClick = status !== 'connecting' && status !== 'reconnecting' && status !== 'hostkey'
+
   return (
     <div className="absolute inset-0 z-50 flex items-center justify-center px-4 py-6">
-      <div className="absolute inset-0 bg-black/35" onClick={() => onOpenChange(false)} />
+      <div
+        className="absolute inset-0 bg-black/35"
+        onClick={() => {
+          if (canCloseByClick) onOpenChange(false)
+        }}
+      />
 
       <div
         className="relative z-50 flex h-[560px] w-full max-w-[860px] flex-col overflow-hidden border bg-[var(--bg-panel)] text-[var(--fg)]"

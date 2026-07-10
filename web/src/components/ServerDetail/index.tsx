@@ -456,7 +456,10 @@ export function ServerDetail({
                     <div className="m-fill cpu" style={{ width: `${metrics.cpu}%` }} />
                   </div>
                   <div className="m-sub">
-                    <span>{info.cpu_mhz ? `${(info.cpu_mhz / 1000).toFixed(2)} GHz` : '—'}</span>
+                    {(() => {
+                      const mhz = metrics.cpu_mhz || info.cpu_mhz
+                      return <span>{mhz ? `${(mhz / 1000).toFixed(2)} GHz` : '—'}</span>
+                    })()}
                   </div>
                 </div>
               </Tooltip>

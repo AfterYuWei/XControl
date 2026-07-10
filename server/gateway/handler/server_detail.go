@@ -67,6 +67,7 @@ type rawMetricsSnapshot struct {
 	memDetail []model.ProcMem
 	diskUsed  int64
 	diskTotal int64
+	cpuMHz    float64
 	netDetail map[string]netCounters
 }
 
@@ -766,6 +767,7 @@ func (h *ServerDetailHandler) collectMetrics(session *ServerDetailSession, entry
 	metrics.MemDetail = current.memDetail
 	metrics.DiskUsed = current.diskUsed
 	metrics.DiskTotal = current.diskTotal
+	metrics.CpuMHz = current.cpuMHz
 	if metrics.MemTotal > 0 {
 		metrics.MemPercent = float64(metrics.MemUsed) / float64(metrics.MemTotal) * 100
 	}
@@ -833,7 +835,8 @@ func (h *ServerDetailHandler) collectRawMetrics(entry *connpool.Entry) (*rawMetr
 		`awk '/^MemTotal:/{mt=$2*1024}/^MemAvailable:/{ma=$2*1024} END{print "MT",mt; print "MA",ma}' /proc/meminfo; ` +
 		`df -B1 -P / | awk 'NR==2{print "DU",$3; print "DT",$2}'; ` +
 		`ps -eo pid=,comm=,rss=,%cpu=,%mem= --sort=-rss | head -6 | awk '{print "MP",$2,$5,$3*1024}'; ` +
-		`awk 'NR>2{iface=$1; gsub(/:/,"",iface); print "NI",iface,$2,$10}' /proc/net/dev`
+		`awk 'NR>2{iface=$1; gsub(/:/,"",iface); print "NI",iface,$2,$10}' /proc/net/dev; ` +
+		`awk '/cpu MHz/{s+=$4; c++} END{if(c>0) printf "CM %.2f", s/c; else print "CM 0"}' /proc/cpuinfo`
 
 	stdout, _, exitCode, err := entry.Exec.Exec(cmd)
 	if err != nil && exitCode != 0 {
@@ -868,6 +871,8 @@ func (h *ServerDetailHandler) collectRawMetrics(entry *connpool.Entry) (*rawMetr
 			snapshot.diskUsed = parseInt64(parts, 1)
 		case "DT":
 			snapshot.diskTotal = parseInt64(parts, 1)
+		case "CM":
+			snapshot.cpuMHz, _ = strconv.ParseFloat(parts[1], 64)
 		case "MP":
 			if len(parts) >= 4 {
 				proc := model.ProcMem{Name: parts[1]}

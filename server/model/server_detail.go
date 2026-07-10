@@ -41,6 +41,7 @@ type ServerMetrics struct {
 	DiskUsed    int64         `json:"disk_used"`    // bytes
 	DiskTotal   int64         `json:"disk_total"`   // bytes
 	DiskPercent float64       `json:"disk_percent"` // 0-100
+	CpuMHz      float64       `json:"cpu_mhz"`      // CPU frequency in MHz (dynamic, real-time)
 	NetRx       int64         `json:"net_rx"`       // total bytes/sec
 	NetTx       int64         `json:"net_tx"`       // total bytes/sec
 	NetDetail   []NetIfStat   `json:"net_detail"`   // per-interface breakdown

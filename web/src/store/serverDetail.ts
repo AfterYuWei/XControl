@@ -89,6 +89,7 @@ const emptyMetrics = (): ServerMetrics => ({
   disk_used: 0,
   disk_total: 0,
   disk_percent: 0,
+  cpu_mhz: 0,
   net_rx: 0,
   net_tx: 0,
   net_detail: [],

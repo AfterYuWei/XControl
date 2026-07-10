@@ -43,6 +43,7 @@ export interface ServerMetrics {
   disk_used: number
   disk_total: number
   disk_percent: number
+  cpu_mhz: number // CPU frequency in MHz (dynamic, real-time)
   net_rx: number
   net_tx: number
   net_detail: NetIfStat[]

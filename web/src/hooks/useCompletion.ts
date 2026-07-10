@@ -31,7 +31,7 @@ interface UseCompletionOptions {
 export interface CompletionPopupState {
   open: boolean
   suggestions: Suggestion[]
-  selectedIndex: number
+  selectedIndex: number // -1 表示未选中，用户按下方向键才开始选中
   sourceParser: ParserKey | null
 }
 
@@ -47,7 +47,7 @@ function nextRequestId(): string {
 }
 
 export function useCompletion({ getTerminal, sendInput, sendComplete, getCwd, enabled }: UseCompletionOptions) {
-  const [popup, setPopup] = useState<CompletionPopupState>({ open: false, suggestions: [], selectedIndex: 0, sourceParser: null })
+  const [popup, setPopup] = useState<CompletionPopupState>({ open: false, suggestions: [], selectedIndex: -1, sourceParser: null })
 
   const bufferRef = useRef<BufferState>({ text: '', cursor: 0, stale: false })
   const popupRef = useRef(popup)
@@ -71,7 +71,7 @@ export function useCompletion({ getTerminal, sendInput, sendComplete, getCwd, en
   useEffect(() => { enabledRef.current = enabled }, [enabled])
 
   const closePopup = useCallback(() => {
-    setPopup((current) => (current.open ? { open: false, suggestions: [], selectedIndex: 0, sourceParser: null } : current))
+    setPopup((current) => (current.open ? { open: false, suggestions: [], selectedIndex: -1, sourceParser: null } : current))
   }, [])
 
   const recompute = useCallback(() => {
@@ -94,7 +94,7 @@ export function useCompletion({ getTerminal, sendInput, sendComplete, getCwd, en
         closePopup()
         return
       }
-      setPopup({ open: true, suggestions: staticSuggestions, selectedIndex: 0, sourceParser: null })
+      setPopup({ open: true, suggestions: staticSuggestions, selectedIndex: -1, sourceParser: null })
       return
     }
 
@@ -107,12 +107,12 @@ export function useCompletion({ getTerminal, sendInput, sendComplete, getCwd, en
         closePopup()
         return
       }
-      setPopup({ open: true, suggestions, selectedIndex: 0, sourceParser: generator.parser })
+      setPopup({ open: true, suggestions, selectedIndex: -1, sourceParser: generator.parser })
       return
     }
 
     if (staticSuggestions.length > 0) {
-      setPopup({ open: true, suggestions: staticSuggestions, selectedIndex: 0, sourceParser: null })
+      setPopup({ open: true, suggestions: staticSuggestions, selectedIndex: -1, sourceParser: null })
     } else {
       closePopup()
     }
@@ -138,16 +138,13 @@ export function useCompletion({ getTerminal, sendInput, sendComplete, getCwd, en
 
   const applySelection = useCallback(() => {
     const currentPopup = popupRef.current
-    if (!currentPopup.open || currentPopup.suggestions.length === 0) return
+    if (!currentPopup.open || currentPopup.selectedIndex < 0 || currentPopup.suggestions.length === 0) return
 
     const suggestion = currentPopup.suggestions[currentPopup.selectedIndex]
     const buffer = bufferRef.current
     const currentToken = tokenize(buffer.text).currentToken
     const insertPlan = buildCompletionInsertPlan(currentToken, suggestion.name)
-    let insertText = insertPlan.insertText
-    if (insertPlan.canAppendSeparator && shouldAppendWordSeparator(suggestion, currentPopup.sourceParser)) {
-      insertText += ' '
-    }
+    const insertText = insertPlan.insertText
     if (insertText) {
       sendInputRef.current(insertText)
       bufferRef.current.text = buffer.text.slice(0, buffer.cursor) + insertText + buffer.text.slice(buffer.cursor)
@@ -163,7 +160,12 @@ export function useCompletion({ getTerminal, sendInput, sendComplete, getCwd, en
       if (popupRef.current.open) {
         setPopup((current) => {
           if (!current.open || current.suggestions.length === 0) return current
-          const delta = data === '\x1b[A' ? -1 : 1
+          const isDown = data === '\x1b[B'
+          // selectedIndex === -1 表示未选中，按下箭头选中第一个，按上箭头选中最后一个
+          if (current.selectedIndex === -1) {
+            return { ...current, selectedIndex: isDown ? 0 : current.suggestions.length - 1 }
+          }
+          const delta = isDown ? 1 : -1
           const nextIndex = Math.max(0, Math.min(current.suggestions.length - 1, current.selectedIndex + delta))
           if (nextIndex === current.selectedIndex) return current
           return { ...current, selectedIndex: nextIndex }
@@ -177,8 +179,12 @@ export function useCompletion({ getTerminal, sendInput, sendComplete, getCwd, en
 
     if (data === '\r') {
       if (popupRef.current.open) {
-        applySelection()
-        return true
+        // 只有选中项才应用补全，否则关闭面板并正常发送回车
+        if (popupRef.current.selectedIndex >= 0) {
+          applySelection()
+          return true
+        }
+        closePopup()
       }
       if (isTuiCommand(bufferRef.current.text)) {
         inTuiRef.current = true
@@ -331,11 +337,4 @@ function mergeSuggestions(staticSuggestions: Suggestion[], dynamicSuggestions: S
   }
 
   return merged
-}
-
-function shouldAppendWordSeparator(suggestion: Suggestion, sourceParser: ParserKey | null): boolean {
-  if (sourceParser === 'file-list') {
-    return !suggestion.name.endsWith('/')
-  }
-  return true
 }

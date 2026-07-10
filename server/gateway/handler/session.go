@@ -87,11 +87,13 @@ type SessionHandler struct {
 	encryptor *crypto.Encryptor
 	audit     store.AuditStore
 	pm        *protocol.Manager
+	waiters   map[string]chan struct{} // 按 session_id 的等待 channel
 }
 
 func NewSessionHandler(ps store.ProfileStore, vs store.VaultStore, enc *crypto.Encryptor, as store.AuditStore, pm *protocol.Manager) *SessionHandler {
 	return &SessionHandler{
 		sessions:  make(map[string]*Session),
+		waiters:   make(map[string]chan struct{}),
 		profiles:  ps,
 		vault:     vs,
 		encryptor: enc,
@@ -133,6 +135,12 @@ func (h *SessionHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	h.mu.Lock()
 	h.sessions[sessionID] = session
+
+	// 检查是否有等待者，通知并清理
+	if ch, exists := h.waiters[sessionID]; exists {
+		close(ch) // 广播通知所有等待该 sessionID 的协程
+		delete(h.waiters, sessionID)
+	}
 	h.mu.Unlock()
 
 	session.setStage(ConnectionStagePreparing, "info", "已读取连接配置，准备建立 SSH 会话")
@@ -391,6 +399,49 @@ func (h *SessionHandler) HandleResize(sessionID string, cols, rows int) {
 	}
 	if err := session.Shell.Resize(cols, rows); err != nil {
 		slog.Error("resize failed", "session_id", sessionID, "error", err)
+	}
+}
+
+// WaitForSession waits for a session to be created, using event-driven channel notification.
+// This replaces polling with precise wake-up via per-sessionID waiter channels.
+func (h *SessionHandler) WaitForSession(ctx context.Context, sessionID string, timeout time.Duration) *Session {
+	// 1. 快速检查
+	if s := h.GetSession(sessionID); s != nil {
+		return s
+	}
+
+	h.mu.Lock()
+	// 双检锁：防止加锁前刚创建
+	if s := h.sessions[sessionID]; s != nil {
+		h.mu.Unlock()
+		return s
+	}
+
+	// 创建或获取该 session_id 的等待 channel
+	ch, exists := h.waiters[sessionID]
+	if !exists {
+		ch = make(chan struct{})
+		h.waiters[sessionID] = ch
+	}
+	h.mu.Unlock()
+
+	// 清理：超时或退出时移除 waiter
+	defer func() {
+		h.mu.Lock()
+		if _, exists := h.waiters[sessionID]; exists {
+			delete(h.waiters, sessionID)
+		}
+		h.mu.Unlock()
+	}()
+
+	// 2. 基于事件挂起
+	select {
+	case <-ch: // 收到创建通知
+		return h.GetSession(sessionID)
+	case <-time.After(timeout): // timeout
+		return nil
+	case <-ctx.Done(): // context 取消
+		return nil
 	}
 }
 

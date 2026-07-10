@@ -97,6 +97,14 @@
 .psec-body {
   margin-top: 8px;
 }
+.sdetail-bottom-sec:nth-child(1) .psec-body {
+  /* 系统指标：3个标准指标(42+10) + 1个紧凑指标(15) - 最后一个margin(10) = 141px */
+  min-height: 141px;
+}
+.sdetail-bottom-sec:nth-child(2) .psec-body {
+  /* 服务器信息：5行 × 24px + 5行 padding(3+3) = 150px */
+  min-height: 150px;
+}
 /* Section title with icon */
 .psec-title-icon {
   flex-shrink: 0;
@@ -364,6 +372,14 @@
 }
 .metric {
   margin-bottom: 10px;
+  /* 标准 3 行高度：m-head(15px) + margin(6px) + m-bar(4px) + margin(4px) + m-sub(13px) = 42px */
+  height: 42px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.metric.metric-compact {
+  /* 网络指标紧凑模式：只有 m-head */
+  height: 15px;
 }
 .metric:last-child {
   margin-bottom: 0;
@@ -371,21 +387,27 @@
 .m-head {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
   margin-bottom: 6px;
   gap: 12px;
+  /* 固定行高，保持稳定 */
+  height: 15px;
 }
 .m-label {
-  font: 400 11px / 1.3 var(--mono);
+  font: 400 11px / 1.36 var(--mono);
   color: var(--fg-4);
+  /* 固定行高 */
+  line-height: 15px;
 }
 .m-val {
-  font: 500 11px / 1.3 var(--mono);
+  font: 500 11px / 1.36 var(--mono);
   color: var(--fg);
   font-variant-numeric: tabular-nums;
   text-align: right;
   min-width: 52px;
   white-space: nowrap;
+  /* 固定行高 */
+  line-height: 15px;
 }
 .m-bar {
   height: 4px;
@@ -414,17 +436,21 @@
   display: flex;
   justify-content: space-between;
   margin-top: 4px;
-  min-height: 13px;
+  /* 固定高度，保持布局稳定 */
+  height: 13px;
 }
 .m-sub span {
-  font: 400 9.5px / 1.3 var(--mono);
+  font: 400 9.5px / 1.36 var(--mono);
   color: var(--fg-4);
+  /* 固定行高 */
+  line-height: 13px;
 }
 .info-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
-  min-height: 24px;
+  /* 固定高度，避免数据刷新时布局跳动 */
+  height: 24px;
   padding: 3px 0;
 }
 .info-label {
@@ -433,6 +459,8 @@
   flex-shrink: 0;
   width: 60px;
   text-align: left;
+  /* 固定行高 */
+  line-height: 18px;
 }
 .info-val {
   display: block;
@@ -446,6 +474,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: default;
+  /* 固定行高 */
+  line-height: 18px;
 }
 .sdetail-tip {
   display: grid;

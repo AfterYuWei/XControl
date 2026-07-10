@@ -600,7 +600,8 @@ func (h *ServerDetailHandler) collectServerInfo(entry *connpool.Entry) model.Ser
 		`echo "===ARCH===" && uname -m && ` +
 		`echo "===UPTIME===" && (uptime -p 2>/dev/null || uptime) && ` +
 		`echo "===LOAD===" && (cat /proc/loadavg 2>/dev/null || uptime | awk -F'load average:' '{print $2}') && ` +
-		`echo "===CPUS===" && (nproc 2>/dev/null || grep -c ^processor /proc/cpuinfo 2>/dev/null || echo 1)`
+		`echo "===CPUS===" && (nproc 2>/dev/null || grep -c ^processor /proc/cpuinfo 2>/dev/null || echo 1) && ` +
+		`echo "===CPUMHZ===" && (awk '/cpu MHz/ {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print 0}' /proc/cpuinfo 2>/dev/null || echo 0)`
 
 	stdout, _, exitCode, err := entry.Exec.Exec(cmd)
 	if err != nil && exitCode != 0 {
@@ -975,6 +976,11 @@ func parseServerInfo(output string) model.ServerInfo {
 	} else {
 		info.CPUs = 1
 	}
+	rawCPUMHz := getSection("CPUMHZ")
+	if v, err := strconv.ParseFloat(rawCPUMHz, 64); err == nil {
+		info.CpuMHz = v
+	}
+	slog.Debug("server detail: parsed cpu mhz", "raw", rawCPUMHz, "parsed", info.CpuMHz)
 
 	return info
 }

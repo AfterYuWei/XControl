@@ -87,6 +87,7 @@ export function ServerDetail({
   }
 
   const formatBytesPerSec = (bytesPerSec: number): string => {
+    if (bytesPerSec === 0) return '0 B/s'
     if (bytesPerSec < 1024) return `${bytesPerSec} B/s`
     if (bytesPerSec < 1024 * 1024) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`
     return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`
@@ -118,9 +119,9 @@ export function ServerDetail({
 
   const statusText = isOff ? '未连接' : tab?.status === 'connecting' ? '连接中' : '已连接'
   const connectionDisplay = `${host}:${port}`
-  const platformDisplay = info?.os || info?.kernel || '—'
-  const runtimeDisplay = info ? `${statusText} ${compactUptime(info.uptime)}` : statusText
-  const loadDisplay = info?.load_avg || '—'
+  const platformDisplay = info.os || info.kernel || '—'
+  const runtimeDisplay = info.uptime ? `${statusText} ${compactUptime(info.uptime)}` : statusText
+  const loadDisplay = info.load_avg || '—'
 
   const renderInfoTooltip = (rows: Array<{ label: string; value: string }>) => (
     <div className="sdetail-tip">
@@ -449,16 +450,19 @@ export function ServerDetail({
                 <div className="metric" style={{ opacity: isOff || !metrics ? 0.4 : 1 }}>
                   <div className="m-head">
                     <span className="m-label">CPU</span>
-                    <span className="m-val">{metrics ? `${metrics.cpu.toFixed(1)}%` : '—'}</span>
+                    <span className="m-val">{`${metrics.cpu.toFixed(1)}%`}</span>
                   </div>
                   <div className="m-bar">
-                    <div className="m-fill cpu" style={{ width: metrics ? `${metrics.cpu}%` : '0%' }} />
+                    <div className="m-fill cpu" style={{ width: `${metrics.cpu}%` }} />
+                  </div>
+                  <div className="m-sub">
+                    <span>{info.cpu_mhz ? `${(info.cpu_mhz / 1000).toFixed(2)} GHz` : '—'}</span>
                   </div>
                 </div>
               </Tooltip>
               <Tooltip
                 side="top"
-                content={metrics?.mem_detail?.length ? (
+                content={metrics.mem_detail?.length ? (
                   <div style={{ display: 'grid', gridTemplateColumns: '100px auto auto', gap: '2px 10px' }}>
                     {metrics.mem_detail.map((p, i) => (
                       <React.Fragment key={i}>
@@ -473,31 +477,31 @@ export function ServerDetail({
                 <div className="metric" style={{ opacity: isOff || !metrics ? 0.4 : 1 }}>
                   <div className="m-head">
                     <span className="m-label">内存</span>
-                    <span className="m-val">{metrics ? `${metrics.mem_percent.toFixed(1)}%` : '—'}</span>
+                    <span className="m-val">{`${metrics.mem_percent.toFixed(1)}%`}</span>
                   </div>
                   <div className="m-bar">
-                    <div className="m-fill mem" style={{ width: metrics ? `${metrics.mem_percent}%` : '0%' }} />
+                    <div className="m-fill mem" style={{ width: `${metrics.mem_percent}%` }} />
                   </div>
                   <div className="m-sub">
-                    <span>{metrics ? `${formatBytes(metrics.mem_used)} / ${formatBytes(metrics.mem_total)}` : '—'}</span>
+                    <span>{`${formatBytes(metrics.mem_used)} / ${formatBytes(metrics.mem_total)}`}</span>
                   </div>
                 </div>
               </Tooltip>
               <div className="metric" style={{ opacity: isOff || !metrics ? 0.4 : 1 }}>
                 <div className="m-head">
                   <span className="m-label">磁盘</span>
-                  <span className="m-val">{metrics ? `${metrics.disk_percent.toFixed(1)}%` : '—'}</span>
+                  <span className="m-val">{`${metrics.disk_percent.toFixed(1)}%`}</span>
                 </div>
                 <div className="m-bar">
-                  <div className="m-fill disk" style={{ width: metrics ? `${metrics.disk_percent}%` : '0%' }} />
+                  <div className="m-fill disk" style={{ width: `${metrics.disk_percent}%` }} />
                 </div>
                 <div className="m-sub">
-                  <span>{metrics ? `${formatBytes(metrics.disk_used)} / ${formatBytes(metrics.disk_total)}` : '—'}</span>
+                  <span>{`${formatBytes(metrics.disk_used)} / ${formatBytes(metrics.disk_total)}`}</span>
                 </div>
               </div>
               <Tooltip
                 side="top"
-                content={metrics?.net_detail?.length ? (
+                content={metrics.net_detail?.length ? (
                   <div style={{ display: 'grid', gridTemplateColumns: '80px auto auto', gap: '1px 8px', fontSize: '10px' }}>
                     {metrics.net_detail.map((n, i) => (
                       <React.Fragment key={i}>
@@ -509,11 +513,11 @@ export function ServerDetail({
                   </div>
                 ) : null}
               >
-                <div className="metric" style={{ opacity: isOff || !metrics ? 0.4 : 1 }}>
+                <div className="metric metric-compact" style={{ opacity: isOff || !metrics ? 0.4 : 1 }}>
                   <div className="m-head">
                     <span className="m-label">网络</span>
                     <span className="m-val" style={{ whiteSpace: 'nowrap' }}>
-                      {metrics ? `↓${formatBytesPerSec(metrics.net_rx)} ↑${formatBytesPerSec(metrics.net_tx)}` : '—'}
+                      {`↓${formatBytesPerSec(metrics.net_rx)} ↑${formatBytesPerSec(metrics.net_tx)}`}
                     </span>
                   </div>
                 </div>
@@ -537,7 +541,7 @@ export function ServerDetail({
             <div className="psec-body">
               <div className="info-row">
                 <span className="info-label">主机名</span>
-                <span className="info-val">{info?.hostname || profileName}</span>
+                <span className="info-val">{info.hostname || profileName}</span>
               </div>
               <div className="info-row">
                 <span className="info-label">连接</span>
@@ -558,9 +562,9 @@ export function ServerDetail({
                 <Tooltip
                   triggerClassName="flex-1 min-w-0"
                   content={renderInfoTooltip([
-                    { label: '系统', value: info?.os || '—' },
-                    { label: '内核', value: info?.kernel || '—' },
-                    { label: '架构', value: info?.arch || '—' },
+                    { label: '系统', value: info.os || '—' },
+                    { label: '内核', value: info.kernel || '—' },
+                    { label: '架构', value: info.arch || '—' },
                   ])}
                 >
                   <span className="info-val">{platformDisplay}</span>
@@ -572,7 +576,7 @@ export function ServerDetail({
                   triggerClassName="flex-1 min-w-0"
                   content={renderInfoTooltip([
                     { label: '连接', value: statusText },
-                    { label: '运行', value: info?.uptime || '—' },
+                    { label: '运行', value: info.uptime || '—' },
                   ])}
                 >
                   <span className="info-val">{runtimeDisplay}</span>
@@ -583,9 +587,9 @@ export function ServerDetail({
                 <Tooltip
                   triggerClassName="flex-1 min-w-0"
                   content={renderInfoTooltip([
-                    { label: '平均', value: info?.load_avg || '—' },
-                    { label: '细节', value: parseLoadDetail(info?.load_avg_detail || '') || '—' },
-                    { label: '核心', value: info?.cpus ? `${info.cpus} 核` : '—' },
+                    { label: '平均', value: info.load_avg || '—' },
+                    { label: '细节', value: parseLoadDetail(info.load_avg_detail || '') || '—' },
+                    { label: '核心', value: info.cpus ? `${info.cpus} 核` : '—' },
                   ])}
                 >
                   <span className="info-val">{loadDisplay}</span>

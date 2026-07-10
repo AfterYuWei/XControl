@@ -15,14 +15,15 @@ type ServerSessionResponse struct {
 // --- Server info (static, fetched once after connection) ---
 
 type ServerInfo struct {
-	Hostname      string `json:"hostname"`
-	OS            string `json:"os"`
-	Kernel        string `json:"kernel"`
-	Arch          string `json:"arch"`
-	Uptime        string `json:"uptime"`
-	LoadAvg       string `json:"load_avg"`        // "0.00 / 0.01 / 0.00"
-	LoadAvgDetail string `json:"load_avg_detail"` // raw: "0.00 0.01 0.00 1/354 308603"
-	CPUs          int    `json:"cpus"`
+	Hostname      string  `json:"hostname"`
+	OS            string  `json:"os"`
+	Kernel        string  `json:"kernel"`
+	Arch          string  `json:"arch"`
+	Uptime        string  `json:"uptime"`
+	LoadAvg       string  `json:"load_avg"`        // "0.00 / 0.01 / 0.00"
+	LoadAvgDetail string  `json:"load_avg_detail"` // raw: "0.00 0.01 0.00 1/354 308603"
+	CPUs          int     `json:"cpus"`
+	CpuMHz        float64 `json:"cpu_mhz"`         // CPU frequency in MHz
 }
 
 // --- File listing ---

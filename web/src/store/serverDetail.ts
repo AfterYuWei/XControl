@@ -23,9 +23,9 @@ interface ServerDetailState {
   sessionId: string | null
   status: 'idle' | 'connecting' | 'connected' | 'disconnected'
   error: string | null
-  info: ServerInfo | null
+  info: ServerInfo
   files: FileTreeNode[]
-  metrics: ServerMetrics | null
+  metrics: ServerMetrics
   wsConnected: boolean
   homeDir: string
   currentPath: string
@@ -67,13 +67,41 @@ interface ServerDetailStore {
   refresh: (profileId: string) => Promise<void>
 }
 
+const emptyInfo = (): ServerInfo => ({
+  hostname: '',
+  os: '',
+  kernel: '',
+  arch: '',
+  uptime: '',
+  load_avg: '',
+  load_avg_detail: '',
+  cpus: 0,
+  cpu_mhz: 0,
+})
+
+const emptyMetrics = (): ServerMetrics => ({
+  cpu: 0,
+  cpu_detail: [],
+  mem_used: 0,
+  mem_total: 0,
+  mem_percent: 0,
+  mem_detail: [],
+  disk_used: 0,
+  disk_total: 0,
+  disk_percent: 0,
+  net_rx: 0,
+  net_tx: 0,
+  net_detail: [],
+  timestamp: 0,
+})
+
 const defaultState = (): ServerDetailState => ({
   sessionId: null,
   status: 'idle',
   error: null,
-  info: null,
+  info: emptyInfo(),
   files: [],
-  metrics: null,
+  metrics: emptyMetrics(),
   wsConnected: false,
   homeDir: '/',
   currentPath: '/',

@@ -18,6 +18,7 @@ export interface ServerInfo {
   load_avg: string
   load_avg_detail: string
   cpus: number
+  cpu_mhz: number // CPU frequency in MHz
 }
 
 export interface NetIfStat {

@@ -82,15 +82,9 @@ func (h *WSHandler) Handle(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *WSHandler) waitForSessionExists(sessionID string, timeout time.Duration) *Session {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		session := h.sessions.GetSession(sessionID)
-		if session != nil {
-			return session
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	return nil
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return h.sessions.WaitForSession(ctx, sessionID, timeout)
 }
 
 func (h *WSHandler) waitForTerminalReady(ctx context.Context, conn *ws.Conn, wsConn *websocket.Conn, session *Session) bool {
@@ -236,14 +230,13 @@ func (h *WSHandler) writePump(ctx context.Context, conn *ws.Conn, session *Sessi
 	}()
 
 	buf := make([]byte, 4096)
+	const osc7BufferMaxSize = 1024 * 1024 // 1MB
 	var osc7Buffer []byte
 	var utf8Carry []byte
 
-	// Filter control for injected OSC 7 config command
+	// Filter control for injected OSC 7 config command (TCP 分包处理)
 	isFilteringInit := true
-	initTarget := []byte(`PROMPT_COMMAND='printf`)
-	var initFilterBuf []byte
-	var totalInitSeen int
+	initTarget := []byte(` PROMPT_COMMAND='printf`) // 带前导空格防止 history 记录
 
 	for {
 		select {
@@ -291,48 +284,41 @@ func (h *WSHandler) writePump(ctx context.Context, conn *ws.Conn, session *Sessi
 					data = data[:len(data)-len(utf8Carry)]
 				}
 
+				// 优先级一：isFilteringInit 逐行匹配，处理 TCP 分包
 				if isFilteringInit {
-					initFilterBuf = append(initFilterBuf, data...)
-					totalInitSeen += len(data)
-
-					if firstIdx := bytes.Index(initFilterBuf, initTarget); firstIdx != -1 {
-						lastIdx := bytes.LastIndex(initFilterBuf, initTarget)
-						lineStart := firstIdx
-						for lineStart > 0 && initFilterBuf[lineStart-1] != '\n' {
+					if idx := bytes.Index(data, initTarget); idx != -1 {
+						// 找到目标前缀，定位行起始位置
+						lineStart := idx
+						for lineStart > 0 && data[lineStart-1] != '\n' {
 							lineStart--
 						}
-						endIdx := bytes.Index(initFilterBuf[lastIdx:], []byte("\n"))
 
-						if endIdx != -1 {
-							lineEnd := lastIdx + endIdx + 1
-							cleanedData := append([]byte{}, initFilterBuf[:lineStart]...)
-							cleanedData = append(cleanedData, initFilterBuf[lineEnd:]...)
-							data = cleanedData
-							isFilteringInit = false
-							initFilterBuf = nil
+						// 查找行结束位置（换行符）
+						lineEnd := bytes.Index(data[idx:], []byte("\n"))
+						if lineEnd != -1 {
+							// 成功找到完整的行，切除并关闭过滤器
+							lineEnd += idx + 1
+							data = append(data[:lineStart], data[lineEnd:]...)
+							isFilteringInit = false // 只过滤一次
 						} else {
-							data = append([]byte{}, initFilterBuf[:lineStart]...)
-							initFilterBuf = append([]byte{}, initFilterBuf[lineStart:]...)
-						}
-					} else {
-						keepLen := len(initTarget) - 1
-						if len(initFilterBuf) > keepLen {
-							data = append([]byte{}, initFilterBuf[:len(initFilterBuf)-keepLen]...)
-							initFilterBuf = append([]byte{}, initFilterBuf[len(initFilterBuf)-keepLen:]...)
-						} else {
-							data = nil
-						}
-
-						if totalInitSeen > 10240 {
-							isFilteringInit = false
-							data = append(data, initFilterBuf...)
-							initFilterBuf = nil
+							// TCP 分包：匹配到了目标，但这一行还没传完（缺 \n）
+							// 只发送 lineStart 之前的数据，lineStart 之后等待下一包
+							data = data[:lineStart]
+							// 保持 isFilteringInit = true，下一包继续处理
 						}
 					}
 				}
 
+				// 优先级二：osc7Buffer 容量限制，防止内存泄漏
 				if !isFilteringInit {
 					osc7Buffer = append(osc7Buffer, data...)
+					if len(osc7Buffer) > osc7BufferMaxSize {
+						keepLen := osc7BufferMaxSize / 2 // 保留最新 512KB
+						newData := make([]byte, keepLen)
+						copy(newData, osc7Buffer[len(osc7Buffer)-keepLen:])
+						osc7Buffer = newData // 断开与老数组的引用，允许 GC 回收
+						slog.Warn("osc7 buffer overflow, truncated", "session_id", conn.SessionID)
+					}
 					cwd := extractOSC7(&osc7Buffer)
 					if cwd != "" {
 						h.sendWSMessage(wsConn.WS(), ws.MsgCwd, "", ws.CwdPayload{

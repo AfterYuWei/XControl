@@ -224,16 +224,12 @@ func (d *Driver) RequestShell(opts protocol.ShellOptions) (protocol.Shell, error
 		return nil, fmt.Errorf("start shell: %w", err)
 	}
 
-	// Enable Bracketed Paste Mode (DECSET 2004). This tells the remote shell
-	// to distinguish pasted text from typed input. When the user pastes multi-line
-	// text, xterm.js wraps it with \x1b[200~ ... \x1b[201~, and the shell treats
-	// it as a single paste event instead of executing each line as a command.
-	// This prevents accidental command execution when pasting scripts or logs.
-	// The sequence is harmless on shells that don't support it (they ignore it).
-	if _, err := stdin.Write([]byte("\x1b[?2004h")); err != nil {
-		slog.Warn("failed to enable bracketed paste mode", "host", d.opts.Host, "err", err)
-		// Continue anyway; bracketed paste is a quality-of-life feature, not critical.
-	}
+	// Note: Do NOT send \x1b[?2004h (DECSET 2004) to the shell's stdin.
+	// That sequence is a terminal control sequence meant to travel shell→terminal
+	// (output direction). Writing it to stdin makes bash treat it as a command
+	// ("-bash: 2004h: command not found"). Instead, let the shell enable bracketed
+	// paste itself (bash 5+/zsh do this by default and emit \x1b[?2004h as output),
+	// which xterm.js will receive and use to wrap pasted content automatically.
 
 	return &Shell{
 		session: session,

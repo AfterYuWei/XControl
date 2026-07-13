@@ -53,6 +53,7 @@ type Conn struct {
 	ws        *websocket.Conn
 	send      chan []byte
 	done      chan struct{}
+	writeMu   sync.Mutex // serializes writes to the underlying websocket.Conn
 }
 
 func NewConn(sessionID string, ws *websocket.Conn) *Conn {

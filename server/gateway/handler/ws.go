@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -20,6 +21,7 @@ import (
 type WSHandler struct {
 	hub      *ws.Hub
 	sessions *SessionHandler
+	writeMu  sync.Mutex // serializes writes to websocket connections
 }
 
 const sessionReadyTimeout = sshproto.DefaultConnectTimeout + 15*time.Second
@@ -185,6 +187,11 @@ func (h *WSHandler) readPump(ctx context.Context, conn *ws.Conn, session *Sessio
 				websocket.CloseStatus(err) == websocket.StatusGoingAway {
 				return
 			}
+			// Context cancellation is expected when writePump exits and
+			// Handle returns — don't log it as an error.
+			if ctx.Err() != nil {
+				return
+			}
 			slog.Error("ws read error", "session_id", conn.SessionID, "error", err)
 			return
 		}
@@ -237,6 +244,7 @@ func (h *WSHandler) writePump(ctx context.Context, conn *ws.Conn, session *Sessi
 	const osc7BufferMaxSize = 1024 * 1024 // 1MB
 	var osc7Buffer []byte
 	var utf8Carry []byte
+	var initCarry []byte // buffered partial line from osc7 init filter across TCP packets
 
 	// Filter control for injected OSC 7 config command (TCP 分包处理)
 	isFilteringInit := true
@@ -282,7 +290,8 @@ func (h *WSHandler) writePump(ctx context.Context, conn *ws.Conn, session *Sessi
 			}
 
 			if n > 0 {
-				data := append(utf8Carry, buf[:n]...)
+				data := append(initCarry, append(utf8Carry, buf[:n]...)...)
+				initCarry = nil
 				utf8Carry = trimIncompleteUTF8(data)
 				if len(utf8Carry) > 0 {
 					data = data[:len(data)-len(utf8Carry)]
@@ -306,7 +315,8 @@ func (h *WSHandler) writePump(ctx context.Context, conn *ws.Conn, session *Sessi
 							isFilteringInit = false // 只过滤一次
 						} else {
 							// TCP 分包：匹配到了目标，但这一行还没传完（缺 \n）
-							// 只发送 lineStart 之前的数据，lineStart 之后等待下一包
+							// 保存 lineStart 之后的数据到 initCarry，下一包继续处理
+							initCarry = append(initCarry, data[lineStart:]...)
 							data = data[:lineStart]
 							// 保持 isFilteringInit = true，下一包继续处理
 						}
@@ -400,40 +410,44 @@ func extractOSC7(buf *[]byte) string {
 
 // trimIncompleteUTF8 returns trailing bytes from buf that form an incomplete
 // UTF-8 sequence. These bytes should be prepended to the next read.
+//
+// The algorithm finds the longest valid UTF-8 prefix of buf and returns the
+// suffix. Unlike the previous rune-by-rune approach, this correctly handles
+// complete multi-byte characters at the boundary — a valid 2-byte character
+// at the end of buf returns nil (no carry), not the trailing continuation byte.
 func trimIncompleteUTF8(buf []byte) []byte {
 	if len(buf) == 0 {
 		return nil
 	}
-	for i := 1; i <= utf8.UTFMax && i <= len(buf); i++ {
-		r, size := utf8.DecodeRune(buf[len(buf)-i:])
-		if r != utf8.RuneError || size != 1 {
-			if i > 1 {
-				return buf[len(buf)-(i-1):]
-			}
-			return nil
+	// Search backwards for the longest valid UTF-8 prefix. Only need to check
+	// the last utf8.UTFMax bytes since an incomplete sequence is at most 4 bytes.
+	start := len(buf) - utf8.UTFMax
+	if start < 0 {
+		start = 0
+	}
+	for i := len(buf); i > start; i-- {
+		if utf8.Valid(buf[:i]) {
+			return buf[i:]
 		}
 	}
-	n := utf8.UTFMax
-	if n > len(buf) {
-		n = len(buf)
-	}
-	return buf[len(buf)-n:]
+	// No valid prefix found (entire trailing window is invalid) — carry the
+	// whole window so it can be reassembled with the next read.
+	return buf[start:]
 }
 
-// filterBracketedPaste removes bracketed paste mode sequences from shell output.
-// Handles complete sequences (ESC[?2004h/l with '?' prefix) and any resulting errors.
+// filterBracketedPaste removes shell error messages caused by stale bracketed
+// paste mode sequences that may have been written to stdin by older code paths.
+//
+// We intentionally do NOT strip \x1b[?2004h / \x1b[?2004l from the output stream
+// — those are legitimate DECSET/DECRST sequences that xterm.js must receive to
+// enable/disable its own bracketed paste mode. When the remote shell (bash 5+,
+// zsh) enables bracketed paste, it emits \x1b[?2004h as output; forwarding it
+// to xterm.js lets the terminal wrap pasted content with \x1b[200~...\x1b[201~
+// automatically, which the shell then handles correctly.
 func filterBracketedPaste(data []byte) []byte {
-	// Remove complete bracketed paste sequences: ESC[?2004h and ESC[?2004l
-	// Note: modern terminals use ? prefix (e.g., \x1b[?2004h)
-	data = bytes.ReplaceAll(data, []byte{0x1b, '[', '?', '2', '0', '0', '4', 'h'}, nil)
-	data = bytes.ReplaceAll(data, []byte{0x1b, '[', '?', '2', '0', '0', '4', 'l'}, nil)
-
-	// Also handle sequences without '?' (older terminal implementations)
-	data = bytes.ReplaceAll(data, []byte{0x1b, '[', '2', '0', '0', '4', 'h'}, nil)
-	data = bytes.ReplaceAll(data, []byte{0x1b, '[', '2', '0', '0', '4', 'l'}, nil)
-
-	// Remove shell error output caused by broken bracketed paste handling
-	// This happens when shell outputs the sequence incorrectly
+	// Safety net: remove leftover error messages from shells that mistakenly
+	// received the sequence as input (should no longer happen after the driver
+	// fix, but harmless to keep).
 	data = bytes.ReplaceAll(data, []byte("-bash: 2004h: command not found\n"), nil)
 	data = bytes.ReplaceAll(data, []byte("-bash: 2004h: command not found\r\n"), nil)
 	data = bytes.ReplaceAll(data, []byte("-bash: 2004l: command not found\n"), nil)
@@ -459,14 +473,20 @@ func (h *WSHandler) sendWSMessage(wsConn *websocket.Conn, msgType ws.MessageType
 		Data: data,
 	}
 	if payload != nil {
-		b, _ := json.Marshal(payload)
+		b, err := json.Marshal(payload)
+		if err != nil {
+			slog.Error("failed to marshal ws payload", "type", msgType, "error", err)
+			return
+		}
 		msg.Payload = b
 	}
 	jsonData, err := ws.MarshalMessage(msg)
 	if err != nil {
 		return
 	}
+	h.writeMu.Lock()
 	wsConn.Write(context.Background(), websocket.MessageText, jsonData)
+	h.writeMu.Unlock()
 }
 
 // handlePing measures the real round-trip latency to the remote SSH host by

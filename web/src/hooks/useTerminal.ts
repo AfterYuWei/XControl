@@ -6,6 +6,16 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { getTerminalTheme } from '@/lib/terminalThemes'
 import { toast } from 'sonner'
 
+/**
+ * Normalize line endings for paste. xterm.js converts \n to \r (Enter key),
+ * so Windows-style \r\n becomes \r\r — two Enters — producing a blank line
+ * between every pasted line. Normalize \r\n → \n (and standalone \r → \n)
+ * so the terminal emits a single \r per line regardless of the source.
+ */
+function normalizePasteLineEndings(text: string): string {
+  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+}
+
 interface UseTerminalOptions {
   containerRef: React.RefObject<HTMLDivElement | null>
   fontSize?: number
@@ -220,9 +230,11 @@ export function useTerminal(options: UseTerminalOptions) {
       if (inside && text) {
         // Right-click on the selection: copy it and paste into the command line.
         navigator.clipboard.writeText(text).catch(() => {})
-        // Use bracketed paste wrapper to prevent multi-line commands from auto-executing.
-        // This matches the behavior when Bracketed Paste Mode is enabled on the remote shell.
-        terminal.input(`\x1b[200~${text}\x1b[201~`)
+        // terminal.paste() automatically wraps with \x1b[200~...\x1b[201~ when
+        // bracketed paste mode is enabled (the shell enables it and xterm.js
+        // receives \x1b[?2004h), and sends raw text when it's not. This avoids
+        // sending bracketed paste markers to shells that don't understand them.
+        terminal.paste(normalizePasteLineEndings(text))
         terminal.clearSelection()
         return
       }
@@ -230,11 +242,7 @@ export function useTerminal(options: UseTerminalOptions) {
       terminal.clearSelection()
       navigator.clipboard.readText().then((clip) => {
         if (clip) {
-          // Use bracketed paste wrapper to prevent multi-line commands from auto-executing.
-          // When the remote shell has Bracketed Paste Mode enabled (sent via \x1b[?2004h),
-          // it will recognize these escape sequences and treat the pasted content as a
-          // single unit instead of executing each line as a separate command.
-          terminal.input(`\x1b[200~${clip}\x1b[201~`)
+          terminal.paste(normalizePasteLineEndings(clip))
         }
       }).catch(() => {})
     }

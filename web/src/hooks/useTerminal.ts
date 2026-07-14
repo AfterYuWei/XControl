@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { Terminal, type IBufferRange } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { getTerminalTheme } from '@/lib/terminalThemes'
@@ -68,13 +69,32 @@ export function useTerminal(options: UseTerminalOptions) {
       rightClickSelectsWord: false,
       cursorBlink: true,
       scrollback: 10000,
+      linkHandler: {
+        activate: (_event, uri) => {
+          // Only open http/https URLs in a new tab
+          if (/^https?:\/\//i.test(uri)) {
+            window.open(uri, '_blank', 'noopener,noreferrer')
+          }
+        },
+        hover: (_event, _uri) => {
+          terminal.element?.classList.add('xterm-cursor-pointer')
+        },
+        leave: () => {
+          terminal.element?.classList.remove('xterm-cursor-pointer')
+        },
+      },
     })
 
     const fitAddon = new FitAddon()
     const webLinksAddon = new WebLinksAddon()
+    const unicode11Addon = new Unicode11Addon()
 
     terminal.loadAddon(fitAddon)
     terminal.loadAddon(webLinksAddon)
+    terminal.loadAddon(unicode11Addon)
+
+    // Enable Unicode 11 character width for better CJK and emoji rendering
+    terminal.unicode.activeVersion = '11'
 
     terminal.open(containerRef.current)
 

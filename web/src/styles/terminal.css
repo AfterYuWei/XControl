@@ -60,4 +60,9 @@
   max-width: 260px;
 }
 
+/* Cursor pointer when hovering over a detected link in the terminal */
+.xterm-cursor-pointer .xterm-link-layer {
+  cursor: pointer;
+}
+
 /* ===== STATUS BAR ===== */

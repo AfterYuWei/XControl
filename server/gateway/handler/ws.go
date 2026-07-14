@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -248,7 +249,8 @@ func (h *WSHandler) writePump(ctx context.Context, conn *ws.Conn, session *Sessi
 
 	// Filter control for injected OSC 7 config command (TCP 分包处理)
 	isFilteringInit := true
-	initTarget := []byte(` PROMPT_COMMAND='printf`) // 带前导空格防止 history 记录
+	initTarget := []byte(`__tdcwd(){ printf "\033`)
+		initFilterDeadline := time.After(5 * time.Second)
 
 	for {
 		select {
@@ -256,6 +258,11 @@ func (h *WSHandler) writePump(ctx context.Context, conn *ws.Conn, session *Sessi
 			return
 		case <-conn.Done():
 			return
+		case <-initFilterDeadline:
+			// If the injection echo hasn't been found after 5s, give up.
+			if isFilteringInit {
+				isFilteringInit = false
+			}
 		case <-session.Shell.Done():
 			// Brief grace period to let the driver's OnDead callback fire and
 			// set session.Status = "error" with a reason.
@@ -297,28 +304,40 @@ func (h *WSHandler) writePump(ctx context.Context, conn *ws.Conn, session *Sessi
 					data = data[:len(data)-len(utf8Carry)]
 				}
 
-				// 优先级一：isFilteringInit 逐行匹配，处理 TCP 分包
+				// 优先级一：isFilteringInit — echo suppression for the OSC 7 setup
+				// command. Uses the same approach as FileTerm: find the echoed
+				// injection command via its initTarget, then locate the trailing
+				// OSC 7 output (\x1b]7;...\x07) emitted by the __tdcwd call at
+				// the end of the script. Strip everything in between.
 				if isFilteringInit {
 					if idx := bytes.Index(data, initTarget); idx != -1 {
-						// 找到目标前缀，定位行起始位置
 						lineStart := idx
 						for lineStart > 0 && data[lineStart-1] != '\n' {
 							lineStart--
 						}
 
-						// 查找行结束位置（换行符）
-						lineEnd := bytes.Index(data[idx:], []byte("\n"))
-						if lineEnd != -1 {
-							// 成功找到完整的行，切除并关闭过滤器
-							lineEnd += idx + 1
-							data = append(data[:lineStart], data[lineEnd:]...)
-							isFilteringInit = false // 只过滤一次
+						// Look for the OSC 7 sequence that __tdcwd emits immediately
+						// after the script executes. Format: \x1b]7;file://host/path\x07
+						osc7Marker := []byte{0x1b, ']', '7', ';'}
+						markerIdx := bytes.Index(data[idx:], osc7Marker)
+						if markerIdx != -1 {
+							markerAbs := idx + markerIdx
+							belIdx := bytes.IndexByte(data[markerAbs:], 0x07)
+							if belIdx != -1 {
+								// Complete echo + OSC 7 payload found.
+								// Remove from lineStart to end of OSC 7 payload.
+								cutEnd := markerAbs + belIdx + 1 // +1 to include BEL
+								data = append(data[:lineStart], data[cutEnd:]...)
+								isFilteringInit = false
+							} else {
+								// OSC 7 marker found but BEL terminator not in this chunk.
+								initCarry = append(initCarry, data[lineStart:]...)
+								data = data[:lineStart]
+							}
 						} else {
-							// TCP 分包：匹配到了目标，但这一行还没传完（缺 \n）
-							// 保存 lineStart 之后的数据到 initCarry，下一包继续处理
+							// initTarget found but OSC 7 not yet in buffer.
 							initCarry = append(initCarry, data[lineStart:]...)
 							data = data[:lineStart]
-							// 保持 isFilteringInit = true，下一包继续处理
 						}
 					}
 				}
@@ -351,11 +370,12 @@ func (h *WSHandler) writePump(ctx context.Context, conn *ws.Conn, session *Sessi
 }
 
 // extractOSC7 extracts the current working directory from OSC 7 escape sequences.
-// OSC 7 format: \x1b]7;file://hostname/path\x07
+// OSC 7 format: \x1b]7;file://hostname/path\x07 or \x1b]7;file://hostname/path\x1b\\
 func extractOSC7(buf *[]byte) string {
 	osc7Prefix := []byte{0x1b, ']', '7', ';'}
 	belByte := byte(0x07)
 	stSequence := []byte{0x1b, '\\'}
+	const maxOSC7Payload = 4096
 
 	var result string
 
@@ -397,10 +417,27 @@ func extractOSC7(buf *[]byte) string {
 		uri := string((*buf)[searchFrom:endIdx])
 		*buf = (*buf)[endIdx+terminatorLen:]
 
+		// Reject unreasonably long payloads to prevent pathological inputs
+		// from reaching url.Parse.
+		if len(uri) > maxOSC7Payload {
+			continue
+		}
+
 		if strings.HasPrefix(uri, "file://") {
 			parsedURL, err := url.Parse(uri)
 			if err == nil && parsedURL.Path != "" {
-				result = parsedURL.Path
+				// URL-decode percent-encoded characters (e.g. %20 → space,
+				// %E4%B8%AD%E6%96%87 → 中文).
+				unescaped, unescapeErr := url.PathUnescape(parsedURL.Path)
+				if unescapeErr != nil {
+					unescaped = parsedURL.Path // graceful fallback
+				}
+				// Reject non-absolute paths (safety check).
+				if !strings.HasPrefix(unescaped, "/") {
+					continue
+				}
+				// Normalize: collapse "." / ".." and repeated slashes.
+				result = path.Clean(unescaped)
 			}
 		}
 	}
@@ -456,14 +493,25 @@ func filterBracketedPaste(data []byte) []byte {
 	return data
 }
 
-// injectOSC7Config sets PROMPT_COMMAND for OSC 7 directory tracking.
+// osc7SetupScript defines a __tdcwd shell function and appends it to
+// PROMPT_COMMAND (bash) so the remote shell emits OSC 7 (CWD) sequences
+// before every prompt. The script is idempotent via a case-match guard.
+//
+// Kept deliberately short so the echoed line fits in a single SSH channel
+// data chunk, allowing writePump's line-based echo filter to remove it.
+const osc7SetupScript = `__tdcwd(){ printf "\033]7;file://%s\007\033]1337;RemoteUser=%s\007" "$(pwd -P 2>/dev/null)" "$(id -un 2>/dev/null)";};case "${PROMPT_COMMAND-}" in *__tdcwd*) ;; *) PROMPT_COMMAND="__tdcwd${PROMPT_COMMAND:+;$PROMPT_COMMAND}";;esac;__tdcwd`
+
+// injectOSC7Config writes the __tdcwd setup script to the remote shell.
+// The script is echoed by the shell; writePump's line-based echo filter
+// catches it via initTarget and removes the echoed line from the output
+// before it reaches the frontend.
 func (h *WSHandler) injectOSC7Config(session *Session) {
 	if session == nil || session.Shell == nil {
 		return
 	}
-
-	osc7Cmd := ` PROMPT_COMMAND='printf "\033]7;file://%s%s\007" "` + "`hostname`" + `" "$PWD"'`
-	session.Shell.Write([]byte(osc7Cmd + "\n"))
+	// Leading space prevents the command from being saved to shell history
+	// when HISTCONTROL=ignorespace (bash default on many systems).
+	session.Shell.Write([]byte(" " + osc7SetupScript + "\n"))
 	time.Sleep(200 * time.Millisecond)
 }
 

@@ -168,7 +168,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
               const nextTab = {
                 ...tab,
                 status,
-                ...(sessionId ? { sessionId } : {}),
+                ...(sessionId ? { sessionId, cwd: undefined } : {}),
               }
 
               if (status === 'connected' && tab.kind === 'terminal' && !!tab.profileId && !tab.detailAttached) {

@@ -17,6 +17,8 @@ export interface DetailState {
   filesCollapsed: boolean
   metricsCollapsed: boolean
   infoCollapsed: boolean
+  /** Auto-navigate the file browser to the terminal's CWD when it changes. */
+  followShellCwd: boolean
 }
 
 interface SidebarDetailStore {
@@ -36,11 +38,12 @@ interface SidebarDetailStore {
   toggleFiles: (tabId: string) => void
   toggleMetrics: (tabId: string) => void
   toggleInfo: (tabId: string) => void
+  toggleFollowShellCwd: (tabId: string) => void
   clearTab: (tabId: string) => void
   setLastTerminalTab: (id: string | null) => void
 }
 
-const defaultDetail = (): DetailState => ({ scrollTop: 0, expandedPaths: [], filesCollapsed: false, metricsCollapsed: false, infoCollapsed: false })
+const defaultDetail = (): DetailState => ({ scrollTop: 0, expandedPaths: [], filesCollapsed: false, metricsCollapsed: false, infoCollapsed: false, followShellCwd: true })
 
 export const useSidebarDetailStore = create<SidebarDetailStore>((set, get) => ({
   pageByTab: { [GLOBAL_PAGE_KEY]: 0 },
@@ -94,6 +97,14 @@ export const useSidebarDetailStore = create<SidebarDetailStore>((set, get) => ({
       const cur = s.detailCache[tabId] ?? defaultDetail()
       return {
         detailCache: { ...s.detailCache, [tabId]: { ...cur, infoCollapsed: !cur.infoCollapsed } },
+      }
+    }),
+
+  toggleFollowShellCwd: (tabId) =>
+    set((s) => {
+      const cur = s.detailCache[tabId] ?? defaultDetail()
+      return {
+        detailCache: { ...s.detailCache, [tabId]: { ...cur, followShellCwd: !cur.followShellCwd } },
       }
     }),
 

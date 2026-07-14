@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import {
   File, Folder, HardDrive, Cpu, Loader2, AlertCircle,
   FilePlus, FolderPlus, RefreshCw, Pencil, Trash2, Copy, Eye, EyeOff,
-  FolderOpen, FileEdit, Inbox, MapPin
+  FolderOpen, FileEdit, Inbox, Crosshair
 } from 'lucide-react'
 import { useSessionStore } from '@/store/session'
 import { useSidebarDetailStore } from '@/store/sidebarDetail'
@@ -37,7 +37,7 @@ export function ServerDetail({
   active,
 }: ServerDetailProps) {
   const { tabs } = useSessionStore()
-  const { getDetail, toggleFiles, toggleMetrics, toggleInfo } = useSidebarDetailStore()
+  const { getDetail, toggleFiles, toggleMetrics, toggleInfo, toggleFollowShellCwd } = useSidebarDetailStore()
   const {
     getStatus, navigateToParent, listFiles, mkdir, createFile, rename, deleteSelected,
     toggleShowHidden, refresh, select, clearSelection, getSelectedNodes
@@ -67,6 +67,19 @@ export function ServerDetail({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active])
+
+  const cwd = tab?.cwd
+
+  // Auto-navigate the file browser when the shell CWD changes and follow is on.
+  useEffect(() => {
+    if (!cwd || !detail.followShellCwd) return
+    const connected = serverDetail.status === 'connected'
+    if (!connected) return
+    const currentPath = serverDetail.currentPath || '/'
+    if (cwd !== currentPath) {
+      listFiles(profileId, cwd)
+    }
+  }, [cwd, detail.followShellCwd])
 
   const handleScroll = () => {
     const el = bodyRef.current
@@ -296,14 +309,14 @@ export function ServerDetail({
         </button>
         {!detail.filesCollapsed && isConnected && (
           <div className="sdetail-file-actions">
-            {/* Locate button - navigate to terminal's current directory */}
+            {/* Follow shell CWD toggle */}
             {tab?.cwd && (
               <button
-                className="sdetail-act-btn"
-                title={`定位到终端目录: ${tab.cwd}`}
-                onClick={() => listFiles(profileId, tab.cwd!)}
+                className={`sdetail-act-btn${detail.followShellCwd ? ' sdetail-act-btn-active' : ''}`}
+                title={detail.followShellCwd ? '自动跟随已开启：点击关闭' : '自动跟随已关闭：点击开启'}
+                onClick={() => toggleFollowShellCwd(tabId)}
               >
-                <MapPin size={12} />
+                <Crosshair size={12} />
               </button>
             )}
             {serverDetail.selected.size > 0 && (

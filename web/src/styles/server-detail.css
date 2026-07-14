@@ -258,6 +258,11 @@
 .sdetail-act-btn:active {
   transform: scale(0.95);
 }
+.sdetail-act-btn-active,
+.sdetail-act-btn-active:hover {
+  background: var(--accent-bg, rgba(99, 102, 241, 0.15));
+  color: var(--accent, #6366F1);
+}
 
 /* Current path display */
 .sdetail-file-path {

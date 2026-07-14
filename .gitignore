@@ -9,6 +9,9 @@ server/xcontrol-server.exe
 server/data/
 data/
 
+# fileterm 子项目（独立管理）
+fileterm/
+
 # Electron 构建产物（electron/.gitignore 已忽略 node_modules/release）
 
 # OS

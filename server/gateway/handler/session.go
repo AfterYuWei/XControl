@@ -40,7 +40,16 @@ type Session struct {
 	cancelConnect           func()
 	hostKeyDecision         chan hostKeyDecision
 	subscribers             map[chan struct{}]struct{}
-	mu                      sync.Mutex
+	// pendingResize caches the most recent resize request that arrived
+	// before the Shell was ready. It is applied as soon as the shell starts,
+	// so early resizes (sent right after the WS opens) are not lost.
+	pendingResize *resizeRequest
+	mu            sync.Mutex
+}
+
+type resizeRequest struct {
+	cols int
+	rows int
 }
 
 // IsAbnormalDisconnect reports whether the session ended due to an SSH
@@ -253,7 +262,16 @@ func (h *SessionHandler) connectSession(ctx context.Context, session *Session, p
 
 	session.mu.Lock()
 	session.Shell = shell
+	pending := session.pendingResize
+	session.pendingResize = nil
 	session.mu.Unlock()
+	// Apply any resize that raced with shell startup so the PTY matches the
+	// client's real dimensions from the first frame.
+	if pending != nil {
+		if err := shell.Resize(pending.cols, pending.rows); err != nil {
+			slog.Warn("apply pending resize failed", "session_id", session.ID, "error", err)
+		}
+	}
 	session.setConnected(ConnectionStageStartingShell, "远程 Shell 已启动，等待终端附着")
 
 	if knownHostKeyFingerprint != currentHostKeyFingerprint {
@@ -391,13 +409,29 @@ func (h *SessionHandler) SendError(sessionID string, code, message string) {
 	// This will be used by the WS handler
 }
 
-// HandleResize is called by the WebSocket handler.
+// HandleResize is called by the WebSocket handler. If the shell has not
+// started yet (the WS often opens before the SSH handshake completes), the
+// size is cached on the session and applied once the shell is ready,
+// instead of being silently dropped.
 func (h *SessionHandler) HandleResize(sessionID string, cols, rows int) {
-	session := h.GetSession(sessionID)
-	if session == nil || session.Shell == nil {
+	if cols <= 0 || rows <= 0 {
 		return
 	}
-	if err := session.Shell.Resize(cols, rows); err != nil {
+	session := h.GetSession(sessionID)
+	if session == nil {
+		return
+	}
+
+	session.mu.Lock()
+	shell := session.Shell
+	if shell == nil {
+		session.pendingResize = &resizeRequest{cols: cols, rows: rows}
+		session.mu.Unlock()
+		return
+	}
+	session.mu.Unlock()
+
+	if err := shell.Resize(cols, rows); err != nil {
 		slog.Error("resize failed", "session_id", sessionID, "error", err)
 	}
 }

@@ -136,6 +136,10 @@ export function useTerminal(options: UseTerminalOptions) {
     // Use ref so the callback is always current without re-creating the terminal
     terminal.onData((data) => onDataRef.current?.(data))
 
+    // Forward xterm's own resize events (fired after fit()/terminal.resize)
+    // so the parent can push the new size to the backend immediately.
+    terminal.onResize(({ cols, rows }) => onResizeRef.current?.(cols, rows))
+
     // Termius-style text selection and copy/paste:
     // - Drag to select (no auto-copy on release).
     // - Left-click on an existing selection copies it; left-click outside cancels.
@@ -280,13 +284,22 @@ export function useTerminal(options: UseTerminalOptions) {
     }
     terminalElement?.addEventListener('wheel', handleWheel, { passive: false })
 
+    // Debounce window resize: dragging the window edge fires dozens of
+    // events per second; only the final size matters. onResize is forwarded
+    // via terminal.onResize above, so fit() alone is enough here.
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null
     const handleResize = () => {
-      fitAddon.fit()
+      if (resizeTimer) clearTimeout(resizeTimer)
+      resizeTimer = setTimeout(() => {
+        resizeTimer = null
+        fitAddon.fit()
+      }, 100)
     }
     window.addEventListener('resize', handleResize)
 
     return () => {
       clearTimeout(fitTimeout)
+      if (resizeTimer) clearTimeout(resizeTimer)
       window.removeEventListener('resize', handleResize)
       terminalElement?.removeEventListener('mousedown', handleMouseDown, true)
       terminalElement?.removeEventListener('mouseup', handleMouseUp)
@@ -334,6 +347,14 @@ export function useTerminal(options: UseTerminalOptions) {
 
   const fit = useCallback(() => {
     fitAddonRef.current?.fit()
+    // Report the size after fit. terminal.onResize normally covers this,
+    // but fit() on a zero-size / hidden container is a silent no-op and
+    // font loading can leave stale measurements — reporting explicitly
+    // guarantees the backend converges to the real size.
+    const terminal = terminalRef.current
+    if (terminal) {
+      onResizeRef.current?.(terminal.cols, terminal.rows)
+    }
   }, [])
 
   const getSize = useCallback(() => {

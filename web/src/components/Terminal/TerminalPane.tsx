@@ -135,10 +135,18 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     }, 1500)
   }, [fontSize, setFontSize])
 
+  // Last size reported to the backend. Skipping duplicate reports avoids
+  // flooding the WS during font load / fit retries, where xterm fires
+  // onResize multiple times with the same dimensions.
+  const lastReportedSizeRef = useRef<{ cols: number; rows: number } | null>(null)
+
   const handleTerminalResize = useCallback((cols: number, rows: number) => {
-    if (tab.sessionId && wsStatusRef.current === 'connected') {
-      sendResizeRef.current(cols, rows)
-    }
+    if (cols <= 0 || rows <= 0) return
+    if (!tab.sessionId || wsStatusRef.current !== 'connected') return
+    const last = lastReportedSizeRef.current
+    if (last && last.cols === cols && last.rows === rows) return
+    lastReportedSizeRef.current = { cols, rows }
+    sendResizeRef.current(cols, rows)
   }, [tab.sessionId])
 
   const { write, writeln, clear, reset, fit, getSize, getTerminal } = useTerminal({
@@ -186,7 +194,11 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
           reconnectTimerRef.current = null
           try {
             beginLocalConnection(`正在发起第 ${index + 1} 次重连请求`)
-            const resp = await sessionApi.create({ profile_id: profileId, cols: 80, rows: 24 })
+            // Request the PTY with the terminal's real size instead of the
+            // 80x24 default, so full-screen apps render correctly from the
+            // first frame after reconnect.
+            const { cols, rows } = getSize()
+            const resp = await sessionApi.create({ profile_id: profileId, cols, rows })
             updateTabStatus(tabId, 'connecting', resp.session_id)
             isReconnectingRef.current = false
           } catch {
@@ -197,7 +209,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
 
       attempt(0)
     },
-    [beginLocalConnection, markTabError, markTabReconnecting, updateTabStatus],
+    [beginLocalConnection, getSize, markTabError, markTabReconnecting, updateTabStatus],
   )
 
   const reconnectNow = useCallback(() => {
@@ -264,6 +276,15 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
           setBackendStage('ready')
           setDialogStatus('connected')
           setTimeout(() => setShowDialog(false), 500)
+          // The session was created with the default 80x24 PTY (the real
+          // terminal size is only known after mount). Push the actual size
+          // once the shell is confirmed ready, after fonts have settled, so
+          // vim/htop and friends render at the correct dimensions even if
+          // the earlier resize raced with shell startup.
+          lastReportedSizeRef.current = null
+          setTimeout(() => {
+            fit()
+          }, 100)
           break
         }
 
@@ -313,6 +334,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
       clearReconnectTimer,
       clearTabError,
       clearTabHostKeyPrompt,
+      fit,
       reset,
       startAutoReconnect,
       tab.id,
@@ -328,10 +350,10 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     sessionId: tab.sessionId || '',
     onMessage: handleWSMessage,
     onOpen: () => {
+      // fit() reports the resulting size through onResize, which forwards
+      // it to the backend. Delayed slightly so the container has settled.
       setTimeout(() => {
         fit()
-        const { cols, rows } = getSize()
-        sendResizeRef.current(cols, rows)
       }, 50)
     },
     onClose: () => {
@@ -420,21 +442,29 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     }
   }, [tab.sessionId, tab.status, wsStatus])
 
+  // When the tab becomes active, immediately re-fit and report the size —
+  // the container was zero-sized while hidden, so the backend may still
+  // hold stale dimensions. Container resizes (sidebar collapse, window
+  // drag, panel split) are debounced; fit() reports the size via onResize.
   useEffect(() => {
     if (!isActive) return
 
     fit()
+    let observerTimer: ReturnType<typeof setTimeout> | null = null
     const observer = new ResizeObserver(() => {
-      fit()
-      const { cols, rows } = getSize()
-      if (tab.sessionId && wsStatusRef.current === 'connected') {
-        sendResizeRef.current(cols, rows)
-      }
+      if (observerTimer) clearTimeout(observerTimer)
+      observerTimer = setTimeout(() => {
+        observerTimer = null
+        fit()
+      }, 100)
     })
 
     if (containerRef.current) observer.observe(containerRef.current)
-    return () => observer.disconnect()
-  }, [fit, getSize, isActive, tab.sessionId])
+    return () => {
+      observer.disconnect()
+      if (observerTimer) clearTimeout(observerTimer)
+    }
+  }, [fit, isActive])
 
   const handleCancel = () => {
     clearReconnectTimer()

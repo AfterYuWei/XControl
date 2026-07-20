@@ -37,7 +37,7 @@ export function ServerDetail({
   active,
 }: ServerDetailProps) {
   const { tabs } = useSessionStore()
-  const { getDetail, toggleFiles, toggleMetrics, toggleInfo, toggleFollowShellCwd } = useSidebarDetailStore()
+  const { getDetail, saveDetail, toggleFiles, toggleMetrics, toggleInfo, toggleFollowShellCwd } = useSidebarDetailStore()
   const {
     getStatus, navigateToParent, listFiles, mkdir, createFile, rename, deleteSelected,
     toggleShowHidden, refresh, select, clearSelection, getSelectedNodes
@@ -80,6 +80,23 @@ export function ServerDetail({
       listFiles(profileId, cwd)
     }
   }, [cwd, detail.followShellCwd])
+
+  // Manual navigation: any directory change initiated inside the file browser
+  // (double-click folder, "..", breadcrumb, context menu) turns off the
+  // follow-shell-CWD toggle first, so the browser stays where the user put it
+  // instead of being yanked back on the next shell cd.
+  const navigateManually = (path: string) => {
+    if (detail.followShellCwd) {
+      saveDetail(tabId, { followShellCwd: false })
+    }
+    listFiles(profileId, path)
+  }
+  const navigateToParentManually = () => {
+    if (detail.followShellCwd) {
+      saveDetail(tabId, { followShellCwd: false })
+    }
+    navigateToParent(profileId)
+  }
 
   const handleScroll = () => {
     const el = bodyRef.current
@@ -171,7 +188,7 @@ export function ServerDetail({
   // Context menu items for file/folder
   const fileMenuItems = (node: FileTreeNode): MenuItem[] => [
     { id: 'open', label: node.isDir ? '打开文件夹' : '打开', icon: <FolderOpen size={13} />, onClick: () => {
-      if (node.isDir) listFiles(profileId, node.path)
+      if (node.isDir) navigateManually(node.path)
       else useServerDetailStore.getState().openEditor(profileId, node.path)
     }},
     ...(!node.isDir ? [{
@@ -238,7 +255,7 @@ export function ServerDetail({
       e.stopPropagation()
       if (node.isDir) {
         // Navigate into directory
-        listFiles(profileId, node.path)
+        navigateManually(node.path)
       } else {
         // Open file in editor
         const detail = useServerDetailStore.getState().getStatus(profileId)
@@ -355,7 +372,7 @@ export function ServerDetail({
       {!detail.filesCollapsed && isConnected && (
         <PathBreadcrumb
           path={serverDetail.currentPath || '/'}
-          onNavigate={(path) => listFiles(profileId, path)}
+          onNavigate={navigateManually}
         />
       )}
 
@@ -400,7 +417,7 @@ export function ServerDetail({
                     style={{ cursor: 'pointer' }}
                     onDoubleClick={(e) => {
                       e.stopPropagation()
-                      navigateToParent(profileId)
+                      navigateToParentManually()
                     }}
                     role="button"
                   >

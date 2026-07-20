@@ -7,7 +7,12 @@
   flex: 1;
   display: flex;
   flex-direction: column;
+  /* overflow: hidden clips the square xterm canvas to the rounded corners.
+     isolation: isolate forces a self-contained stacking context so the
+     GPU-composited WebGL/Canvas layers are anti-aliased against the corner
+     curve instead of poking past it. */
   overflow: hidden;
+  isolation: isolate;
   position: relative;
   background: var(--term-bg);
   /* Top/bottom margin removed: the vertical gap is provided by .xcontrol-body's
@@ -63,6 +68,22 @@
 /* Cursor pointer when hovering over a detected link in the terminal */
 .xterm-cursor-pointer .xterm-link-layer {
   cursor: pointer;
+}
+
+/* Belt-and-suspenders for the rounded-corner look: xterm renders character
+   backgrounds (vim/Neovim/Claude Code TUI themes) onto square Canvas/WebGL
+   layers. These rules guarantee every xterm layer stays inside the padded
+   content box of .term-wrap and participates in the same clipping context,
+   so TUI background colors never bleed into the rounded padding ring. */
+.term-wrap .xterm {
+  width: 100%;
+  height: 100%;
+  border-radius: calc(var(--r-lg) - 4px);
+  overflow: hidden;
+}
+.term-wrap .xterm-viewport,
+.term-wrap .xterm-screen {
+  border-radius: calc(var(--r-lg) - 4px);
 }
 
 /* ===== STATUS BAR ===== */

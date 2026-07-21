@@ -4,6 +4,7 @@ import {
   tokenize,
   getSuggestions,
   getDynamicGenerator,
+  isCdPathContext,
   type ParserKey,
   buildCompletionInsertPlan,
   parseDynamicOutputByParser,
@@ -11,6 +12,7 @@ import {
   type Suggestion,
 } from '@/lib/completionEngine'
 import { createCompletionCache, type CompletionCache } from '@/lib/completionCache'
+import { recordCommand, queryHistory } from '@/lib/commandHistory'
 import {
   resyncFromTerminal,
   moveCursorInBuffer,
@@ -28,16 +30,34 @@ interface UseCompletionOptions {
   enabled: boolean
 }
 
+/** 级联菜单中的一列：一组候选 + 当前选中索引 */
+export interface CompletionColumn {
+  suggestions: Suggestion[]
+  selectedIndex: number // -1 表示未选中
+}
+
 export interface CompletionPopupState {
   open: boolean
-  suggestions: Suggestion[]
-  selectedIndex: number // -1 表示未选中，用户按下方向键才开始选中
+  /** 级联列：columns[0] 为根列。非级联场景只有一列。 */
+  columns: CompletionColumn[]
+  /** 当前聚焦的列索引（键盘 ←/→ 在列间移动） */
+  activeColumn: number
   sourceParser: ParserKey | null
+  /** 是否为 cd 路径级联模式 */
+  cascade: boolean
 }
 
 interface RequestMeta {
   script: string
   cwd?: string
+}
+
+/** 展开子目录请求的上下文：用于响应回来后把新列接到正确的父列后 */
+interface ExpandRequestMeta extends RequestMeta {
+  /** 该展开请求对应的父列深度（根列为 0） */
+  parentDepth: number
+  /** 被展开的目录路径（如 "Projects/lanya/"），用于解析子目录输出 */
+  dirPath: string
 }
 
 let reqCounter = 0
@@ -46,8 +66,16 @@ function nextRequestId(): string {
   return `${Date.now().toString(36)}-${reqCounter.toString(36)}`
 }
 
+const EMPTY_POPUP: CompletionPopupState = {
+  open: false,
+  columns: [],
+  activeColumn: 0,
+  sourceParser: null,
+  cascade: false,
+}
+
 export function useCompletion({ getTerminal, sendInput, sendComplete, getCwd, enabled }: UseCompletionOptions) {
-  const [popup, setPopup] = useState<CompletionPopupState>({ open: false, suggestions: [], selectedIndex: -1, sourceParser: null })
+  const [popup, setPopup] = useState<CompletionPopupState>(EMPTY_POPUP)
 
   const bufferRef = useRef<BufferState>({ text: '', cursor: 0, stale: false })
   const popupRef = useRef(popup)
@@ -59,10 +87,10 @@ export function useCompletion({ getTerminal, sendInput, sendComplete, getCwd, en
   const inTuiRef = useRef(false)
   const pendingRequestRef = useRef<string | null>(null)
   const requestMetaRef = useRef(new Map<string, RequestMeta>())
-  const cacheRef = useRef<CompletionCache | null>(null)
-  if (!cacheRef.current) {
-    cacheRef.current = createCompletionCache()
-  }
+  /** 展开子目录的 in-flight 请求（key: requestId） */
+  const expandMetaRef = useRef(new Map<string, ExpandRequestMeta>())
+  // 缓存实例用 useState 惰性初始化（仅创建一次），避免 render 期访问 ref
+  const [cache] = useState<CompletionCache>(() => createCompletionCache())
 
   useEffect(() => { sendInputRef.current = sendInput }, [sendInput])
   useEffect(() => { sendCompleteRef.current = sendComplete }, [sendComplete])
@@ -71,7 +99,22 @@ export function useCompletion({ getTerminal, sendInput, sendComplete, getCwd, en
   useEffect(() => { enabledRef.current = enabled }, [enabled])
 
   const closePopup = useCallback(() => {
-    setPopup((current) => (current.open ? { open: false, suggestions: [], selectedIndex: -1, sourceParser: null } : current))
+    setPopup((current) => (current.open ? EMPTY_POPUP : current))
+  }, [])
+
+  /** 构造 cd 场景的第一列：历史命令（H 图标 + 频次）在前，目录在后 */
+  const buildCdRootColumn = useCallback((dirs: Suggestion[], currentToken: string): Suggestion[] => {
+    const cwd = getCwdRef.current()
+    // 用当前路径 token 作为历史匹配前缀；为空则用 cwd
+    const pathPrefix = currentToken || cwd || ''
+    const historyItems = queryHistory(pathPrefix, cwd, 6).map<Suggestion>((h) => ({
+      name: h.command,
+      type: 'history',
+      count: h.count,
+      fullCommand: h.command,
+      origin: 'dynamic',
+    }))
+    return [...historyItems, ...dirs]
   }, [])
 
   const recompute = useCallback(() => {
@@ -87,32 +130,42 @@ export function useCompletion({ getTerminal, sendInput, sendComplete, getCwd, en
       return
     }
 
+    const isCd = isCdPathContext(ctx)
     const staticSuggestions = getSuggestions(ctx).suggestions
     const generator = getDynamicGenerator(ctx, getCwdRef.current())
+
+    const openWith = (suggestions: Suggestion[], parser: ParserKey | null) => {
+      const cols: CompletionColumn[] = [{ suggestions, selectedIndex: -1 }]
+      setPopup({ open: true, columns: cols, activeColumn: 0, sourceParser: parser, cascade: isCd })
+    }
+
     if (!generator) {
       if (staticSuggestions.length === 0) {
         closePopup()
         return
       }
-      setPopup({ open: true, suggestions: staticSuggestions, selectedIndex: -1, sourceParser: null })
+      openWith(staticSuggestions, null)
       return
     }
 
     const cwd = getCwdRef.current()
-    const cached = cacheRef.current!.get(generator.script, cwd, generator.cacheTtl)
+    const cached = cache.get(generator.script, cwd, generator.cacheTtl)
     if (cached) {
       const dynamicSuggestions = parseDynamicOutputByParser(cached.join('\n'), ctx.currentToken, generator.parser, generator.dirsOnly)
-      const suggestions = mergeSuggestions(staticSuggestions, dynamicSuggestions)
+      let suggestions = mergeSuggestions(staticSuggestions, dynamicSuggestions)
+      if (isCd) {
+        suggestions = buildCdRootColumn(dynamicSuggestions, ctx.currentToken)
+      }
       if (suggestions.length === 0) {
         closePopup()
         return
       }
-      setPopup({ open: true, suggestions, selectedIndex: -1, sourceParser: generator.parser })
+      openWith(suggestions, generator.parser)
       return
     }
 
     if (staticSuggestions.length > 0) {
-      setPopup({ open: true, suggestions: staticSuggestions, selectedIndex: -1, sourceParser: null })
+      openWith(staticSuggestions, null)
     } else {
       closePopup()
     }
@@ -129,47 +182,164 @@ export function useCompletion({ getTerminal, sendInput, sendComplete, getCwd, en
     pendingRequestRef.current = requestId
     requestMetaRef.current.set(requestId, { script: generator.script, cwd })
     sendCompleteRef.current(requestId, generator.script, cwd)
-  }, [closePopup])
+  }, [closePopup, buildCdRootColumn, cache])
 
   const scheduleRecompute = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(recompute, 120)
   }, [recompute])
 
+  /** 应用选中项：目录 → 填入路径并继续；历史命令 → 整条替换当前命令行 */
   const applySelection = useCallback(() => {
     const currentPopup = popupRef.current
-    if (!currentPopup.open || currentPopup.selectedIndex < 0 || currentPopup.suggestions.length === 0) return
+    if (!currentPopup.open) return
+    const col = currentPopup.columns[currentPopup.activeColumn]
+    if (!col || col.selectedIndex < 0 || col.suggestions.length === 0) return
 
-    const suggestion = currentPopup.suggestions[currentPopup.selectedIndex]
+    const suggestion = col.suggestions[col.selectedIndex]
     const buffer = bufferRef.current
+
+    // 历史命令：显示为完整命令（cd /path），应用时把当前路径 token 替换为
+    // 历史命令的路径部分，复用统一的 token 替换逻辑。
+    const isHistory = suggestion.type === 'history' && suggestion.fullCommand
+    const applyName = isHistory
+      ? suggestion.fullCommand!.replace(/^cd\s+/, '')
+      : suggestion.name
+
     const currentToken = tokenize(buffer.text).currentToken
-    const insertPlan = buildCompletionInsertPlan(currentToken, suggestion.name)
-    const insertText = insertPlan.insertText
-    if (insertText) {
-      sendInputRef.current(insertText)
-      bufferRef.current.text = buffer.text.slice(0, buffer.cursor) + insertText + buffer.text.slice(buffer.cursor)
-      bufferRef.current.cursor = buffer.cursor + insertText.length
+    const insertPlan = buildCompletionInsertPlan(currentToken, applyName)
+    let insertText = insertPlan.insertText
+    if (!insertText) {
+      closePopup()
+      return
     }
-    closePopup()
-  }, [closePopup])
+    // 子命令/选项后追加空格（目录不追加，便于继续输入下一级）
+    if (suggestion.type === 'subcommand' || suggestion.type === 'option') {
+      insertText += ' '
+    }
+    sendInputRef.current(insertText)
+    bufferRef.current.text = buffer.text.slice(0, buffer.cursor) + insertText + buffer.text.slice(buffer.cursor)
+    bufferRef.current.cursor = buffer.cursor + insertText.length
+
+    // cd 级联模式下选中目录(isDir)：填入路径后重新触发补全，展示新路径下的
+    // 下一级，实现"层层深入"；文件(isDir:false)是末级，填入后关闭面板；
+    // 历史命令或普通候选同样应用后关闭。
+    if (currentPopup.cascade && suggestion.type === 'directory' && suggestion.isDir) {
+      closePopup()
+      scheduleRecompute()
+    } else {
+      closePopup()
+    }
+  }, [closePopup, scheduleRecompute])
+
+  /** 展开当前选中的目录项，向右弹出一列子目录。返回是否真的发起了展开。 */
+  const expandDirectory = useCallback((): boolean => {
+    const currentPopup = popupRef.current
+    if (!currentPopup.open || !currentPopup.cascade) return false
+    const colIndex = currentPopup.activeColumn
+    const col = currentPopup.columns[colIndex]
+    if (!col || col.selectedIndex < 0) return false
+    const suggestion = col.suggestions[col.selectedIndex]
+    if (suggestion.type !== 'directory' || !suggestion.isDir) return false
+
+    const dirPath = suggestion.name // 如 "Projects/" 或 "/Projects/lanya/"
+    const script = `ls -1 -A -F '${dirPath.replace(/'/g, `'\\''`)}' 2>/dev/null`
+    const cwd = getCwdRef.current()
+
+    const appendColumn = (dirs: Suggestion[]) => {
+      if (dirs.length === 0) return
+      setPopup((current) => {
+        if (!current.open) return current
+        const nextCols = current.columns.slice(0, colIndex + 1)
+        // 展开子菜单时自动选中第一项，让用户可立即继续 → 深入或 ↑↓ 选择
+        nextCols.push({ suggestions: dirs, selectedIndex: 0 })
+        return { ...current, columns: nextCols, activeColumn: nextCols.length - 1 }
+      })
+    }
+
+    const cached = cache.get(script, cwd, 3000)
+    if (cached) {
+      appendColumn(parseDynamicOutputByParser(cached.join('\n'), dirPath, 'directory-list'))
+      return true
+    }
+
+    const requestId = nextRequestId()
+    expandMetaRef.current.set(requestId, { script, cwd, parentDepth: colIndex, dirPath })
+    sendCompleteRef.current(requestId, script, cwd)
+    return true
+  }, [cache])
+
+  /** 收起最右侧一列，返回上一级 */
+  const collapseColumn = useCallback(() => {
+    setPopup((current) => {
+      if (!current.open || current.columns.length <= 1) return current
+      const nextCols = current.columns.slice(0, -1)
+      return { ...current, columns: nextCols, activeColumn: nextCols.length - 1 }
+    })
+  }, [])
+
+  /** ↑↓ 在当前活动列内导航 */
+  const navigateColumn = useCallback((isDown: boolean) => {
+    setPopup((current) => {
+      if (!current.open) return current
+      const colIndex = current.activeColumn
+      const col = current.columns[colIndex]
+      if (!col || col.suggestions.length === 0) return current
+      let nextIndex: number
+      if (col.selectedIndex === -1) {
+        nextIndex = isDown ? 0 : col.suggestions.length - 1
+      } else {
+        const delta = isDown ? 1 : -1
+        nextIndex = Math.max(0, Math.min(col.suggestions.length - 1, col.selectedIndex + delta))
+      }
+      if (nextIndex === col.selectedIndex) return current
+      const nextCols = current.columns.slice()
+      nextCols[colIndex] = { ...col, selectedIndex: nextIndex }
+      return { ...current, columns: nextCols }
+    })
+  }, [])
+
+  /** 当前列未选中任何项时，自动选中第一个可展开目录项。返回是否选中成功。 */
+  const selectFirstDirectory = useCallback((): boolean => {
+    let didSelect = false
+    setPopup((current) => {
+      if (!current.open) return current
+      const colIndex = current.activeColumn
+      const col = current.columns[colIndex]
+      if (!col || col.selectedIndex !== -1) return current
+      const firstDir = col.suggestions.findIndex((s) => s.type === 'directory' && s.isDir)
+      if (firstDir < 0) return current
+      didSelect = true
+      const nextCols = current.columns.slice()
+      nextCols[colIndex] = { ...col, selectedIndex: firstDir }
+      return { ...current, columns: nextCols }
+    })
+    return didSelect
+  }, [])
+
+  /** 悬停选中某项（鼠标），并级联模式下若已展开过则更替换列 */
+  const hoverSelect = useCallback((columnIndex: number, itemIndex: number) => {
+    setPopup((current) => {
+      if (!current.open || columnIndex >= current.columns.length) return current
+      const nextCols = current.columns.slice()
+      nextCols[columnIndex] = { ...nextCols[columnIndex], selectedIndex: itemIndex }
+      return { ...current, activeColumn: columnIndex, columns: nextCols }
+    })
+  }, [])
+
+  /** 鼠标点击某列某项 */
+  const clickSelect = useCallback((columnIndex: number, itemIndex: number) => {
+    hoverSelect(columnIndex, itemIndex)
+    // 延迟一拍让 selectedIndex 生效后再 apply
+    setTimeout(() => applySelection(), 0)
+  }, [hoverSelect, applySelection])
 
   const handleData = useCallback((data: string): boolean => {
     if (!enabledRef.current || inTuiRef.current) return false
 
     if (data === '\x1b[A' || data === '\x1b[B') {
       if (popupRef.current.open) {
-        setPopup((current) => {
-          if (!current.open || current.suggestions.length === 0) return current
-          const isDown = data === '\x1b[B'
-          // selectedIndex === -1 表示未选中，按下箭头选中第一个，按上箭头选中最后一个
-          if (current.selectedIndex === -1) {
-            return { ...current, selectedIndex: isDown ? 0 : current.suggestions.length - 1 }
-          }
-          const delta = isDown ? 1 : -1
-          const nextIndex = Math.max(0, Math.min(current.suggestions.length - 1, current.selectedIndex + delta))
-          if (nextIndex === current.selectedIndex) return current
-          return { ...current, selectedIndex: nextIndex }
-        })
+        navigateColumn(data === '\x1b[B')
         return true
       }
       bufferRef.current.stale = true
@@ -179,12 +349,17 @@ export function useCompletion({ getTerminal, sendInput, sendComplete, getCwd, en
 
     if (data === '\r') {
       if (popupRef.current.open) {
-        // 只有选中项才应用补全，否则关闭面板并正常发送回车
-        if (popupRef.current.selectedIndex >= 0) {
+        const col = popupRef.current.columns[popupRef.current.activeColumn]
+        if (col && col.selectedIndex >= 0) {
           applySelection()
           return true
         }
         closePopup()
+      }
+      // 采集历史命令（在清空前记录）
+      const cmdText = bufferRef.current.text.trim()
+      if (cmdText) {
+        recordCommand(cmdText, getCwdRef.current())
       }
       if (isTuiCommand(bufferRef.current.text)) {
         inTuiRef.current = true
@@ -246,8 +421,35 @@ export function useCompletion({ getTerminal, sendInput, sendComplete, getCwd, en
       return false
     }
 
+    // ← / →：级联模式下用于列间导航；否则保持原有光标移动逻辑
     if (data === '\x1b[D' || data === '\x1b[C') {
-      const delta = data === '\x1b[D' ? -1 : 1
+      const isRight = data === '\x1b[C'
+      const currentPopup = popupRef.current
+      if (currentPopup.open && currentPopup.cascade) {
+        if (isRight) {
+          // →：已选中目录则展开子菜单（拦截）。
+          if (expandDirectory()) {
+            return true
+          }
+          // →：未选中任何项时，自动选中当前列第一个目录项（拦截），
+          // 下次按 → 即可展开，让 → 保持一致的"向右推进"语义。
+          if (selectFirstDirectory()) {
+            return true
+          }
+          // 既无目录可展开也无目录可选中：透传给 shell 移动光标，面板保持打开。
+          moveCursorInBuffer(bufferRef.current, 1)
+          return false
+        }
+        // ←：多列时收起最右列并拦截；单列时透传做光标左移（保持面板）。
+        if (currentPopup.columns.length > 1) {
+          collapseColumn()
+          return true
+        }
+        moveCursorInBuffer(bufferRef.current, -1)
+        return false
+      }
+      // 非级联/面板关闭：保持原光标移动追踪（移动后关闭面板）。
+      const delta = isRight ? 1 : -1
       if (!moveCursorInBuffer(bufferRef.current, delta)) {
         bufferRef.current.stale = true
         closePopup()
@@ -259,6 +461,14 @@ export function useCompletion({ getTerminal, sendInput, sendComplete, getCwd, en
     }
 
     if (data === '\t') {
+      // 级联/普通面板开启时，Tab 应用选中项（无选中则透传）
+      if (popupRef.current.open) {
+        const col = popupRef.current.columns[popupRef.current.activeColumn]
+        if (col && col.selectedIndex >= 0) {
+          applySelection()
+          return true
+        }
+      }
       return false
     }
 
@@ -276,7 +486,7 @@ export function useCompletion({ getTerminal, sendInput, sendComplete, getCwd, en
     bufferRef.current.stale = true
     closePopup()
     return false
-  }, [applySelection, closePopup, getTerminal, scheduleRecompute])
+  }, [applySelection, closePopup, collapseColumn, expandDirectory, getTerminal, navigateColumn, scheduleRecompute, selectFirstDirectory])
 
   const handleOutputData = useCallback((data: string) => {
     const state = detectTuiSequence(data)
@@ -289,12 +499,33 @@ export function useCompletion({ getTerminal, sendInput, sendComplete, getCwd, en
   }, [closePopup])
 
   const handleCompleteResponse = useCallback((payload: CompleteResponsePayload) => {
+    // 优先匹配展开子目录的请求
+    const expandMeta = expandMetaRef.current.get(payload.request_id)
+    if (expandMeta) {
+      expandMetaRef.current.delete(payload.request_id)
+      if (payload.error) return
+      const lines = splitOutputLines(payload.output)
+      cache.set(expandMeta.script, expandMeta.cwd, lines)
+      const dirs = parseDynamicOutputByParser(lines.join('\n'), expandMeta.dirPath, 'directory-list')
+      if (dirs.length === 0) return
+      setPopup((current) => {
+        if (!current.open) return current
+        const parentDepth = expandMeta.parentDepth
+        if (parentDepth >= current.columns.length) return current
+        const nextCols = current.columns.slice(0, parentDepth + 1)
+        // 展开子菜单时自动选中第一项
+        nextCols.push({ suggestions: dirs, selectedIndex: 0 })
+        return { ...current, columns: nextCols, activeColumn: nextCols.length - 1 }
+      })
+      return
+    }
+
     const meta = requestMetaRef.current.get(payload.request_id)
     if (!meta) return
 
     requestMetaRef.current.delete(payload.request_id)
     if (!payload.error) {
-      cacheRef.current!.set(meta.script, meta.cwd, splitOutputLines(payload.output))
+      cache.set(meta.script, meta.cwd, splitOutputLines(payload.output))
     }
 
     if (payload.request_id !== pendingRequestRef.current) return
@@ -305,16 +536,17 @@ export function useCompletion({ getTerminal, sendInput, sendComplete, getCwd, en
     const buffer = bufferRef.current
     if (buffer.stale || !enabledRef.current || inTuiRef.current) return
     recompute()
-  }, [recompute])
+  }, [recompute, cache])
 
   const reset = useCallback(() => {
     bufferRef.current = { text: '', cursor: 0, stale: false }
     pendingRequestRef.current = null
     requestMetaRef.current.clear()
+    expandMetaRef.current.clear()
     inTuiRef.current = false
     closePopup()
-    cacheRef.current?.clear()
-  }, [closePopup])
+    cache.clear()
+  }, [closePopup, cache])
 
   useEffect(() => {
     return () => {
@@ -322,7 +554,17 @@ export function useCompletion({ getTerminal, sendInput, sendComplete, getCwd, en
     }
   }, [])
 
-  return { popup, handleData, reset, applySelection, handleCompleteResponse, handleOutputData }
+  return {
+    popup,
+    handleData,
+    reset,
+    applySelection,
+    handleCompleteResponse,
+    handleOutputData,
+    hoverSelect,
+    clickSelect,
+    expandDirectory,
+  }
 }
 
 function mergeSuggestions(staticSuggestions: Suggestion[], dynamicSuggestions: Suggestion[]): Suggestion[] {

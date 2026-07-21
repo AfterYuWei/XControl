@@ -23,7 +23,7 @@ export interface CompletionResult {
   suggestions: Suggestion[]
 }
 
-export type ParserKey = 'git-branch' | 'docker-ps' | 'kubectl-name' | 'file-list' | 'line-list'
+export type ParserKey = 'git-branch' | 'docker-ps' | 'kubectl-name' | 'file-list' | 'line-list' | 'directory-list'
 
 export interface DynamicGenerator {
   script: string
@@ -160,10 +160,13 @@ export function getDynamicGenerator(ctx: CompletionContext, cwd?: string): Dynam
   if (!arg) return null
 
   if (arg.fileGenerator) {
+    const isCd = isCdPathContext(ctx)
     return {
       script: buildFileListScript(extractCurrentTokenRawValue(ctx.currentToken)),
       cacheTtl: arg.fileGenerator.cacheTtl ?? 3000,
-      parser: 'file-list',
+      // cd 命令走 directory-list，产出可级联展开的 directory 候选；
+      // 其它文件命令保持 file-list（文件+目录混合，type:'arg'）。
+      parser: isCd ? 'directory-list' : 'file-list',
       dirsOnly: arg.fileGenerator.dirsOnly ?? false,
     }
   }
@@ -182,6 +185,7 @@ const parsers: Record<ParserKey, (output: string, currentToken: string, dirsOnly
   'kubectl-name': parseKubectlNameOutput,
   'file-list': parseFileListOutput,
   'line-list': parseLineListOutput,
+  'directory-list': parseDirectoryListOutput,
 }
 
 export function parseDynamicOutputByParser(
@@ -191,7 +195,7 @@ export function parseDynamicOutputByParser(
   dirsOnly?: boolean
 ): Suggestion[] {
   const fn = parsers[parser] ?? parseDynamicOutput
-  const prefix = parser === 'file-list'
+  const prefix = parser === 'file-list' || parser === 'directory-list'
     ? extractCurrentTokenRawValue(currentToken)
     : getCurrentCompletionValue(currentToken)
   return fn(output, prefix, dirsOnly)
@@ -287,6 +291,48 @@ export function parseFileListOutput(output: string, currentToken: string, dirsOn
     result.push({ name: fullName, type: 'arg', description: isDir ? '目录' : undefined, origin: 'dynamic' })
   }
   return result
+}
+
+// cd 专用：解析 `ls -1 -A -F` 输出为目录级联候选。
+// 同时保留目录（trailing '/'）和文件：目录 isDir:true 可向右展开子菜单，
+// 文件 isDir:false 仅可选中填入。name 保留完整路径（用于应用/展开），
+// displayName 只含当前段名（如 yuweinfo/），供面板显示，避免末级显示冗长全路径。
+export function parseDirectoryListOutput(output: string, currentToken: string): Suggestion[] {
+  const seen = new Set<string>()
+  const result: Suggestion[] = []
+  const lastSlash = currentToken.lastIndexOf('/')
+  const dirPrefix = lastSlash >= 0 ? currentToken.slice(0, lastSlash + 1) : ''
+  const base = lastSlash >= 0 ? currentToken.slice(lastSlash + 1) : currentToken
+
+  for (const rawLine of output.split('\n')) {
+    const line = rawLine.trim()
+    if (!line) continue
+
+    const lastChar = line[line.length - 1]
+    let fileName = line
+    let isDir = false
+    if (lastChar === '/') {
+      isDir = true // 保留 trailing '/'，ls -F 用它标记目录
+    } else if (lastChar === '*' || lastChar === '@' || lastChar === '|' || lastChar === '=') {
+      fileName = line.slice(0, -1) // 可执行/符号链接等标记，去掉标记字符
+    }
+
+    if (!fileName.startsWith(base)) continue
+    const fullName = dirPrefix + fileName
+    if (seen.has(fullName)) continue
+    seen.add(fullName)
+    // displayName 仅含当前段（去掉路径前缀），末级目录不再显示完整路径
+    result.push({ name: fullName, displayName: fileName, type: 'directory', isDir, origin: 'dynamic' })
+  }
+  return result
+}
+
+// 判断当前输入是否处于 cd 命令的路径参数位置（用于启用级联目录菜单）。
+// 形如 `cd `、`cd /Pro`、`cd Projects/lan`（暂不支持 cd 带选项的复杂情况）。
+export function isCdPathContext(ctx: CompletionContext): boolean {
+  if (ctx.cursorTokenIndex < 1) return false
+  const command = ctx.tokens[0] ? parseTokenState(ctx.tokens[0]).value : ''
+  return command === 'cd'
 }
 
 function splitShellTokens(inputText: string): string[] {

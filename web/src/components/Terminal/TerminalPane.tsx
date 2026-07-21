@@ -373,7 +373,16 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     },
   })
 
-  const { popup, handleData, reset: resetCompletion, handleCompleteResponse, handleOutputData } = useCompletion({
+  const {
+    popup,
+    handleData,
+    reset: resetCompletion,
+    handleCompleteResponse,
+    handleOutputData,
+    hoverSelect,
+    clickSelect,
+    expandDirectory,
+  } = useCompletion({
     getTerminal,
     sendInput,
     sendComplete,
@@ -490,7 +499,14 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     <div className="relative h-full w-full" style={{ background: 'var(--term-bg)' }}>
       <div ref={containerRef} className="term-host" />
 
-      <CompletionPanel popup={popup} getTerminal={getTerminal} containerRef={containerRef} />
+      <CompletionPanel
+        popup={popup}
+        getTerminal={getTerminal}
+        containerRef={containerRef}
+        onHoverItem={hoverSelect}
+        onClickItem={clickSelect}
+        onExpandDir={expandDirectory}
+      />
 
       {/* 字体大小悬浮提示 */}
       {fontSizeHint.show && (

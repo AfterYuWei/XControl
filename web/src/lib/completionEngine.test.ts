@@ -5,6 +5,8 @@ import {
   buildCompletionInsertPlan,
   getDynamicGenerator,
   getSuggestions,
+  isCdPathContext,
+  parseDirectoryListOutput,
   parseLineListOutput,
   tokenize,
   type CompletionContext,
@@ -91,6 +93,61 @@ describe('completionEngine', () => {
   it('parses generic line-list output as dynamic arg suggestions', () => {
     expect(parseLineListOutput('alpha\nbeta\n', 'be')).toEqual([
       { name: 'beta', type: 'arg', origin: 'dynamic' },
+    ])
+  })
+
+  it('detects cd path context for cascading directory menus', () => {
+    expect(isCdPathContext(ctx('cd '))).toBe(true)
+    expect(isCdPathContext(ctx('cd /Pro'))).toBe(true)
+    expect(isCdPathContext(ctx('cd Projects/lan'))).toBe(true)
+    expect(isCdPathContext(ctx('ls /Pro'))).toBe(false)
+    expect(isCdPathContext(ctx('git ch'))).toBe(false)
+  })
+
+  it('uses directory-list parser for cd file generator', () => {
+    expect(getDynamicGenerator(ctx('cd /Pro'))).toMatchObject({ parser: 'directory-list' })
+    // 非 cd 的文件命令保持 file-list
+    expect(getDynamicGenerator(ctx('cat /Pro'))).toMatchObject({ parser: 'file-list' })
+  })
+
+  it('parses directory-list output keeping dirs and files with short displayName', () => {
+    const out = 'proc/\nProjects/\nfile.txt\nREADME.md\n'
+    const result = parseDirectoryListOutput(out, '/')
+    // 目录+文件都保留；name 存完整路径，displayName 存短名
+    expect(result).toEqual([
+      { name: '/proc/', displayName: 'proc/', type: 'directory', isDir: true, origin: 'dynamic' },
+      { name: '/Projects/', displayName: 'Projects/', type: 'directory', isDir: true, origin: 'dynamic' },
+      { name: '/file.txt', displayName: 'file.txt', type: 'directory', isDir: false, origin: 'dynamic' },
+      { name: '/README.md', displayName: 'README.md', type: 'directory', isDir: false, origin: 'dynamic' },
+    ])
+  })
+
+  it('parses subdirectory output relative to an expanded path prefix', () => {
+    const out = 'yuweinfo/\nlanya/\nindex.ts\n'
+    const result = parseDirectoryListOutput(out, '/Projects/')
+    // name 是完整路径（用于应用/展开），displayName 只含当前段（末级不显示全路径）
+    expect(result).toEqual([
+      { name: '/Projects/yuweinfo/', displayName: 'yuweinfo/', type: 'directory', isDir: true, origin: 'dynamic' },
+      { name: '/Projects/lanya/', displayName: 'lanya/', type: 'directory', isDir: true, origin: 'dynamic' },
+      { name: '/Projects/index.ts', displayName: 'index.ts', type: 'directory', isDir: false, origin: 'dynamic' },
+    ])
+  })
+
+  it('filters directory-list output by the current base prefix', () => {
+    const out = 'proc/\nProjects/\n'
+    const result = parseDirectoryListOutput(out, '/Pro')
+    expect(result).toEqual([
+      { name: '/Projects/', displayName: 'Projects/', type: 'directory', isDir: true, origin: 'dynamic' },
+    ])
+  })
+
+  it('strips executable/symlink markers from ls -F output', () => {
+    const out = 'run.sh*\nlink@\nreal/\n'
+    const result = parseDirectoryListOutput(out, '/')
+    expect(result).toEqual([
+      { name: '/run.sh', displayName: 'run.sh', type: 'directory', isDir: false, origin: 'dynamic' },
+      { name: '/link', displayName: 'link', type: 'directory', isDir: false, origin: 'dynamic' },
+      { name: '/real/', displayName: 'real/', type: 'directory', isDir: true, origin: 'dynamic' },
     ])
   })
 })

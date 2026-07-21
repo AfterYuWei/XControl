@@ -1,13 +1,21 @@
 // 自建补全 Spec（精简数据格式，非 Fig 运行时格式）
 
-export type SuggestionType = 'command' | 'subcommand' | 'option' | 'arg'
+export type SuggestionType = 'command' | 'subcommand' | 'option' | 'arg' | 'directory' | 'history'
 export type SuggestionOrigin = 'static' | 'dynamic'
 
 export interface Suggestion {
   name: string
+  /** 可选的显示名（如末级目录只显示目录名，不含完整路径）；缺省时显示 name */
+  displayName?: string
   description?: string
   type: SuggestionType
   origin?: SuggestionOrigin
+  /** directory 类型：是否为可展开子菜单的目录（false 表示文件） */
+  isDir?: boolean
+  /** history 类型：历史命令执行次数（如 ×4） */
+  count?: number
+  /** history 类型：完整历史命令（应用时整条插入） */
+  fullCommand?: string
 }
 
 export interface Arg {

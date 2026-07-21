@@ -1,15 +1,18 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"github.com/yuweinfo/xcontrol/config"
 	"github.com/yuweinfo/xcontrol/crypto"
 	"github.com/yuweinfo/xcontrol/gateway"
 	"github.com/yuweinfo/xcontrol/store"
+	xcsync "github.com/yuweinfo/xcontrol/sync"
 )
 
 func main() {
@@ -42,8 +45,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Initialize sync manager (local version control)
+	backupDir := filepath.Join(filepath.Dir(cfg.DBPath), "backups")
+	syncMgr, err := xcsync.NewManager(store.NewBackupStore(db, encryptor), store.NewSyncStore(db, encryptor), store.NewSyncProviderStore(db, encryptor), backupDir)
+	if err != nil {
+		slog.Error("failed to init sync manager", "error", err)
+		os.Exit(1)
+	}
+	syncCtx, syncCancel := context.WithCancel(context.Background())
+	defer syncCancel()
+	syncMgr.Start(syncCtx)
+	defer syncMgr.Stop()
+
 	// Create router
-	handler := gateway.NewRouter(db, encryptor, WebFS())
+	handler := gateway.NewRouter(db, encryptor, WebFS(), syncMgr)
 
 	// Start server
 	addr := fmt.Sprintf(":%d", cfg.Port)

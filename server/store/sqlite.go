@@ -83,6 +83,47 @@ func migrate(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_profiles_group ON profiles(group_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_audit_profile ON audit_logs(profile_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_logs(timestamp)`,
+		`CREATE TABLE IF NOT EXISTS sync_versions (
+			id         TEXT PRIMARY KEY,
+			version    INTEGER NOT NULL UNIQUE,
+			hash       TEXT NOT NULL,
+			size       INTEGER NOT NULL,
+			file_path  TEXT NOT NULL,
+			origin     TEXT NOT NULL,
+			synced_to  TEXT NOT NULL DEFAULT '[]',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_sync_versions_ver ON sync_versions(version DESC)`,
+		`CREATE TABLE IF NOT EXISTS sync_providers (
+			id         TEXT PRIMARY KEY,
+			type       TEXT NOT NULL,
+			name       TEXT NOT NULL,
+			enabled    INTEGER NOT NULL DEFAULT 1,
+			config     TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS sync_state (
+			id            INTEGER PRIMARY KEY CHECK (id = 1),
+			next_version  INTEGER NOT NULL DEFAULT 1,
+			last_sync_at  DATETIME,
+			status        TEXT NOT NULL DEFAULT 'idle',
+			conflict_json TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE TABLE IF NOT EXISTS sync_settings (
+			key   TEXT PRIMARY KEY,
+			value TEXT NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS sync_events (
+			id          TEXT PRIMARY KEY,
+			provider_id TEXT NOT NULL DEFAULT '',
+			action      TEXT NOT NULL,
+			version     INTEGER NOT NULL DEFAULT 0,
+			success     INTEGER NOT NULL,
+			error       TEXT NOT NULL DEFAULT '',
+			created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_sync_events_time ON sync_events(created_at DESC)`,
 	}
 
 	for _, m := range migrations {
@@ -113,6 +154,11 @@ func migrate(db *sql.DB) error {
 	}
 	if _, err := db.Exec(`UPDATE vault SET updated_at = created_at WHERE updated_at IS NULL`); err != nil {
 		return fmt.Errorf("backfill vault.updated_at: %w", err)
+	}
+
+	// sync_state is a single-row table; seed it once.
+	if _, err := db.Exec(`INSERT OR IGNORE INTO sync_state (id, next_version, status) VALUES (1, 1, 'idle')`); err != nil {
+		return fmt.Errorf("seed sync_state: %w", err)
 	}
 
 	return nil

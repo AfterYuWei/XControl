@@ -299,3 +299,146 @@
   gap: 6px;
 }
 
+/* 云同步面板 */
+.sync-status-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.sync-status-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  background: var(--bg-input);
+}
+.sync-status-label {
+  font: 500 11px / 1 var(--sans);
+  color: var(--fg-4);
+}
+.sync-status-value {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font: 600 15px / 1.2 var(--sans);
+  color: var(--fg);
+}
+.sync-status-value em {
+  font: 400 11px / 1.3 var(--sans);
+  color: var(--fg-4);
+  font-style: normal;
+}
+.sync-status-empty {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg-3);
+}
+
+.sync-version-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.sync-version-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  background: var(--bg-2, var(--bg-panel));
+}
+.sync-version-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+.sync-version-tag {
+  font: 600 12px / 1 var(--mono, monospace);
+  color: var(--accent);
+  background: var(--accent-bg);
+  padding: 3px 7px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.sync-version-meta {
+  font: 400 11px / 1.3 var(--sans);
+  color: var(--fg-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sync-version-unsynced {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font: 400 10px / 1 var(--sans);
+  color: var(--yellow, #eab308);
+  flex-shrink: 0;
+}
+.sync-version-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* 云服务列表 */
+.sync-provider-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.sync-provider-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  background: var(--bg-2, var(--bg-panel));
+}
+.sync-provider-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.sync-provider-name {
+  font: 500 var(--sans-size) / 1.3 var(--sans);
+  color: var(--fg);
+}
+.sync-provider-type {
+  font: 400 10px / 1 var(--sans);
+  color: var(--fg-4);
+  background: var(--bg-input);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* 冲突横幅 */
+.sync-conflict-banner {
+  border-color: var(--yellow, #eab308);
+  background: color-mix(in srgb, var(--yellow, #eab308) 6%, var(--bg-2, var(--bg-panel)));
+}
+
+/* OAuth 授权状态标签 */
+.sync-provider-auth {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font: 400 10px / 1 var(--sans);
+  color: var(--yellow, #eab308);
+}
+.sync-provider-auth.ok {
+  color: var(--green, #22c55e);
+}
+

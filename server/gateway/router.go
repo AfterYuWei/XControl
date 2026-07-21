@@ -14,10 +14,11 @@ import (
 	sftpdriver "github.com/yuweinfo/xcontrol/protocol/sftp"
 	sshdriver "github.com/yuweinfo/xcontrol/protocol/ssh"
 	"github.com/yuweinfo/xcontrol/store"
+	xcsync "github.com/yuweinfo/xcontrol/sync"
 	"github.com/yuweinfo/xcontrol/ws"
 )
 
-func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS) http.Handler {
+func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS, syncMgr *xcsync.Manager) http.Handler {
 	mux := http.NewServeMux()
 
 	if err := store.BackfillProfileInlineCredentials(db, encryptor); err != nil {
@@ -59,11 +60,33 @@ func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS) http.Handle
 	serverDetailH := handler.NewServerDetailHandler(profileStore, vaultStore, encryptor, pool)
 	editH := handler.NewEditHandler(sftpH, serverDetailH)
 	backupH := handler.NewBackupHandler(store.NewBackupStore(db, encryptor), auditStore)
+	syncH := handler.NewSyncHandler(syncMgr)
 
 	// Backup routes (export / preview / import)
 	mux.HandleFunc("GET /api/backup/export", backupH.Export)
 	mux.HandleFunc("POST /api/backup/preview", backupH.Preview)
 	mux.HandleFunc("POST /api/backup/import", backupH.Import)
+
+	// Sync routes (local version control; cloud providers land in M2)
+	mux.HandleFunc("GET /api/sync/status", syncH.Status)
+	mux.HandleFunc("POST /api/sync/backup", syncH.BackupNow)
+	mux.HandleFunc("GET /api/sync/versions", syncH.Versions)
+	mux.HandleFunc("POST /api/sync/versions/{id}/restore", syncH.RestoreVersion)
+	mux.HandleFunc("DELETE /api/sync/versions/{id}", syncH.DeleteVersion)
+	mux.HandleFunc("GET /api/sync/events", syncH.Events)
+	mux.HandleFunc("GET /api/sync/settings", syncH.GetSettings)
+	mux.HandleFunc("PUT /api/sync/settings", syncH.UpdateSettings)
+	mux.HandleFunc("POST /api/sync/shutdown", syncH.ShutdownTrigger)
+	mux.HandleFunc("POST /api/sync/now", syncH.SyncNow)
+	mux.HandleFunc("POST /api/sync/push", syncH.Push)
+	mux.HandleFunc("POST /api/sync/resolve", syncH.ResolveConflict)
+	mux.HandleFunc("GET /api/sync/providers", syncH.ListProviders)
+	mux.HandleFunc("POST /api/sync/providers", syncH.CreateProvider)
+	mux.HandleFunc("PUT /api/sync/providers/{id}", syncH.UpdateProvider)
+	mux.HandleFunc("DELETE /api/sync/providers/{id}", syncH.DeleteProvider)
+	mux.HandleFunc("POST /api/sync/providers/{id}/test", syncH.TestProvider)
+	mux.HandleFunc("GET /api/sync/oauth/{type}/url", syncH.OAuthURL)
+	mux.HandleFunc("GET /api/sync/oauth/{type}/callback", syncH.OAuthCallback)
 
 	// Profile routes
 	mux.HandleFunc("GET /api/profiles", profileH.List)
@@ -173,6 +196,9 @@ func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS) http.Handle
 
 	// Apply middleware
 	var h http.Handler = mux
+	if syncMgr != nil {
+		h = middleware.ChangeNotifier(syncMgr.NotifyChange, h)
+	}
 	h = middleware.Recovery(h)
 	h = middleware.Logger(h)
 	h = middleware.CORS(h)

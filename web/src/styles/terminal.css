@@ -7,10 +7,9 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  /* overflow: hidden clips the square xterm canvas to the rounded corners.
-     isolation: isolate forces a self-contained stacking context so the
-     GPU-composited WebGL/Canvas layers are anti-aliased against the corner
-     curve instead of poking past it. */
+  /* 外层裁剪：border-radius + overflow: hidden 将内部 xterm 的四个直角直接
+     裁掉，形成平滑圆角。isolation: isolate 强制独立堆叠上下文，让 GPU 合成的
+     WebGL/Canvas 层沿圆角曲线抗锯齿，而不是刺穿边缘。 */
   overflow: hidden;
   isolation: isolate;
   position: relative;
@@ -20,13 +19,21 @@
   margin: 0 8px;
   min-height: 0;
   align-self: stretch;
-  /* Inner padding keeps xterm content clear of the rounded corners so text and
-     the scrollbar never overlap the curved edge. The padding ring uses
-     var(--term-bg), matching the xterm background seamlessly. */
-  padding: 10px;
+  /* 注意：此处不再设 padding。留白已下沉到 .term-host（xterm 挂载容器），
+     否则双层 padding + 双层圆角会在外层与 Canvas 之间产生缝隙/黑边。 */
   border-radius: var(--r-lg);
   border: 1px solid var(--term-border);
   box-shadow: var(--term-shadow);
+}
+/* xterm 挂载容器：撑满 wrapper，并承载内边距作为文本/光标与圆角边缘的
+   安全距离。背景设为 var(--term-bg)，使 xterm 画布未覆盖的缝隙透出当前
+   主题色（浅色主题为白），而不是默认黑，从而消除底部黑条。 */
+.term-host {
+  width: 100%;
+  height: 100%;
+  padding: 10px;
+  box-sizing: border-box;
+  background: var(--term-bg);
 }
 .term-empty-state {
   display: flex;
@@ -70,20 +77,14 @@
   cursor: pointer;
 }
 
-/* Belt-and-suspenders for the rounded-corner look: xterm renders character
-   backgrounds (vim/Neovim/Claude Code TUI themes) onto square Canvas/WebGL
-   layers. These rules guarantee every xterm layer stays inside the padded
-   content box of .term-wrap and participates in the same clipping context,
-   so TUI background colors never bleed into the rounded padding ring. */
-.term-wrap .xterm {
-  width: 100%;
-  height: 100%;
-  border-radius: calc(var(--r-lg) - 4px);
-  overflow: hidden;
-}
+/* xterm 各渲染层贴满 .term-host 的内容盒（已含内边距）。圆角裁剪统一交给
+   外层 .term-wrap（overflow: hidden）完成，内层不再设 border-radius/overflow，
+   避免两层圆角叠加在外层与 Canvas 之间产生缝隙。背景设为透明，让画布未
+   覆盖的缝隙透出 .term-host 的主题色（浅色为白），而不是 xterm 默认黑。 */
+.term-wrap .xterm,
 .term-wrap .xterm-viewport,
 .term-wrap .xterm-screen {
-  border-radius: calc(var(--r-lg) - 4px);
+  background: transparent;
 }
 
 /* ===== STATUS BAR ===== */

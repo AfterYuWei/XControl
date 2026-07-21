@@ -35,6 +35,22 @@ npx shadcn@latest add <comp>   # Add shadcn/ui components (e.g., button, dialog)
 
 Start the Go backend first (`cd server && ./xcontrol-server`), then the Vite dev server (`cd web && npm run dev`). The frontend proxies API/WebSocket requests to `localhost:9090`.
 
+### Tests
+
+```bash
+cd server
+go test ./...                                    # Run all Go tests
+go test -run TestEnsurePublicKey ./gateway/handler  # Run a single test by name
+go test -v ./gateway/handler                     # Verbose, one package
+
+cd web
+npm run test:unit                                # Run all Vitest frontend tests (vitest run)
+npx vitest run src/lib/completionEngine.test.ts  # Run a single frontend test file
+npx vitest                                       # Watch mode
+```
+
+Go uses the standard `testing` package (no extra deps). Frontend tests use Vitest (`vitest` devDependency); test files are co-located as `*.test.ts`. Both run without network access or a live database.
+
 ## Architecture
 
 Two-process model: Go HTTP server (API + WebSocket + SQLite) and Vite-served React SPA. They communicate over REST and a WebSocket carrying terminal I/O.
@@ -97,7 +113,7 @@ The `electron/` directory contains an Electron wrapper for building desktop appl
 - Go module: `github.com/yuweinfo/xcontrol`
 - UI components use shadcn/ui (new-york style, Lucide icons, Tailwind CSS variables)
 - Tailwind CSS v4 with CSS-first configuration via `@tailwindcss/vite` plugin and `@theme` directive in `web/src/index.css`
-- No test infrastructure exists yet (no Go test files, no frontend test runner)
+- Test infrastructure exists: Go uses the standard `testing` package (`server/gateway/handler/vault_test.go`); frontend uses Vitest (`npm run test:unit`, co-located `*.test.ts` files). Run both with the commands in the Tests section above.
 - SSH host key verification uses `InsecureIgnoreHostKey()` — acceptable for development, not production
 - SFTP file editor uses Monaco Editor via `@monaco-editor/loader` and `vite-plugin-monaco-editor`
 - Detailed design document: `docs/DEVELOPMENT.md` (in Chinese, includes API specs, data model, and architecture diagrams)

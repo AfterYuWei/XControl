@@ -488,7 +488,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
 
   return (
     <div className="relative h-full w-full" style={{ background: 'var(--term-bg)' }}>
-      <div ref={containerRef} className="h-full w-full" />
+      <div ref={containerRef} className="term-host" />
 
       <CompletionPanel popup={popup} getTerminal={getTerminal} containerRef={containerRef} />
 

@@ -58,6 +58,12 @@ func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS) http.Handle
 	sftpH := handler.NewSftpHandler(profileStore, vaultStore, encryptor, auditStore, pm, sftpHub, transferMgr, pool)
 	serverDetailH := handler.NewServerDetailHandler(profileStore, vaultStore, encryptor, pool)
 	editH := handler.NewEditHandler(sftpH, serverDetailH)
+	backupH := handler.NewBackupHandler(store.NewBackupStore(db, encryptor), auditStore)
+
+	// Backup routes (export / preview / import)
+	mux.HandleFunc("GET /api/backup/export", backupH.Export)
+	mux.HandleFunc("POST /api/backup/preview", backupH.Preview)
+	mux.HandleFunc("POST /api/backup/import", backupH.Import)
 
 	// Profile routes
 	mux.HandleFunc("GET /api/profiles", profileH.List)

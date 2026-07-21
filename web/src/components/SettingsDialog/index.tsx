@@ -6,8 +6,9 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { Monitor, Terminal, Palette, Type, ChevronRight } from 'lucide-react'
+import { Monitor, Terminal, Palette, Type, ChevronRight, DatabaseBackup } from 'lucide-react'
 import { TerminalThemePicker } from './TerminalThemePicker'
+import { BackupPanel } from './BackupPanel'
 
 interface SettingsDialogProps {
   open: boolean
@@ -95,11 +96,12 @@ const terminalFontFamilyCNOptions = [
   { value: "sans-serif", label: '系统默认' },
 ]
 
-type SettingsTab = 'appearance' | 'terminal'
+type SettingsTab = 'appearance' | 'terminal' | 'backup'
 
 const tabs: { key: SettingsTab; label: string; icon: typeof Monitor }[] = [
   { key: 'appearance', label: '外观', icon: Palette },
   { key: 'terminal', label: '终端', icon: Terminal },
+  { key: 'backup', label: '数据备份', icon: DatabaseBackup },
 ]
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
@@ -309,6 +311,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 </div>
               </div>
             )}
+
+            {activeTab === 'backup' && <BackupPanel />}
           </div>
         </div>
       </DialogContent>

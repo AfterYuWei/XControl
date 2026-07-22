@@ -94,6 +94,17 @@ func (h *SyncHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, settings)
 }
 
+// RevealPassword handles POST /api/sync/settings/reveal-password — returns the
+// decrypted sync password so the settings panel can display it on demand.
+func (h *SyncHandler) RevealPassword(w http.ResponseWriter, r *http.Request) {
+	pwd, err := h.mgr.RevealSyncPassword()
+	if err != nil {
+		writeError(w, http.StatusNotFound, "NO_PASSWORD", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"sync_password": pwd})
+}
+
 // UpdateSettings handles PUT /api/sync/settings. Body is a full settings
 // object plus optional sync_password (empty = keep current).
 func (h *SyncHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {

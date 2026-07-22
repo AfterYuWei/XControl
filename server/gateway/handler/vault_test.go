@@ -51,7 +51,7 @@ func TestValidateVaultTypeUpdate(t *testing.T) {
 		t.Fatalf("expected matching type update to succeed, got %v", err)
 	}
 
-	if err := validateVaultTypeUpdate(model.VaultTypePrivateKey, model.VaultTypeSSHCertificate); err == nil {
+	if err := validateVaultTypeUpdate(model.VaultTypePrivateKey, model.VaultTypePassword); err == nil {
 		t.Fatal("expected changing credential type to be rejected")
 	}
 }

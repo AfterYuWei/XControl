@@ -39,7 +39,8 @@ type Manager struct {
 	backupDir   string
 	deviceID    string
 	scheduler   *Scheduler
-	changeCh    chan struct{} // receives data-change notifications
+	changeCh    chan struct{}  // receives data-change notifications
+	bg          sync.WaitGroup // tracks fire-and-forget background pushes
 }
 
 func NewManager(backups *store.BackupStore, versions *store.SyncStore, providers *store.SyncProviderStore, backupDir string) (*Manager, error) {
@@ -61,6 +62,11 @@ func NewManager(backups *store.BackupStore, versions *store.SyncStore, providers
 // Start launches the scheduler loop; Stop shuts it down.
 func (m *Manager) Start(ctx context.Context) { m.scheduler.Run(ctx) }
 func (m *Manager) Stop()                     { m.scheduler.Stop() }
+
+// Wait blocks until all fire-and-forget background work (e.g. the async cloud
+// push after CreateVersion) has finished. Used by tests and shutdown to avoid
+// racing with connection/file teardown.
+func (m *Manager) Wait() { m.bg.Wait() }
 
 // ReloadSettings reschedules timers after settings change.
 func (m *Manager) ReloadSettings() { m.scheduler.Reload() }
@@ -84,6 +90,19 @@ func (m *Manager) GetSettings() (*model.SyncSettings, error) {
 	}
 	st.SyncPassword = ""
 	return st, nil
+}
+
+// RevealSyncPassword returns the decrypted sync password for display in the UI.
+// Security-sensitive: only intended for the authenticated settings panel.
+func (m *Manager) RevealSyncPassword() (string, error) {
+	st, err := m.settings()
+	if err != nil {
+		return "", err
+	}
+	if !st.SyncPasswordSet || st.SyncPassword == "" {
+		return "", errors.New("尚未设置同步密码")
+	}
+	return st.SyncPassword, nil
 }
 
 // SaveSettings persists settings and reschedules timers.
@@ -200,7 +219,11 @@ func (m *Manager) CreateVersion(ctx context.Context, origin string) (*model.Sync
 
 	// Push to clouds asynchronously (failures logged as events, retried on
 	// the next sync cycle) so backup latency stays local-only.
-	go m.PushLatest(context.Background())
+	m.bg.Add(1)
+	go func() {
+		defer m.bg.Done()
+		m.PushLatest(context.Background())
+	}()
 
 	// FIFO retention after every successful version.
 	if err := m.enforceRetention(settings); err != nil {

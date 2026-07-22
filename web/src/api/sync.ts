@@ -30,6 +30,10 @@ export const syncApi = {
       sync_password: syncPassword || undefined,
     }),
 
+  /** Decrypt and return the stored sync password (for display on demand). */
+  revealPassword: () =>
+    api.post<{ sync_password: string }>('/api/sync/settings/reveal-password'),
+
   /** Fire-and-forget exit backup via sendBeacon (survives page unload). */
   notifyShutdown: () => {
     if (typeof navigator !== 'undefined' && navigator.sendBeacon) {

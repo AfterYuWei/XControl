@@ -76,6 +76,7 @@ func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS, syncMgr *xc
 	mux.HandleFunc("GET /api/sync/events", syncH.Events)
 	mux.HandleFunc("GET /api/sync/settings", syncH.GetSettings)
 	mux.HandleFunc("PUT /api/sync/settings", syncH.UpdateSettings)
+	mux.HandleFunc("POST /api/sync/settings/reveal-password", syncH.RevealPassword)
 	mux.HandleFunc("POST /api/sync/shutdown", syncH.ShutdownTrigger)
 	mux.HandleFunc("POST /api/sync/now", syncH.SyncNow)
 	mux.HandleFunc("POST /api/sync/push", syncH.Push)

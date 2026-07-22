@@ -30,6 +30,9 @@ func setupManager(t *testing.T) (*Manager, *store.SyncStore) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Drain async cloud pushes before closing the DB / removing the temp dir,
+	// otherwise t.TempDir cleanup races with background DB writes.
+	t.Cleanup(func() { mgr.Wait() })
 	return mgr, syncStore
 }
 

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Loader2, Plus, TestTube2, Trash2, ExternalLink, ShieldCheck } from 'lucide-react'
+import { Loader2, Plus, TestTube2, Trash2, ExternalLink, ShieldCheck, Cloud, Database, HardDrive, Folder, Server } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -25,6 +25,22 @@ const emptyForm = (type: ProviderType): ProviderConfig => ({
   name: '',
   enabled: true,
 })
+
+const PROVIDER_ICONS: Record<ProviderType, typeof Cloud> = {
+  webdav: Cloud,
+  s3: Database,
+  gdrive: HardDrive,
+  onedrive: Folder,
+}
+
+type ProvStatus = { key: 'connected' | 'pending' | 'disabled'; label: string }
+
+function providerStatus(p: SyncProviderMeta): ProvStatus {
+  if (!p.enabled) return { key: 'disabled', label: '已禁用' }
+  if (isOAuth(p.type) && !p.authorized) return { key: 'pending', label: '待授权' }
+  if (isOAuth(p.type)) return { key: 'connected', label: '已连接' }
+  return { key: 'connected', label: '已启用' }
+}
 
 export function ProviderSection({ providers, onChanged }: Props) {
   const [adding, setAdding] = useState(false)
@@ -69,7 +85,6 @@ export function ProviderSection({ providers, onChanged }: Props) {
       const { url } = await syncApi.oauthURL(p.type as 'gdrive' | 'onedrive', p.id)
       window.open(url, '_blank', 'width=600,height=700')
       toast.info('请在打开的页面中完成授权，完成后回到此处刷新')
-      // 授权完成后轮询刷新状态
       const timer = setInterval(() => void (async () => {
         try {
           const list = await syncApi.providers()
@@ -111,46 +126,59 @@ export function ProviderSection({ providers, onChanged }: Props) {
   }
 
   return (
-    <>
+    <div className="sync-provider-block">
+      <div className="sync-provider-header">
+        <div className="settings-subsection-title">
+          <Server size={13} /><span>云存储配置（{providers.length}）</span>
+        </div>
+        {!adding && (
+          <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
+            <Plus size={13} /> 添加存储源
+          </Button>
+        )}
+      </div>
+
+      {providers.length === 0 && !adding && (
+        <div className="sync-provider-empty-hint">尚未配置云存储源，点击「添加存储源」开始备份。</div>
+      )}
+
       {providers.length > 0 && (
         <div className="sync-provider-list">
-          {providers.map((p) => (
-            <div key={p.id} className="sync-provider-item">
-              <div className="sync-provider-info">
-                <span className="sync-provider-name">{p.name}</span>
-                <span className="sync-provider-type">{PROVIDER_TYPE_LABELS[p.type]}</span>
-                {isOAuth(p.type) && (
-                  p.authorized ? (
-                    <span className="sync-provider-auth ok"><ShieldCheck size={11} /> 已授权</span>
-                  ) : (
-                    <span className="sync-provider-auth">未授权</span>
-                  )
-                )}
-              </div>
-              <div className="sync-version-actions">
-                {isOAuth(p.type) && !p.authorized && (
-                  <Button variant="outline" size="sm" onClick={() => void handleAuthorize(p)}>
-                    <ExternalLink size={12} /> 授权
+          {providers.map((p) => {
+            const st = providerStatus(p)
+            const Icon = PROVIDER_ICONS[p.type]
+            return (
+              <div key={p.id} className="sync-provider-row">
+                <span className="sync-provider-row-icon"><Icon size={16} /></span>
+                <div className="sync-provider-row-main">
+                  <span className="sync-provider-name">{p.name}</span>
+                  <span className="sync-provider-sub">
+                    {PROVIDER_TYPE_LABELS[p.type]}
+                    {isOAuth(p.type) ? (p.authorized ? ' · 已授权' : ' · 未授权') : ''}
+                  </span>
+                </div>
+                <span className={`sync-status-pill ${st.key}`}>{st.label}</span>
+                <div className="sync-provider-row-actions">
+                  {st.key === 'pending' && (
+                    <Button variant="outline" size="sm" onClick={() => void handleAuthorize(p)}>
+                      <ExternalLink size={12} /> 授权
+                    </Button>
+                  )}
+                  <Button variant="ghost" size="sm" disabled={busy} onClick={() => void handleTest(p)} title="测试连接">
+                    <TestTube2 size={13} />
                   </Button>
-                )}
-                <Switch checked={p.enabled} onCheckedChange={() => void handleToggle(p)} />
-                <Button variant="ghost" size="sm" disabled={busy} onClick={() => void handleTest(p)} title="测试连接">
-                  <TestTube2 size={13} />
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => void handleDelete(p)} title="删除">
-                  <Trash2 size={13} />
-                </Button>
+                  <Switch checked={p.enabled} onCheckedChange={() => void handleToggle(p)} title="启用 / 禁用" />
+                  <Button variant="ghost" size="sm" onClick={() => void handleDelete(p)} title="删除">
+                    <Trash2 size={13} />
+                  </Button>
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
-      {!adding ? (
-        <Button variant="outline" size="sm" onClick={() => setAdding(true)} className="backup-action">
-          <Plus size={13} /> 添加云服务
-        </Button>
-      ) : (
+      {adding && (
         <div className="backup-card" style={{ marginTop: 8 }}>
           <div className="backup-row">
             <Label className="backup-row-label">类型</Label>
@@ -255,7 +283,7 @@ export function ProviderSection({ providers, onChanged }: Props) {
           <div className="settings-field-desc">凭证（密码 / SecretKey / Token）将使用本机密钥加密存储</div>
         </div>
       )}
-    </>
+    </div>
   )
 }
 

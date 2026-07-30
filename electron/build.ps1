@@ -7,7 +7,7 @@ $root = Resolve-Path "$PSScriptRoot/.."
 
 Write-Host "==> [1/3] 构建前端 (输出到 server/web_dist)" -ForegroundColor Cyan
 Push-Location "$root/web"
-npm install
+npm ci
 npm run build
 Pop-Location
 
@@ -19,7 +19,7 @@ Pop-Location
 
 Write-Host "==> [3/3] 打包 Electron 应用 (NSIS)" -ForegroundColor Cyan
 Push-Location "$root/electron"
-npm install
+npm ci
 npm run dist:win
 Pop-Location
 

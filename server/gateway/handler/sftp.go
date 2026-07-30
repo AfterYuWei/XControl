@@ -53,30 +53,38 @@ type SftpSession struct {
 	doneOnce sync.Once
 }
 
-type SftpHandler struct {
-	sessions  map[string]*SftpSession
-	mu        sync.RWMutex
-	profiles  store.ProfileStore
-	vault     store.VaultStore
-	encryptor *crypto.Encryptor
-	audit     store.AuditStore
-	pm        *protocol.Manager
-	pool      *connpool.Pool
-	transfers *TransferManager
-	hub       *ws.SftpHub
+func (s *SftpSession) closeDone() {
+	s.doneOnce.Do(func() {
+		close(s.done)
+	})
 }
 
-func NewSftpHandler(ps store.ProfileStore, vs store.VaultStore, enc *crypto.Encryptor, as store.AuditStore, pm *protocol.Manager, hub *ws.SftpHub, transfers *TransferManager, pool *connpool.Pool) *SftpHandler {
+type SftpHandler struct {
+	sessions       map[string]*SftpSession
+	mu             sync.RWMutex
+	profiles       store.ProfileStore
+	vault          store.VaultStore
+	encryptor      *crypto.Encryptor
+	audit          store.AuditStore
+	pm             *protocol.Manager
+	pool           *connpool.Pool
+	transfers      *TransferManager
+	hub            *ws.SftpHub
+	allowedOrigins []string
+}
+
+func NewSftpHandler(ps store.ProfileStore, vs store.VaultStore, enc *crypto.Encryptor, as store.AuditStore, pm *protocol.Manager, hub *ws.SftpHub, transfers *TransferManager, pool *connpool.Pool, allowedOrigins []string) *SftpHandler {
 	return &SftpHandler{
-		sessions:  make(map[string]*SftpSession),
-		profiles:  ps,
-		vault:     vs,
-		encryptor: enc,
-		audit:     as,
-		pm:        pm,
-		pool:      pool,
-		transfers: transfers,
-		hub:       hub,
+		sessions:       make(map[string]*SftpSession),
+		profiles:       ps,
+		vault:          vs,
+		encryptor:      enc,
+		audit:          as,
+		pm:             pm,
+		pool:           pool,
+		transfers:      transfers,
+		hub:            hub,
+		allowedOrigins: allowedOrigins,
 	}
 }
 
@@ -293,6 +301,30 @@ func (h *SftpHandler) CloseSession(w http.ResponseWriter, r *http.Request) {
 	})
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *SftpHandler) Shutdown() {
+	h.mu.Lock()
+	sessions := make([]*SftpSession, 0, len(h.sessions))
+	for _, session := range h.sessions {
+		sessions = append(sessions, session)
+	}
+	h.sessions = make(map[string]*SftpSession)
+	h.mu.Unlock()
+
+	for _, session := range sessions {
+		session.closeDone()
+		h.transfers.CancelBySession(session.ID)
+		if session.cancel != nil {
+			session.cancel()
+		}
+		if session.Entry != nil {
+			session.Entry.ReleaseSFTP()
+			session.Entry = nil
+		} else if session.Backend != nil {
+			_ = session.Backend.Close()
+		}
+	}
 }
 
 // --- File operations ---

@@ -111,7 +111,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: |
             web/package-lock.json
@@ -120,13 +120,13 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.26.x'
           cache-dependency-path: server/go.sum
 
       - name: Build frontend
         working-directory: web
         run: |
-          npm install
+          npm ci
           npm run build
 
       - name: Build backend (embed frontend)
@@ -139,7 +139,7 @@ jobs:
 
       - name: Install electron dependencies
         working-directory: electron
-        run: npm install
+        run: npm ci
 
       - name: Set version in package.json
         working-directory: electron

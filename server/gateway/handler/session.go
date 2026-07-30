@@ -405,6 +405,30 @@ func (h *SessionHandler) RemoveSession(id string) {
 	}
 }
 
+func (h *SessionHandler) Shutdown() {
+	h.mu.Lock()
+	sessions := make([]*Session, 0, len(h.sessions))
+	for _, session := range h.sessions {
+		sessions = append(sessions, session)
+	}
+	h.sessions = make(map[string]*Session)
+	for _, waiter := range h.waiters {
+		close(waiter)
+	}
+	h.waiters = make(map[string]chan struct{})
+	h.mu.Unlock()
+
+	for _, session := range sessions {
+		session.cancelPendingConnection()
+		if session.Shell != nil {
+			_ = session.Shell.Close()
+		}
+		if session.Driver != nil {
+			_ = session.Driver.Close()
+		}
+	}
+}
+
 func (h *SessionHandler) SendError(sessionID string, code, message string) {
 	// This will be used by the WS handler
 }

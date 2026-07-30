@@ -217,11 +217,13 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     startAutoReconnect(tab.id, tab.profileId, tab.errorReason || 'unknown')
   }, [clearReconnectTimer, startAutoReconnect, tab.errorReason, tab.id, tab.profileId])
 
+  const currentHostKeyFingerprint = hostKeyPrompt.current
+
   const confirmHostKey = useCallback(async () => {
-    if (!tab.sessionId || !hostKeyPrompt.current) return
+    if (!tab.sessionId || !currentHostKeyFingerprint) return
 
     try {
-      await sessionApi.confirmHostKey(tab.sessionId, hostKeyPrompt.current)
+      await sessionApi.confirmHostKey(tab.sessionId, currentHostKeyFingerprint)
       clearTabHostKeyPrompt(tab.id)
       setHostKeyPrompt({})
       setDialogStatus('connecting')
@@ -231,7 +233,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
       setConnectionError(apiErr?.error?.message || '无法继续连接到服务器')
       setDialogStatus('error')
     }
-  }, [clearTabHostKeyPrompt, hostKeyPrompt.current, tab.id, tab.sessionId])
+  }, [clearTabHostKeyPrompt, currentHostKeyFingerprint, tab.id, tab.sessionId])
 
   const handleWSMessage = useCallback(
     (msg: WSMessage) => {
@@ -417,13 +419,13 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
 
     if (tab.status === 'connecting') {
       setShowDialog(true)
-      if (!hostKeyPrompt.current) {
+      if (!currentHostKeyFingerprint) {
         setDialogStatus('connecting')
       }
       setConnectionError('')
       hasSpecificError.current = false
     }
-  }, [backendLogs.length, beginLocalConnection, hostKeyPrompt.current, localLogs.length, tab.sessionId, tab.status])
+  }, [backendLogs.length, beginLocalConnection, currentHostKeyFingerprint, localLogs.length, tab.sessionId, tab.status])
 
   useEffect(() => {
     if (tab.hostKeyFingerprint) {

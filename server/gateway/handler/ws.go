@@ -20,15 +20,16 @@ import (
 )
 
 type WSHandler struct {
-	hub      *ws.Hub
-	sessions *SessionHandler
-	writeMu  sync.Mutex // serializes writes to websocket connections
+	hub            *ws.Hub
+	sessions       *SessionHandler
+	allowedOrigins []string
+	writeMu        sync.Mutex // serializes writes to websocket connections
 }
 
 const sessionReadyTimeout = sshproto.DefaultConnectTimeout + 15*time.Second
 
-func NewWSHandler(hub *ws.Hub, sh *SessionHandler) *WSHandler {
-	return &WSHandler{hub: hub, sessions: sh}
+func NewWSHandler(hub *ws.Hub, sh *SessionHandler, allowedOrigins []string) *WSHandler {
+	return &WSHandler{hub: hub, sessions: sh, allowedOrigins: allowedOrigins}
 }
 
 func (h *WSHandler) Handle(w http.ResponseWriter, r *http.Request) {
@@ -39,7 +40,7 @@ func (h *WSHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	wsConn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true,
+		OriginPatterns: h.allowedOrigins,
 	})
 	if err != nil {
 		slog.Error("ws accept failed", "error", err)
@@ -250,7 +251,7 @@ func (h *WSHandler) writePump(ctx context.Context, conn *ws.Conn, session *Sessi
 	// Filter control for injected OSC 7 config command (TCP 分包处理)
 	isFilteringInit := true
 	initTarget := []byte(`__tdcwd(){ printf "\033`)
-		initFilterDeadline := time.After(5 * time.Second)
+	initFilterDeadline := time.After(5 * time.Second)
 
 	for {
 		select {

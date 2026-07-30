@@ -76,7 +76,7 @@ export function useTerminal(options: UseTerminalOptions) {
             window.open(uri, '_blank', 'noopener,noreferrer')
           }
         },
-        hover: (_event, _uri) => {
+        hover: () => {
           terminal.element?.classList.add('xterm-cursor-pointer')
         },
         leave: () => {
@@ -309,7 +309,10 @@ export function useTerminal(options: UseTerminalOptions) {
       terminalRef.current = null
       fitAddonRef.current = null
     }
-  }, [containerRef]) // only re-create when container changes
+    // Terminal construction is intentionally tied only to the container.
+    // Font and theme changes are applied by the effects below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [containerRef])
 
   // Update font settings without recreating terminal
   useEffect(() => {

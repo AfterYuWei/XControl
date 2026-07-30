@@ -20,7 +20,7 @@ func (h *SftpHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	wsConn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true,
+		OriginPatterns: h.allowedOrigins,
 	})
 	if err != nil {
 		slog.Error("sftp ws accept failed", "error", err)

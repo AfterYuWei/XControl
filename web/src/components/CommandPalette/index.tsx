@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { Search, Plus, X as XIcon, PanelLeft, Server, RefreshCw, FolderTree, Copy } from 'lucide-react'
 import { useProfileStore } from '@/store/profile'
 import { useSessionStore } from '@/store/session'
@@ -32,7 +32,7 @@ export function CommandPalette({
   const inputRef = useRef<HTMLInputElement>(null)
   const resultsRef = useRef<HTMLDivElement>(null)
 
-  const profilesList = profiles ?? []
+  const profilesList = useMemo(() => profiles ?? [], [profiles])
 
   const buildItems = useCallback((): PalItem[] => {
     const items: PalItem[] = []
@@ -73,10 +73,6 @@ export function CommandPalette({
     }
   }, [open])
 
-  useEffect(() => {
-    setSelIdx(0)
-  }, [query])
-
   const exec = (idx: number) => {
     const it = items[idx]
     if (!it) return
@@ -116,7 +112,10 @@ export function CommandPalette({
             autoComplete="off"
             spellCheck={false}
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value)
+              setSelIdx(0)
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Escape') onClose()
               if (e.key === 'ArrowDown') {

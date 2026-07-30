@@ -18,8 +18,8 @@ import (
 	"log/slog"
 	"sync"
 
-	gossh "golang.org/x/crypto/ssh"
 	"github.com/pkg/sftp"
+	gossh "golang.org/x/crypto/ssh"
 
 	"github.com/yuweinfo/xcontrol/fileutil"
 	"github.com/yuweinfo/xcontrol/protocol"
@@ -44,8 +44,8 @@ type Entry struct {
 	sshRef  int // CommandExecutor consumers
 	sftpRef int // FileBackend consumers
 
-	mu  sync.RWMutex // protects ref counts AND serializes Backend access
-	key string
+	mu   sync.RWMutex // protects ref counts AND serializes Backend access
+	key  string
 	pool *Pool
 }
 
@@ -54,6 +54,34 @@ type Pool struct {
 	entries map[string]*Entry
 	mu      sync.Mutex
 	pm      *protocol.Manager
+}
+
+// CloseAll closes every pooled connection regardless of its reference count.
+// It is intended for process shutdown after new HTTP work has been stopped.
+func (p *Pool) CloseAll() {
+	p.mu.Lock()
+	entries := make([]*Entry, 0, len(p.entries))
+	for _, entry := range p.entries {
+		entries = append(entries, entry)
+	}
+	p.entries = make(map[string]*Entry)
+	p.mu.Unlock()
+
+	for _, entry := range entries {
+		entry.mu.Lock()
+		if entry.Backend != nil {
+			_ = entry.Backend.Close()
+			entry.Backend = nil
+		}
+		if entry.Driver != nil {
+			_ = entry.Driver.Close()
+			entry.Driver = nil
+		}
+		entry.Exec = nil
+		entry.sshRef = 0
+		entry.sftpRef = 0
+		entry.mu.Unlock()
+	}
 }
 
 // Init creates and returns the global connection pool. Must be called once

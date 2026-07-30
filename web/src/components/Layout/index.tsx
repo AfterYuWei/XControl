@@ -1,25 +1,39 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Search, X, FolderUp, Settings, KeyRound } from 'lucide-react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { Search, X, FolderUp, Settings, KeyRound, Server } from 'lucide-react'
 import { Sidebar } from '@/components/Sidebar'
 import { TerminalView } from '@/components/Terminal'
 import { StatusBar } from '@/components/StatusBar'
 import { CommandPalette } from '@/components/CommandPalette'
 import { ThemeToggle } from '@/components/ThemeToggle'
-import { SettingsDialog } from '@/components/SettingsDialog'
 import { Toaster } from '@/components/ui/toast'
 import { useProfileStore } from '@/store/profile'
 import { useSessionStore } from '@/store/session'
 import { useSettingsStore } from '@/store/settings'
+import { useVaultStore } from '@/store/vault'
 import { useWindowControls } from '@/hooks/useWindowControls'
+import { profileApi } from '@/api/profile'
+import { vaultApi } from '@/api/vault'
+import type { Profile } from '@/types/profile'
+import type { VaultItem } from '@/types/vault'
+
+const SettingsDialog = lazy(() =>
+  import('@/components/SettingsDialog').then((module) => ({ default: module.SettingsDialog })),
+)
 
 export function Layout() {
-  const { tabs, openSftpTab, openVaultTab } = useSessionStore()
+  const { tabs, openSftpTab, openVaultTab, openTab, setActiveTab } = useSessionStore()
   const { sidebarWidth, setSidebarWidth } = useSettingsStore()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [resizing, setResizing] = useState(false)
+  const [globalSearch, setGlobalSearch] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searching, setSearching] = useState(false)
+  const [profileResults, setProfileResults] = useState<Profile[]>([])
+  const [vaultResults, setVaultResults] = useState<VaultItem[]>([])
   const sidebarRef = useRef<HTMLElement>(null)
+  const searchRef = useRef<HTMLDivElement>(null)
 
   // Sidebar drag resize
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
@@ -44,7 +58,78 @@ export function Layout() {
     document.addEventListener('mouseup', onMouseUp)
   }, [sidebarWidth, setSidebarWidth])
 
-  const { fetchProfiles, fetchGroups, searchQuery, setSearchQuery } = useProfileStore()
+  const {
+    fetchProfiles,
+    fetchGroups,
+  } = useProfileStore()
+  const {
+    setSearchQuery: setVaultSearchQuery,
+  } = useVaultStore()
+
+  useEffect(() => {
+    const query = globalSearch.trim()
+    if (!query) {
+      setProfileResults([])
+      setVaultResults([])
+      setSearching(false)
+      return
+    }
+
+    let active = true
+    setSearching(true)
+    void Promise.all([
+      profileApi.list({ search: query }),
+      vaultApi.list({ q: query }),
+    ])
+      .then(([profiles, vaultItems]) => {
+        if (!active) return
+        setProfileResults(profiles ?? [])
+        setVaultResults(vaultItems ?? [])
+      })
+      .catch(() => {
+        if (!active) return
+        setProfileResults([])
+        setVaultResults([])
+      })
+      .finally(() => {
+        if (active) setSearching(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [globalSearch])
+
+  useEffect(() => {
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (!searchRef.current?.contains(event.target as Node)) setSearchOpen(false)
+    }
+    document.addEventListener('mousedown', closeOnOutsideClick)
+    return () => document.removeEventListener('mousedown', closeOnOutsideClick)
+  }, [])
+
+  const clearGlobalSearch = () => {
+    setGlobalSearch('')
+    setSearchOpen(false)
+  }
+
+  const handleProfileResult = (profile: Profile) => {
+    clearGlobalSearch()
+    const existing = tabs.find((tab) => tab.kind === 'terminal' && tab.profileId === profile.id)
+    if (existing) {
+      setActiveTab(existing.id)
+      return
+    }
+    void openTab(profile.id, profile.name, profile.host, profile.port, profile.username)
+  }
+
+  const handleVaultResult = (item: VaultItem) => {
+    setVaultSearchQuery(item.name)
+    openVaultTab()
+    clearGlobalSearch()
+  }
+
+  const hasSearchResults = profileResults.length > 0 || vaultResults.length > 0
 
   // 桌面环境窗口控制：仅 Electron 下提供真实操作，浏览器下为 no-op
   // macOS 用系统原生交通灯（showControls=false），Windows/Linux 自绘右侧按钮
@@ -122,27 +207,86 @@ export function Layout() {
           </button>
         </div>
 
-        {/* 中：服务器搜索框。搜索框容器声明 no-drag，输入框可正常聚焦输入 */}
+        {/* 中：全局搜索服务器与 Vault 密钥。搜索框容器声明 no-drag，输入框可正常聚焦输入 */}
         <div className="header-center">
-          <div className="header-search">
+          <div ref={searchRef} className="header-search">
             <Search size={14} className="header-search-icon" />
             <input
               type="text"
-              placeholder="搜索服务器…"
+              placeholder="搜索服务器或密钥…"
               autoComplete="off"
               spellCheck={false}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              value={globalSearch}
+              onFocus={() => setSearchOpen(true)}
+              onChange={(e) => {
+                setGlobalSearch(e.target.value)
+                setSearchOpen(true)
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') setSearchOpen(false)
+              }}
             />
-            {searchQuery && (
+            {globalSearch && (
               <button
                 className="header-search-clear"
                 title="清除搜索"
                 aria-label="清除搜索"
-                onClick={() => setSearchQuery('')}
+                onClick={clearGlobalSearch}
               >
                 <X size={13} />
               </button>
+            )}
+            {searchOpen && globalSearch.trim() && (
+              <div className="header-search-results" role="listbox" aria-label="全局搜索结果">
+                {searching ? (
+                  <div className="header-search-empty">搜索中…</div>
+                ) : hasSearchResults ? (
+                  <>
+                    {profileResults.length > 0 && (
+                      <div className="header-search-group">
+                        <div className="header-search-group-title">服务器</div>
+                        {profileResults.map((profile) => (
+                          <button
+                            key={profile.id}
+                            type="button"
+                            className="header-search-result"
+                            role="option"
+                            onClick={() => handleProfileResult(profile)}
+                          >
+                            <Server size={14} />
+                            <span>
+                              <strong>{profile.name}</strong>
+                              <small>{profile.username}@{profile.host}:{profile.port}</small>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {vaultResults.length > 0 && (
+                      <div className="header-search-group">
+                        <div className="header-search-group-title">密钥</div>
+                        {vaultResults.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            className="header-search-result"
+                            role="option"
+                            onClick={() => handleVaultResult(item)}
+                          >
+                            <KeyRound size={14} />
+                            <span>
+                              <strong>{item.name}</strong>
+                              <small>{item.type === 'private_key' ? '私钥' : '密码'} · {item.username || '未设置用户名'}</small>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="header-search-empty">未找到匹配的服务器或密钥</div>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -246,7 +390,11 @@ export function Layout() {
       />
 
       {/* 设置面板 */}
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      {settingsOpen && (
+        <Suspense fallback={null}>
+          <SettingsDialog open onOpenChange={setSettingsOpen} />
+        </Suspense>
+      )}
 
       {/* Toast — 右下角通知弹窗 */}
       <Toaster />

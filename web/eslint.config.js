@@ -18,5 +18,22 @@ export default defineConfig([
     languageOptions: {
       globals: globals.browser,
     },
+    rules: {
+      // Dialog and connection state is intentionally synchronized from
+      // external props and stores in effects throughout the app.
+      'react-hooks/set-state-in-effect': 'off',
+    },
+  },
+  {
+    files: [
+      'src/components/ui/*.tsx',
+      'src/components/Sftp/InputDialog.tsx',
+      'src/lib/serverIcons.tsx',
+    ],
+    rules: {
+      // shadcn components intentionally export variants/helpers alongside
+      // components; InputDialog also exports its shared filename validator.
+      'react-refresh/only-export-components': 'off',
+    },
   },
 ])

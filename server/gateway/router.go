@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/yuweinfo/xcontrol/connpool"
 	"github.com/yuweinfo/xcontrol/crypto"
@@ -18,7 +19,25 @@ import (
 	"github.com/yuweinfo/xcontrol/ws"
 )
 
-func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS, syncMgr *xcsync.Manager) http.Handler {
+type Options struct {
+	AllowedOrigins  []string
+	AccessToken     string
+	RequestShutdown func()
+}
+
+type Runtime struct {
+	once    sync.Once
+	closeFn func()
+}
+
+func (r *Runtime) Close() {
+	if r == nil {
+		return
+	}
+	r.once.Do(r.closeFn)
+}
+
+func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS, syncMgr *xcsync.Manager, opts Options) (http.Handler, *Runtime) {
 	mux := http.NewServeMux()
 
 	if err := store.BackfillProfileInlineCredentials(db, encryptor); err != nil {
@@ -54,13 +73,23 @@ func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS, syncMgr *xc
 	snippetH := handler.NewSnippetHandler(snippetStore)
 	vaultH := handler.NewVaultHandler(vaultStore, auditStore)
 	sessionH := handler.NewSessionHandler(profileStore, vaultStore, encryptor, auditStore, pm)
-	wsH := handler.NewWSHandler(hub, sessionH)
+	wsH := handler.NewWSHandler(hub, sessionH, opts.AllowedOrigins)
 	transferMgr := handler.NewTransferManager(sftpHub)
-	sftpH := handler.NewSftpHandler(profileStore, vaultStore, encryptor, auditStore, pm, sftpHub, transferMgr, pool)
-	serverDetailH := handler.NewServerDetailHandler(profileStore, vaultStore, encryptor, pool)
+	sftpH := handler.NewSftpHandler(profileStore, vaultStore, encryptor, auditStore, pm, sftpHub, transferMgr, pool, opts.AllowedOrigins)
+	serverDetailH := handler.NewServerDetailHandler(profileStore, vaultStore, encryptor, pool, opts.AllowedOrigins)
 	editH := handler.NewEditHandler(sftpH, serverDetailH)
 	backupH := handler.NewBackupHandler(store.NewBackupStore(db, encryptor), auditStore)
 	syncH := handler.NewSyncHandler(syncMgr)
+
+	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	if opts.RequestShutdown != nil {
+		mux.HandleFunc("POST /api/shutdown", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusAccepted)
+			go opts.RequestShutdown()
+		})
+	}
 
 	// Backup routes (export / preview / import)
 	mux.HandleFunc("GET /api/backup/export", backupH.Export)
@@ -200,9 +229,19 @@ func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS, syncMgr *xc
 	if syncMgr != nil {
 		h = middleware.ChangeNotifier(syncMgr.NotifyChange, h)
 	}
+	h = middleware.AccessToken(opts.AccessToken, h)
 	h = middleware.Recovery(h)
 	h = middleware.Logger(h)
-	h = middleware.CORS(h)
+	h = middleware.CORS(opts.AllowedOrigins, h)
 
-	return h
+	runtime := &Runtime{closeFn: func() {
+		hub.CloseAll()
+		sftpHub.CloseAll()
+		sessionH.Shutdown()
+		sftpH.Shutdown()
+		serverDetailH.Shutdown()
+		transferMgr.Shutdown()
+		pool.CloseAll()
+	}}
+	return h, runtime
 }

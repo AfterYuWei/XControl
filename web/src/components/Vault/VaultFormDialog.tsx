@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Dices, Eye, EyeOff, Upload } from 'lucide-react'
+import { ChevronDown, Copy, Dices, Download, Eye, EyeOff, FileText, Terminal, Upload } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { vaultApi } from '@/api/vault'
 import { toast } from 'sonner'
 import { useVaultStore } from '@/store/vault'
+import { buildPrivateKeyFilename, buildPublicKeyImportCommand } from '@/lib/vaultKeyActions'
 import { VAULT_TYPE_LABELS, type VaultCreateRequest, type VaultItem, type VaultType } from '@/types/vault'
 import { VaultPasswordGenerator } from './VaultPasswordGenerator'
 
@@ -51,6 +52,44 @@ function buildInitialForm(item?: VaultItem | null): VaultCreateRequest {
     private_key: '',
     public_key: '',
     passphrase: '',
+  }
+}
+
+function isSameForm(left: VaultCreateRequest, right: VaultCreateRequest): boolean {
+  return (
+    left.name === right.name &&
+    left.type === right.type &&
+    left.username === right.username &&
+    left.remark === right.remark &&
+    left.password === right.password &&
+    left.private_key === right.private_key &&
+    left.public_key === right.public_key &&
+    left.passphrase === right.passphrase
+  )
+}
+
+async function writeClipboardText(text: string): Promise<void> {
+  try {
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(text)
+      return
+    }
+  } catch {
+    // Some desktop/webview contexts expose Clipboard API but deny access.
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.select()
+
+  try {
+    if (!document.execCommand('copy')) throw new Error('Copy command failed')
+  } finally {
+    textarea.remove()
   }
 }
 
@@ -144,12 +183,15 @@ function VaultFormDialogInner({ item, onOpenChange }: VaultFormDialogInnerProps)
   const isEditing = !!item
 
   const [form, setForm] = useState<VaultCreateRequest>(() => buildInitialForm(item))
+  const [initialForm, setInitialForm] = useState<VaultCreateRequest>(() => buildInitialForm(item))
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [showGenerator, setShowGenerator] = useState(false)
   const [showPrivateKey, setShowPrivateKey] = useState(false)
+  const [copyMenuOpen, setCopyMenuOpen] = useState(false)
   const publicKeyFileRef = useRef<HTMLInputElement>(null)
   const privateKeyFileRef = useRef<HTMLInputElement>(null)
+  const copyMenuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!item) return
@@ -157,16 +199,41 @@ function VaultFormDialogInner({ item, onOpenChange }: VaultFormDialogInnerProps)
     vaultApi
       .reveal(item.id)
       .then((credential) => {
-        setForm((current) => ({
-          ...current,
+        const nextForm: VaultCreateRequest = {
+          ...buildInitialForm(item),
           password: credential.password ?? '',
           private_key: credential.private_key ?? '',
           public_key: credential.public_key ?? '',
           passphrase: credential.passphrase ?? '',
+        }
+        setForm((current) => ({
+          ...current,
+          ...nextForm,
         }))
+        setInitialForm(nextForm)
       })
       .catch(() => toast.warning('加载凭据内容失败，请重新输入'))
   }, [item])
+
+  useEffect(() => {
+    if (!copyMenuOpen) return
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!copyMenuRef.current?.contains(event.target as Node)) {
+        setCopyMenuOpen(false)
+      }
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setCopyMenuOpen(false)
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [copyMenuOpen])
 
   const readFile = (file: File, field: 'private_key' | 'public_key') => {
     if (file.size > 100 * 1024) {
@@ -185,6 +252,44 @@ function VaultFormDialogInner({ item, onOpenChange }: VaultFormDialogInnerProps)
 
   const updateField = <K extends keyof VaultCreateRequest>(key: K, value: VaultCreateRequest[K]) => {
     setForm((current) => ({ ...current, [key]: value }))
+  }
+
+  const canSubmit = !loading && (!isEditing || !isSameForm(form, initialForm))
+
+  const handleExportPrivateKey = () => {
+    const privateKey = form.private_key?.trim()
+    if (!privateKey) {
+      toast.warning('暂无可导出的私钥')
+      return
+    }
+
+    const blob = new Blob([`${privateKey}\n`], { type: 'application/x-pem-file;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = buildPrivateKeyFilename(form.name)
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    URL.revokeObjectURL(url)
+    toast.success('私钥文件已导出')
+  }
+
+  const handleCopyPublicKey = async (mode: 'content' | 'command') => {
+    const publicKey = form.public_key?.trim()
+    if (!publicKey) {
+      toast.warning('暂无可复制的公钥')
+      return
+    }
+
+    const text = mode === 'content' ? publicKey : buildPublicKeyImportCommand(publicKey)
+    try {
+      await writeClipboardText(text)
+      setCopyMenuOpen(false)
+      toast.success(mode === 'content' ? '公钥内容已复制' : '公钥导入指令已复制')
+    } catch {
+      toast.error('复制失败，请检查剪贴板权限')
+    }
   }
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -299,6 +404,18 @@ function VaultFormDialogInner({ item, onOpenChange }: VaultFormDialogInnerProps)
                     type="button"
                     variant="outline"
                     size="sm"
+                    onClick={handleExportPrivateKey}
+                    disabled={!form.private_key?.trim()}
+                    className="vault-sheet-inline-btn"
+                    title="导出私钥文件"
+                  >
+                    <Download size={13} />
+                    导出
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
                     onClick={() => privateKeyFileRef.current?.click()}
                     className="vault-sheet-inline-btn"
                   >
@@ -331,16 +448,52 @@ function VaultFormDialogInner({ item, onOpenChange }: VaultFormDialogInnerProps)
             <section className="vault-form-key-panel vault-form-key-panel-pub">
               <div className="vault-form-key-head">
                 <span className="vault-form-key-title">公钥（可选）</span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => publicKeyFileRef.current?.click()}
-                  className="vault-sheet-inline-btn"
-                >
-                  <Upload size={13} />
-                  导入
-                </Button>
+                <div className="vault-form-key-actions">
+                  <div ref={copyMenuRef} className="vault-key-copy">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCopyMenuOpen((current) => !current)}
+                      disabled={!form.public_key?.trim()}
+                      className="vault-sheet-inline-btn"
+                      aria-haspopup="menu"
+                      aria-expanded={copyMenuOpen}
+                    >
+                      <Copy size={13} />
+                      复制
+                      <ChevronDown size={12} />
+                    </Button>
+                    {copyMenuOpen ? (
+                      <div className="vault-key-copy-menu" role="menu">
+                        <button type="button" role="menuitem" onClick={() => void handleCopyPublicKey('content')}>
+                          <FileText size={14} />
+                          <span>
+                            <strong>复制公钥内容</strong>
+                            <small>复制完整的 OpenSSH 公钥</small>
+                          </span>
+                        </button>
+                        <button type="button" role="menuitem" onClick={() => void handleCopyPublicKey('command')}>
+                          <Terminal size={14} />
+                          <span>
+                            <strong>复制公钥导入指令</strong>
+                            <small>追加到 authorized_keys</small>
+                          </span>
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => publicKeyFileRef.current?.click()}
+                    className="vault-sheet-inline-btn"
+                  >
+                    <Upload size={13} />
+                    导入
+                  </Button>
+                </div>
               </div>
               <Textarea
                 value={form.public_key ?? ''}
@@ -384,7 +537,7 @@ function VaultFormDialogInner({ item, onOpenChange }: VaultFormDialogInnerProps)
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="pf-btn-cancel">
             取消
           </Button>
-          <Button type="submit" form="vault-form" disabled={loading} className="pf-btn-submit">
+          <Button type="submit" form="vault-form" disabled={!canSubmit} className="pf-btn-submit">
             {loading ? '保存中...' : isEditing ? '保存' : '创建'}
           </Button>
         </div>

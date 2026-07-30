@@ -12,6 +12,7 @@
   },
   "scripts": {
     "start": "electron .",
+    "smoke": "electron . --smoke-test",
     "dist:win": "electron-builder --win",
     "dist:mac": "electron-builder --mac",
     "dist:linux": "electron-builder --linux",

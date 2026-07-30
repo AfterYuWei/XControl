@@ -2,11 +2,16 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"strconv"
+	"syscall"
+	"time"
 
 	"github.com/yuweinfo/xcontrol/config"
 	"github.com/yuweinfo/xcontrol/crypto"
@@ -58,13 +63,55 @@ func main() {
 	defer syncMgr.Stop()
 
 	// Create router
-	handler := gateway.NewRouter(db, encryptor, WebFS(), syncMgr)
+	shutdownRequested := make(chan struct{}, 1)
+	handler, runtime := gateway.NewRouter(db, encryptor, WebFS(), syncMgr, gateway.Options{
+		AllowedOrigins: cfg.AllowedOrigins,
+		AccessToken:    cfg.AccessToken,
+		RequestShutdown: func() {
+			select {
+			case shutdownRequested <- struct{}{}:
+			default:
+			}
+		},
+	})
+	defer runtime.Close()
 
 	// Start server
-	addr := fmt.Sprintf(":%d", cfg.Port)
+	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
 	slog.Info("server listening", "addr", addr)
-	if err := http.ListenAndServe(addr, handler); err != nil {
-		slog.Error("server failed", "error", err)
-		os.Exit(1)
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+		MaxHeaderBytes:    1 << 20,
 	}
+	serverErr := make(chan error, 1)
+	go func() {
+		serverErr <- server.ListenAndServe()
+	}()
+
+	signalCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+
+	select {
+	case <-signalCtx.Done():
+		slog.Info("server shutdown requested", "source", "signal")
+	case <-shutdownRequested:
+		slog.Info("server shutdown requested", "source", "desktop")
+	case err := <-serverErr:
+		if !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("server failed", "error", err)
+		}
+		return
+	}
+
+	syncMgr.ShutdownBackup()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		slog.Error("graceful shutdown failed", "error", err)
+		_ = server.Close()
+	}
+	runtime.Close()
 }

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { serverDetailApi } from '@/api/serverDetail'
+import { editApi } from '@/api/edit'
 import { useEditorStore } from '@/store/editor'
 import type { ServerInfo, ServerMetrics } from '@/api/serverDetail'
 
@@ -524,7 +525,6 @@ export const useServerDetailStore = create<ServerDetailStore>((set, get) => ({
     const detail = get().details[profileId]
     if (!detail?.sessionId) return
     try {
-      const { editApi } = await import('@/api/edit')
       await editApi.writeFile(detail.sessionId, filePath, { content: '', expected_mod_time: '' })
       const parentPath = filePath.substring(0, filePath.lastIndexOf('/')) || '/'
       await get().listFiles(profileId, parentPath)

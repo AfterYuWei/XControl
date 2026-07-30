@@ -20,7 +20,8 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
-    host: '0.0.0.0',
+    // Web 模式只用于本机调试；需要远程调试时显式传 --host。
+    host: '127.0.0.1',
     allowedHosts: ['.cnb.run'],
     proxy: {
       '/api/server/ws': {

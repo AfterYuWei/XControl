@@ -76,21 +76,23 @@ type rawMetricsSnapshot struct {
 // All connections go through the connection pool; no independent SSH
 // connections are created.
 type ServerDetailHandler struct {
-	sessions  map[string]*ServerDetailSession
-	mu        sync.RWMutex
-	profiles  store.ProfileStore
-	vault     store.VaultStore
-	encryptor *crypto.Encryptor
-	pool      *connpool.Pool
+	sessions       map[string]*ServerDetailSession
+	mu             sync.RWMutex
+	profiles       store.ProfileStore
+	vault          store.VaultStore
+	encryptor      *crypto.Encryptor
+	pool           *connpool.Pool
+	allowedOrigins []string
 }
 
-func NewServerDetailHandler(ps store.ProfileStore, vs store.VaultStore, enc *crypto.Encryptor, pool *connpool.Pool) *ServerDetailHandler {
+func NewServerDetailHandler(ps store.ProfileStore, vs store.VaultStore, enc *crypto.Encryptor, pool *connpool.Pool, allowedOrigins []string) *ServerDetailHandler {
 	return &ServerDetailHandler{
-		sessions:  make(map[string]*ServerDetailSession),
-		profiles:  ps,
-		vault:     vs,
-		encryptor: enc,
-		pool:      pool,
+		sessions:       make(map[string]*ServerDetailSession),
+		profiles:       ps,
+		vault:          vs,
+		encryptor:      enc,
+		pool:           pool,
+		allowedOrigins: allowedOrigins,
 	}
 }
 
@@ -218,6 +220,28 @@ func (h *ServerDetailHandler) CloseSession(w http.ResponseWriter, r *http.Reques
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *ServerDetailHandler) Shutdown() {
+	h.mu.Lock()
+	sessions := make([]*ServerDetailSession, 0, len(h.sessions))
+	for _, session := range h.sessions {
+		sessions = append(sessions, session)
+	}
+	h.sessions = make(map[string]*ServerDetailSession)
+	h.mu.Unlock()
+
+	for _, session := range sessions {
+		session.closeDone()
+		if session.cancel != nil {
+			session.cancel()
+		}
+		if session.Entry != nil {
+			session.Entry.ReleaseSSH()
+			session.Entry.ReleaseSFTP()
+			session.Entry = nil
+		}
+	}
 }
 
 // GetInfo returns static server information (hostname, OS, uptime, etc.).
@@ -440,7 +464,7 @@ func (h *ServerDetailHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	wsConn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true,
+		OriginPatterns: h.allowedOrigins,
 	})
 	if err != nil {
 		slog.Error("server detail ws accept failed", "error", err)

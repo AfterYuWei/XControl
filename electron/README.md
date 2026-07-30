@@ -124,7 +124,7 @@ cd electron && ./build.sh linux
    ```bash
    # electron/main.js 在开发模式下默认找 ../server/xcontrol-server.exe
    # 若想连已有后端，可改 main.js 临时把 loadURL 指向 http://localhost:5173
-   cd electron && npm install && npm start
+   cd electron && npm ci && npm start
    ```
 
 ## 注意事项

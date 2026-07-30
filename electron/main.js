@@ -1,6 +1,7 @@
-const { app, BrowserWindow, shell, Menu, ipcMain } = require('electron')
+const { app, BrowserWindow, shell, Menu, ipcMain, dialog } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const crypto = require('crypto')
 const { spawn } = require('child_process')
 const http = require('http')
 const net = require('net')
@@ -8,6 +9,9 @@ const net = require('net')
 let backendProcess = null
 let mainWindow = null
 let backendPort = 0
+let backendToken = ''
+let backendStopping = false
+const isSmokeTest = process.argv.includes('--smoke-test')
 
 function getSettingsFilePath() {
   return path.join(app.getPath('userData'), 'settings.json')
@@ -63,7 +67,7 @@ function pickFreePort() {
   })
 }
 
-function startBackend(port) {
+function startBackend(port, token) {
   const exe = getBackendExecutable()
   const userData = app.getPath('userData')
   const logsDir = path.join(userData, 'logs')
@@ -75,9 +79,11 @@ function startBackend(port) {
   // 数据库与密钥存放在用户数据目录，避免写入只读的 resources 目录
   const env = Object.assign({}, process.env, {
     XCONTROL_PORT: String(port),
+    XCONTROL_HOST: '127.0.0.1',
     XCONTROL_DB_PATH: path.join(userData, 'xcontrol.db'),
     XCONTROL_KEY_PATH: path.join(userData, 'key'),
-    XCONTROL_LOG_LEVEL: 'debug',
+    XCONTROL_LOG_LEVEL: 'info',
+    XCONTROL_ACCESS_TOKEN: token,
   })
 
   backendProcess = spawn(exe, [], {
@@ -90,6 +96,9 @@ function startBackend(port) {
     console.log(`backend exited code=${code} signal=${signal}`)
     backendProcess = null
   })
+  backendProcess.on('error', (error) => {
+    console.error('backend process failed', error)
+  })
 }
 
 // 轮询后端健康检查接口，直到就绪或超时
@@ -97,9 +106,9 @@ function waitForBackend(port, timeoutMs = 15000) {
   const start = Date.now()
   return new Promise((resolve, reject) => {
     const check = () => {
-      const req = http.get(`http://127.0.0.1:${port}/api/groups`, (res) => {
+      const req = http.get(`http://127.0.0.1:${port}/api/health`, (res) => {
         res.resume()
-        if (res.statusCode < 500) resolve()
+        if (res.statusCode === 204) resolve()
         else retry()
       })
       req.on('error', retry)
@@ -115,31 +124,79 @@ function waitForBackend(port, timeoutMs = 15000) {
   })
 }
 
-function killBackend() {
-  if (!backendProcess) return
+function forceKillBackend(processToKill = backendProcess) {
+  if (!processToKill) return
   try {
     if (process.platform === 'win32') {
       // Windows 下强制结束整个进程树，避免孤儿进程
-      spawn('taskkill', ['/F', '/T', '/PID', String(backendProcess.pid)], {
+      spawn('taskkill', ['/F', '/T', '/PID', String(processToKill.pid)], {
         windowsHide: true,
       })
     } else {
-      backendProcess.kill('SIGTERM')
+      processToKill.kill('SIGKILL')
     }
   } catch (e) {
     console.error('kill backend failed', e)
   }
-  backendProcess = null
+  if (backendProcess === processToKill) backendProcess = null
+}
+
+function requestBackendShutdown() {
+  return new Promise((resolve) => {
+    if (!backendPort || !backendToken) {
+      resolve(false)
+      return
+    }
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port: backendPort,
+      path: '/api/shutdown',
+      method: 'POST',
+      headers: { Authorization: `Bearer ${backendToken}` },
+      timeout: 1500,
+    }, (res) => {
+      res.resume()
+      res.on('end', () => resolve(res.statusCode === 202))
+    })
+    req.on('timeout', () => req.destroy())
+    req.on('error', () => resolve(false))
+    req.end()
+  })
+}
+
+function waitForProcessExit(child, timeoutMs) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) {
+    return Promise.resolve(true)
+  }
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      child.removeListener('exit', onExit)
+      resolve(false)
+    }, timeoutMs)
+    const onExit = () => {
+      clearTimeout(timer)
+      resolve(true)
+    }
+    child.once('exit', onExit)
+  })
+}
+
+async function stopBackend() {
+  if (!backendProcess || backendStopping) return
+  backendStopping = true
+  const child = backendProcess
+  await requestBackendShutdown()
+  const exited = await waitForProcessExit(child, 5000)
+  if (!exited) forceKillBackend(child)
+  if (backendProcess === child) backendProcess = null
+  backendStopping = false
 }
 
 async function createWindow() {
   backendPort = await pickFreePort()
-  startBackend(backendPort)
-  try {
-    await waitForBackend(backendPort)
-  } catch (e) {
-    console.error(e.message)
-  }
+  backendToken = crypto.randomBytes(32).toString('base64url')
+  startBackend(backendPort, backendToken)
+  await waitForBackend(backendPort)
 
   // 跨平台窗口配置：
   // - macOS: titleBarStyle 'hiddenInset' 保留原生交通灯（左侧红黄绿圆形按钮），
@@ -172,12 +229,41 @@ async function createWindow() {
 
   mainWindow = new BrowserWindow(windowOptions)
 
-  mainWindow.once('ready-to-show', () => mainWindow.show())
-  mainWindow.loadURL(`http://127.0.0.1:${backendPort}/`)
+  if (!isSmokeTest) {
+    mainWindow.once('ready-to-show', () => {
+      mainWindow.maximize()
+      mainWindow.show()
+    })
+  }
+  const backendURL = `http://127.0.0.1:${backendPort}`
+  await mainWindow.webContents.session.cookies.set({
+    url: backendURL,
+    name: 'xcontrol_access_token',
+    value: backendToken,
+    httpOnly: true,
+    secure: false,
+    sameSite: 'strict',
+  })
+  await mainWindow.loadURL(`${backendURL}/`)
+  if (isSmokeTest) {
+    const result = await mainWindow.webContents.executeJavaScript(`
+      Promise.all([
+        fetch('/api/groups').then((response) => response.status),
+        Promise.resolve(document.cookie.includes('xcontrol_access_token')),
+      ])
+    `)
+    if (result[0] !== 200 || result[1] !== false) {
+      throw new Error(`desktop smoke check failed: ${JSON.stringify(result)}`)
+    }
+    console.log('XCONTROL_ELECTRON_SMOKE_OK')
+    setTimeout(() => app.quit(), 50)
+  }
 
   // 外部链接在系统浏览器打开
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
+    if (url.startsWith('https://') || url.startsWith('http://')) {
+      void shell.openExternal(url)
+    }
     return { action: 'deny' }
   })
 
@@ -243,14 +329,24 @@ if (!gotLock) {
   app.whenReady().then(() => {
     // 隐藏默认菜单栏（可按需注释保留）
     Menu.setApplicationMenu(null)
-    createWindow()
+    createWindow().catch((error) => {
+      console.error(error)
+      process.exitCode = 1
+      if (!isSmokeTest) {
+        dialog.showErrorBox('XControl 启动失败', error.message || String(error))
+      }
+      app.quit()
+    })
   })
 
   app.on('window-all-closed', () => {
-    killBackend()
     app.quit()
   })
 
-  app.on('before-quit', killBackend)
-  process.on('exit', killBackend)
+  app.on('before-quit', (event) => {
+    if (!backendProcess || backendStopping) return
+    event.preventDefault()
+    void stopBackend().finally(() => app.quit())
+  })
+  process.on('exit', () => forceKillBackend())
 }

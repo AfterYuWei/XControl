@@ -1,10 +1,17 @@
-import type { CSSProperties } from 'react'
+import { lazy, Suspense, type CSSProperties } from 'react'
 import { useSessionStore } from '@/store/session'
 import { useSettingsStore } from '@/store/settings'
-import { TerminalPane } from './TerminalPane'
-import { SftpView } from '@/components/Sftp/SftpView'
-import { VaultView } from '@/components/Vault/VaultView'
 import { getTerminalThemeMeta } from '@/lib/terminalThemes'
+
+const TerminalPane = lazy(() =>
+  import('./TerminalPane').then((module) => ({ default: module.TerminalPane })),
+)
+const SftpView = lazy(() =>
+  import('@/components/Sftp/SftpView').then((module) => ({ default: module.SftpView })),
+)
+const VaultView = lazy(() =>
+  import('@/components/Vault/VaultView').then((module) => ({ default: module.VaultView })),
+)
 
 /** Content router: renders SftpView for sftp-kind tabs, VaultView for vault-kind, TerminalPane otherwise. */
 export function TerminalView() {
@@ -38,7 +45,9 @@ export function TerminalView() {
                 key={tab.id}
                 className={`absolute inset-0 ${active ? 'block' : 'hidden'}`}
               >
-                <SftpView />
+                <Suspense fallback={<div className="h-full bg-[var(--bg)]" />}>
+                  <SftpView />
+                </Suspense>
               </div>
             )
           }
@@ -48,7 +57,9 @@ export function TerminalView() {
                 key={tab.id}
                 className={`absolute inset-0 ${active ? 'block' : 'hidden'}`}
               >
-                <VaultView />
+                <Suspense fallback={<div className="h-full bg-[var(--bg)]" />}>
+                  <VaultView />
+                </Suspense>
               </div>
             )
           }
@@ -57,7 +68,9 @@ export function TerminalView() {
               key={tab.id}
               className={`absolute inset-0 ${active ? 'block' : 'hidden'}`}
             >
-              <TerminalPane tab={tab} isActive={active} />
+              <Suspense fallback={<div className="h-full bg-[var(--term-bg)]" />}>
+                <TerminalPane tab={tab} isActive={active} />
+              </Suspense>
             </div>
           )
         })}

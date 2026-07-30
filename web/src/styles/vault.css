@@ -1117,6 +1117,12 @@
   padding: 16px;
 }
 
+/* 编辑表单在较小窗口中可滚动至页脚操作区。 */
+.vault-form-dialog-content {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .vault-sheet-header {
   display: flex;
   flex-direction: column;
@@ -1646,6 +1652,67 @@
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.vault-key-copy {
+  position: relative;
+}
+
+.vault-key-copy-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 70;
+  width: 236px;
+  padding: 5px;
+  border: 1px solid var(--dialog-border);
+  border-radius: var(--r-sm);
+  background: var(--dialog-bg);
+  box-shadow: var(--shadow-floating);
+}
+
+.vault-key-copy-menu button {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg-2);
+  text-align: left;
+  cursor: pointer;
+}
+
+.vault-key-copy-menu button:hover,
+.vault-key-copy-menu button:focus-visible {
+  outline: none;
+  background: var(--bg-hover);
+}
+
+.vault-key-copy-menu button > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--fg-3);
+}
+
+.vault-key-copy-menu button > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.vault-key-copy-menu strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.vault-key-copy-menu small {
+  color: var(--fg-4);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .vault-form-key-textarea {

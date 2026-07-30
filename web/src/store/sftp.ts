@@ -624,7 +624,7 @@ async function connectAndNavigate(
     const res = await sftpApi.createSession(server.id)
 
     // If still connecting, poll for status
-    let sessionId = res.session_id
+    const sessionId = res.session_id
     let status = res.status
     let homeDir = res.home_dir || '/'
 

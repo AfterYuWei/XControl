@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useProfileStore } from '@/store/profile'
-import { SERVER_ICONS, resolveServerIcon } from '@/lib/serverIcons'
+import { SERVER_ICONS, ServerIcon } from '@/lib/serverIcons'
 import { VaultSelectButton } from '@/components/Vault/VaultSelectButton'
 import type { Profile, ProfileCreateRequest } from '@/types/profile'
 import type { VaultItem } from '@/types/vault'
@@ -153,7 +153,6 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
     { value: 'vault', label: '从 Vault 选择' },
   ]
 
-  const CurrentIcon = resolveServerIcon(form.icon)
   const showPasswordAuth = form.auth_type === 'password'
   const showKeyAuth = form.auth_type === 'key'
   const vaultHasUsername = !!selectedVaultItem?.username?.trim()
@@ -205,7 +204,7 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
                   aria-expanded={iconOpen}
                   title="点击更换图标"
                 >
-                  <CurrentIcon size={15} />
+                  <ServerIcon iconKey={form.icon} size={15} />
                 </button>
                 {iconOpen && (
                   <div ref={iconPopoverRef} className="pf-icon-popover" role="dialog">

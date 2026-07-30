@@ -17,13 +17,13 @@ CGO_ENABLED=0 go build -tags prod -o xcontrol-server .  # Prod build (embeds fro
 ./xcontrol-server                                   # Run (default port 9090)
 ```
 
-Environment variables: `XCONTROL_PORT` (default 9090), `XCONTROL_DB_PATH` (default `./data/xcontrol.db`), `XCONTROL_KEY_PATH` (default `./data/key`), `XCONTROL_LOG_LEVEL` (info|debug).
+Environment variables: `XCONTROL_HOST` (default `127.0.0.1`), `XCONTROL_PORT` (default 9090), `XCONTROL_DB_PATH` (default `./data/xcontrol.db`), `XCONTROL_KEY_PATH` (default `./data/key`), `XCONTROL_LOG_LEVEL` (info|debug), `XCONTROL_ALLOWED_ORIGINS` (comma-separated debug origins), and `XCONTROL_ACCESS_TOKEN` (optional; Electron sets a random per-process token).
 
 ### Frontend (React/TypeScript) — `web/`
 
 ```bash
 cd web
-npm install                     # Install dependencies
+npm ci                          # Install locked dependencies
 npm run dev                     # Dev server with HMR (proxies /api and /ws to :9090)
 npm run build                   # Type check + production build (tsc -b && vite build)
 npm run lint                    # ESLint
@@ -57,17 +57,17 @@ Two-process model: Go HTTP server (API + WebSocket + SQLite) and Vite-served Rea
 
 ### Backend (Go) — `server/`
 
-Entry point (`main.go`) wires: `config.Load()` → slog logger → `store.InitDB` → `crypto.NewEncryptor` → `gateway.NewRouter` → `http.ListenAndServe`. Stores, protocol registry, WebSocket hub, and handlers are all constructed inside `gateway.NewRouter()` (`router.go`), not in `main.go`.
+Entry point (`main.go`) wires: `config.Load()` → slog logger → `store.InitDB` → `crypto.NewEncryptor` → `gateway.NewRouter` → an explicit `http.Server` with signal/desktop-triggered graceful shutdown. Stores, protocol registry, WebSocket hub, and handlers are all constructed inside `gateway.NewRouter()` (`router.go`), not in `main.go`.
 
 Layered architecture:
 - **`config/`** — Env var loader producing server configuration.
-- **`store/`** — SQLite persistence via `modernc.org/sqlite` (pure Go, no CGO). Uses `SetMaxOpenConns(1)` to serialize writes. Migrations are idempotent `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS` statements; new columns are added via the `addColumnIfMissing` helper (PRAGMA guard + `ALTER TABLE ADD COLUMN`).
+- **`store/`** — SQLite persistence via `modernc.org/sqlite` (pure Go, no CGO). Uses one live connection, WAL, foreign keys, and a busy timeout. Schema changes are transactional, recorded in `schema_migrations`, and additive columns still use the guarded `addColumnIfMissing` helper.
 - **`model/`** — Data types: `Profile`, `Group`, `Vault`, `Snippet`, `AuditLog`. Both `Profile` and `Group` carry an `icon` field — a stable string key (e.g. `"server"`, `"folder"`) resolved to Lucide icons by the frontend.
 - **`crypto/`** — AES-256-GCM encryption for vault credentials; key auto-generated on first run at `./data/key`.
 - **`protocol/`** — `Driver` + `Shell` interfaces with `Manager` registry (factory pattern). SSH and SFTP are implemented. This is the extension point for adding new connection types.
 - **`connpool/`** — Shared SSH/SFTP connection pool per server.
 - **`ws/`** — WebSocket hub (session_id → Conn mapping) and message types (input/output/resize/exit/error/ping/pong). Uses `coder/websocket`. Also includes `SftpHub` for SFTP transfer progress.
-- **`gateway/`** — HTTP router (Go 1.22+ enhanced routing), middleware (Recovery → Logger → CORS — no auth middleware yet), and handlers.
+- **`gateway/`** — HTTP router (Go 1.22+ enhanced routing), middleware (Recovery, desktop access-token authentication, Logger, same-origin/CORS policy), handlers, and runtime resource cleanup.
 
 **Note:** There is no separate service layer. Business logic lives in `gateway/handler/` handlers. Key handlers: `session.go` manages active sessions (each holding a `protocol.Driver` and `protocol.Shell`); `ws.go` bridges the hub to sessions; `profile.go` handles credential rotation (new vault entry, old one cleaned up when `RefCount` drops to zero); `group.go` refuses to delete non-empty groups (409 `GROUP_NOT_EMPTY`).
 
@@ -90,7 +90,7 @@ Frontend builds to `server/web_dist/` (not the default `dist/`), which gets embe
 
 ### Database
 
-SQLite with 5 auto-migrated tables on startup: `groups` (nested via `parent_id`, with `icon` column), `vault` (encrypted credentials), `profiles` (references `vault` and `groups`, with `icon` column), `snippets`, `audit_logs`. Orphaned vault entries are cleaned up when profiles are deleted or credentials are rotated.
+SQLite uses versioned transactional migrations for the core, credential metadata, and sync schemas. Business tables include `groups`, `vault`, `profiles`, `snippets`, `audit_logs`, and the `sync_*` tables. Orphaned vault entries are cleaned up when profiles are deleted or credentials are rotated.
 
 ### WebSocket Message Protocol
 
@@ -98,7 +98,7 @@ JSON messages with `type` field: `input`, `output`, `resize`, `exit`, `error`, `
 
 ## Desktop Packaging (Electron) — `electron/`
 
-The `electron/` directory contains an Electron wrapper for building desktop applications. The Go backend binary embeds the frontend static files via `//go:embed` (production build). Build scripts: `build.sh` (Linux/macOS/Windows), `build.ps1` (Windows). See `electron/README.md` for details.
+The `electron/` directory is the production runtime. Electron chooses a free loopback port, generates a per-process access token, starts the Go backend, installs an HttpOnly session cookie, and requests graceful backend shutdown on exit. The Go binary embeds the frontend via `//go:embed`. Web/Vite mode is for debugging only. Build scripts: `build.sh` (Linux/macOS/Windows), `build.ps1` (Windows). `npm run smoke` performs a hidden-window desktop smoke test.
 
 ## UI 设计规范
 

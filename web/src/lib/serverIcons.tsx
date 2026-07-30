@@ -16,7 +16,9 @@ import {
   Gauge,
   ServerCog,
   type LucideIcon,
+  type LucideProps,
 } from 'lucide-react'
+import { createElement } from 'react'
 
 /**
  * Built-in line-style server icons. Each entry maps a stable string key
@@ -62,4 +64,8 @@ export const DEFAULT_SERVER_ICON = 'server'
 export function resolveServerIcon(key?: string): LucideIcon {
   if (key && ICON_MAP[key]) return ICON_MAP[key]
   return ICON_MAP[DEFAULT_SERVER_ICON]
+}
+
+export function ServerIcon({ iconKey, ...props }: LucideProps & { iconKey?: string }) {
+  return createElement(resolveServerIcon(iconKey), props)
 }

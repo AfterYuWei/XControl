@@ -9,6 +9,7 @@ import { EditorDialog } from '@/components/Editor/EditorDialog'
 import { SftpStoreContext, useSftpStore } from './storeContext'
 import { createSftpStore, type SftpStoreApi, type PaneSide, parentPath } from '@/store/sftp'
 import { useSftpTransfer } from '@/hooks/useSftpTransfer'
+import { sftpApi } from '@/api/sftp'
 
 /** SFTP file manager — symmetric dual-pane layout. Both panes are identical
  *  multi-server tab strips; the left pane starts connected to the local
@@ -196,7 +197,6 @@ function SftpDialogs() {
     if (!tab?.sessionId) return
 
     try {
-      const { sftpApi } = await import('@/api/sftp')
       await sftpApi.delete(tab.sessionId, paths)
       await store.refresh(pane)
     } catch (err) {

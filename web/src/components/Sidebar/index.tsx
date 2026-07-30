@@ -1,8 +1,7 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { lazy, Suspense, useState, useMemo, useEffect, useRef } from 'react'
 import { Plus, Edit, Trash2, Server, FolderPlus, FolderEdit } from 'lucide-react'
 import { ProfileForm } from '@/components/ProfileForm'
 import { GroupForm } from '@/components/Sidebar/GroupForm'
-import { ServerDetail } from '@/components/ServerDetail'
 import { useProfileStore } from '@/store/profile'
 import { useSessionStore } from '@/store/session'
 import { useSidebarDetailStore, GLOBAL_PAGE_KEY } from '@/store/sidebarDetail'
@@ -11,6 +10,10 @@ import { resolveServerIcon } from '@/lib/serverIcons'
 import { resolveGroupIcon } from '@/lib/groupIcons'
 import type { Profile } from '@/types/profile'
 import type { Group } from '@/types/group'
+
+const ServerDetail = lazy(() =>
+  import('@/components/ServerDetail').then((module) => ({ default: module.ServerDetail })),
+)
 
 const UNGROUPED_ID = '__ungrouped__'
 
@@ -25,8 +28,8 @@ export function Sidebar() {
     updateProfile,
   } = useProfileStore()
 
-  const profiles = rawProfiles ?? []
-  const groups = rawGroups ?? []
+  const profiles = useMemo(() => rawProfiles ?? [], [rawProfiles])
+  const groups = useMemo(() => rawGroups ?? [], [rawGroups])
 
   const { openTab, tabs, activeTabId } = useSessionStore()
 
@@ -429,15 +432,17 @@ export function Sidebar() {
                 className="sdetail-slot"
                 style={{ display: tab.id === effectiveTabId ? 'flex' : 'none' }}
               >
-                <ServerDetail
+                <Suspense fallback={null}>
+                  <ServerDetail
                   tabId={tab.id}
                   profileId={tab.profileId}
                   profileName={tab.profileName}
                   host={tab.host || '未知'}
                   port={tab.port || 22}
                   username={tab.username || 'root'}
-                  active={tab.id === effectiveTabId}
-                />
+                    active={tab.id === effectiveTabId}
+                  />
+                </Suspense>
               </div>
             ))
           )}

@@ -50,6 +50,9 @@ type TransferManager struct {
 
 	// Temp directory for download staging (zip assembly etc.)
 	tmpDir string
+	stop   chan struct{}
+	done   chan struct{}
+	once   sync.Once
 }
 
 // transferEntry wraps a TransferTask with a cancel function and cleanup hook.
@@ -67,10 +70,28 @@ func NewTransferManager(hub *ws.SftpHub) *TransferManager {
 		maxConcurrent: 5,
 		sem:           make(chan struct{}, 5),
 		tmpDir:        os.TempDir(),
+		stop:          make(chan struct{}),
+		done:          make(chan struct{}),
 	}
 	// Start a background sweeper to clean up orphaned temp files every 10 min
 	go tm.sweepLoop()
 	return tm
+}
+
+func (tm *TransferManager) Shutdown() {
+	tm.once.Do(func() {
+		close(tm.stop)
+		tm.mu.RLock()
+		ids := make([]string, 0, len(tm.tasks))
+		for id := range tm.tasks {
+			ids = append(ids, id)
+		}
+		tm.mu.RUnlock()
+		for _, id := range ids {
+			_, _ = tm.Cancel(id)
+		}
+		<-tm.done
+	})
 }
 
 // --- Upload ---
@@ -798,23 +819,29 @@ func (tm *TransferManager) broadcastProgressToSession(task *model.TransferTask) 
 func (tm *TransferManager) sweepLoop() {
 	ticker := time.NewTicker(10 * time.Minute)
 	defer ticker.Stop()
-	for range ticker.C {
-		entries, err := os.ReadDir(tm.tmpDir)
-		if err != nil {
-			continue
-		}
-		for _, e := range entries {
-			if !strings.HasPrefix(e.Name(), "xcontrol-dl-") && !strings.HasPrefix(e.Name(), "xcontrol-tx-") {
-				continue
-			}
-			info, err := e.Info()
+	defer close(tm.done)
+	for {
+		select {
+		case <-tm.stop:
+			return
+		case <-ticker.C:
+			entries, err := os.ReadDir(tm.tmpDir)
 			if err != nil {
 				continue
 			}
-			// Remove temp files older than 1 hour
-			if time.Since(info.ModTime()) > time.Hour {
-				os.Remove(filepath.Join(tm.tmpDir, e.Name()))
-				slog.Info("sweeper removed orphaned temp file", "file", e.Name())
+			for _, e := range entries {
+				if !strings.HasPrefix(e.Name(), "xcontrol-dl-") && !strings.HasPrefix(e.Name(), "xcontrol-tx-") {
+					continue
+				}
+				info, err := e.Info()
+				if err != nil {
+					continue
+				}
+				// Remove temp files older than 1 hour
+				if time.Since(info.ModTime()) > time.Hour {
+					_ = os.Remove(filepath.Join(tm.tmpDir, e.Name()))
+					slog.Info("sweeper removed orphaned temp file", "file", e.Name())
+				}
 			}
 		}
 	}

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Check, Loader2, ShieldAlert, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { resolveServerIcon } from '@/lib/serverIcons'
+import { ServerIcon } from '@/lib/serverIcons'
 import type { ConnectionLogEntry } from '@/types/ws'
 
 interface ConnectionStep {
@@ -233,7 +233,6 @@ export function ConnectionDialog({
     return `${((stageIndex(currentStage) + 1) / STAGE_ORDER.length) * 100}%`
   }, [currentStage, nextRetryAt, reconnectAttempt, remainingMs, status])
 
-  const ServerIcon = resolveServerIcon(icon)
   const isHostKeyStep = status === 'hostkey' || currentStage === 'hostkey_confirm'
 
   const summaryText =
@@ -285,7 +284,7 @@ export function ConnectionDialog({
                 ) : status === 'reconnecting' || status === 'error' ? (
                   <AlertTriangle size={17} />
                 ) : (
-                  <ServerIcon size={17} />
+                  <ServerIcon iconKey={icon} size={17} />
                 )}
               </div>
 

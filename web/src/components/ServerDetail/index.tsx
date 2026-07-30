@@ -79,6 +79,9 @@ export function ServerDetail({
     if (cwd !== currentPath) {
       listFiles(profileId, cwd)
     }
+    // Store actions are stable; status/path come from the selected profile
+    // detail above and must not turn this synchronization into a request loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cwd, detail.followShellCwd])
 
   // Manual navigation: any directory change initiated inside the file browser

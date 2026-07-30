@@ -34,7 +34,7 @@ fi
 
 echo "==> [1/3] 构建前端 (输出到 server/web_dist)"
 cd "$ROOT/web"
-npm install
+npm ci
 npm run build
 
 echo "==> [2/3] 编译后端 (${GOOS}/${GOARCH}, embed 前端)"
@@ -43,7 +43,7 @@ CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -tags prod -o "xcontrol-server$
 
 echo "==> [3/3] 打包 Electron 应用 ($PLATFORM_DESC)"
 cd "$ROOT/electron"
-npm install
+npm ci
 npm run "$DIST"
 
 echo ""

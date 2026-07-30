@@ -8,6 +8,8 @@ import { EditorToolbar } from './EditorToolbar'
 import { EditorStatusBar } from './EditorStatusBar'
 import { EditorTabs } from './EditorTabs'
 
+const SKELETON_WIDTHS = [52, 74, 43, 81, 61, 36, 69, 48, 86, 57, 72, 39, 64, 78, 45, 83, 55, 68]
+
 /** Full-screen-ish modal hosting the Monaco editor with multi-tab support.
  *  Shown when store.open is true. Guards close when there are unsaved edits. */
 export function EditorDialog() {
@@ -86,7 +88,7 @@ export function EditorDialog() {
                     <Skeleton className="editor-skel-gutter" />
                     <Skeleton
                       className="editor-skel-code"
-                      style={{ width: `${30 + Math.random() * 60}%` }}
+                      style={{ width: `${SKELETON_WIDTHS[i]}%` }}
                     />
                   </div>
                 ))}

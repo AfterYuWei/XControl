@@ -48,6 +48,20 @@ func (h *Hub) Get(sessionID string) *Conn {
 	return h.connections[sessionID]
 }
 
+func (h *Hub) CloseAll() {
+	h.mu.Lock()
+	connections := make([]*Conn, 0, len(h.connections))
+	for _, conn := range h.connections {
+		connections = append(connections, conn)
+	}
+	h.connections = make(map[string]*Conn)
+	h.mu.Unlock()
+
+	for _, conn := range connections {
+		conn.Close()
+	}
+}
+
 type Conn struct {
 	SessionID string
 	ws        *websocket.Conn
@@ -79,6 +93,7 @@ func (c *Conn) Close() {
 	default:
 		close(c.done)
 	}
+	_ = c.ws.CloseNow()
 }
 
 func (c *Conn) Done() <-chan struct{} {

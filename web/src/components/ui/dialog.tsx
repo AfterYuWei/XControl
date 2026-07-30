@@ -1,4 +1,5 @@
 import * as React from "react"
+import { createPortal } from "react-dom"
 import { cn } from "@/lib/utils"
 import { X } from "lucide-react"
 
@@ -11,7 +12,9 @@ interface DialogProps {
 function Dialog({ open, onOpenChange, children }: DialogProps) {
   if (!open) return null
 
-  return (
+  // Dialogs may be opened inside panes with overflow clipping (for example
+  // the terminal content beside the sidebar), so render at the document root.
+  return createPortal(
     <div className="fixed inset-0 z-50">
       <div
         className="fixed inset-0 bg-black/80"
@@ -20,7 +23,8 @@ function Dialog({ open, onOpenChange, children }: DialogProps) {
       <div className="fixed inset-0 flex items-center justify-center p-4">
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 

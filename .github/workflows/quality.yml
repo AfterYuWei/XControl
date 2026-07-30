@@ -70,5 +70,7 @@ jobs:
         working-directory: server
       - run: npm ci
         working-directory: electron
-      - run: xvfb-run -a npm run smoke
+      # GitHub Linux Runner 无法配置 Electron 的 setuid sandbox helper。
+      # 此为隔离 CI 中的隐藏窗口烟测，显式关闭 Chromium sandbox；桌面版不受影响。
+      - run: xvfb-run -a npm run smoke:ci
         working-directory: electron

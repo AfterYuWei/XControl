@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import type { Terminal } from '@xterm/xterm'
 import type { CompletionPopupState } from '@/hooks/useCompletion'
 import type { Suggestion } from '@/lib/completionSpecs'
+import { calculateCompletionPosition } from '@/lib/completionPosition'
 
 interface CompletionPanelProps {
   popup: CompletionPopupState
@@ -18,7 +19,6 @@ interface CompletionPanelProps {
 interface PixelPos {
   left: number
   top: number
-  cellH: number
 }
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent)
@@ -51,51 +51,70 @@ export function CompletionPanel({ popup, getTerminal, containerRef, onHoverItem,
   // 定位：基于 xterm 光标像素坐标。第一列在光标下方，后续列向右依次排开。
   // 仅在打开时计算并写 pos；关闭时由渲染分支 (!popup.open) 直接返回 null，
   // 无需在 effect 里同步重置 pos。
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!popup.open) return
 
     const terminal = getTerminal()
     const container = containerRef.current
-    if (!terminal || !container) return
+    const panel = panelRef.current
+    if (!terminal || !container || !panel) return
 
     const screen = terminal.element?.querySelector('.xterm-screen') as HTMLElement | null
     if (!screen) return
 
-    const screenRect = screen.getBoundingClientRect()
-    const containerRect = container.getBoundingClientRect()
-    const cols = terminal.cols
-    const rows = terminal.rows
-    if (cols <= 0 || rows <= 0) return
+    let animationFrame: number | null = null
 
-    const cellW = screenRect.width / cols
-    const cellH = screenRect.height / rows
-    if (cellW <= 0 || cellH <= 0) return
+    const measureAndSetPosition = () => {
+      const screenRect = screen.getBoundingClientRect()
+      const containerRect = container.getBoundingClientRect()
+      const panelRect = panel.getBoundingClientRect()
+      const cols = terminal.cols
+      const rows = terminal.rows
+      if (cols <= 0 || rows <= 0 || panelRect.width <= 0 || panelRect.height <= 0) return
 
-    const cursorX = terminal.buffer.active.cursorX
-    const cursorY = terminal.buffer.active.cursorY
-    const screenLeft = screenRect.left - containerRect.left
-    const screenTop = screenRect.top - containerRect.top
+      const cellW = screenRect.width / cols
+      const cellH = screenRect.height / rows
+      if (cellW <= 0 || cellH <= 0) return
 
-    const columnCount = popup.columns.length
-    const panelW = columnCount * COLUMN_WIDTH + (columnCount - 1) * COLUMN_GAP + 8
-    const itemH = cellH + 6
-    const maxVisible = 8
-    const estimatedH = maxVisible * itemH + 8
+      const cursorX = terminal.buffer.active.cursorX
+      const cursorY = terminal.buffer.active.cursorY
+      const screenLeft = screenRect.left - containerRect.left
+      const screenTop = screenRect.top - containerRect.top
+      const next = calculateCompletionPosition({
+        anchorLeft: screenLeft + cursorX * cellW,
+        anchorTop: screenTop + cursorY * cellH,
+        anchorBottom: screenTop + (cursorY + 1) * cellH,
+        panelWidth: panelRect.width,
+        panelHeight: panelRect.height,
+        containerWidth: container.clientWidth,
+        containerHeight: container.clientHeight,
+      })
 
-    const cursorRowTop = screenTop + cursorY * cellH
-    const cursorRowBottom = screenTop + (cursorY + 1) * cellH
-    const spaceBelow = rows * cellH - (cursorY + 1) * cellH
-
-    const top = spaceBelow >= estimatedH || cursorY < rows / 2
-      ? cursorRowBottom + 4
-      : cursorRowTop - estimatedH - 4
-
-    let left = screenLeft + cursorX * cellW
-    if (left + panelW > container.clientWidth) {
-      left = Math.max(0, container.clientWidth - panelW - 8)
+      setPos((current) => current?.left === next.left && current.top === next.top ? current : next)
     }
 
-    setPos({ left, top, cellH })
+    const reposition = () => {
+      if (animationFrame !== null) cancelAnimationFrame(animationFrame)
+      animationFrame = requestAnimationFrame(() => {
+        animationFrame = null
+        measureAndSetPosition()
+      })
+    }
+
+    measureAndSetPosition()
+
+    const observer = new ResizeObserver(reposition)
+    observer.observe(container)
+    observer.observe(panel)
+    const cursorDisposable = terminal.onCursorMove(reposition)
+    const resizeDisposable = terminal.onResize(reposition)
+
+    return () => {
+      observer.disconnect()
+      cursorDisposable.dispose()
+      resizeDisposable.dispose()
+      if (animationFrame !== null) cancelAnimationFrame(animationFrame)
+    }
   }, [popup.open, popup.columns, getTerminal, containerRef])
 
   // 键盘导航时滚动到选中项
@@ -114,7 +133,7 @@ export function CompletionPanel({ popup, getTerminal, containerRef, onHoverItem,
     }
   }, [])
 
-  if (!popup.open || popup.columns.length === 0 || !pos) return null
+  if (!popup.open || popup.columns.length === 0) return null
 
   const handleHover = (columnIndex: number, itemIndex: number, suggestion: Suggestion) => {
     onHoverItem?.(columnIndex, itemIndex)
@@ -132,8 +151,9 @@ export function CompletionPanel({ popup, getTerminal, containerRef, onHoverItem,
 
   const containerStyle: CSSProperties = {
     position: 'absolute',
-    left: pos.left,
-    top: pos.top,
+    left: pos?.left ?? 0,
+    top: pos?.top ?? 0,
+    visibility: pos ? 'visible' : 'hidden',
     display: 'flex',
     gap: COLUMN_GAP,
     zIndex: 100,

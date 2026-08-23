@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { vaultApi } from '@/api/vault'
 import { toast } from 'sonner'
+import { useProfileStore } from '@/store/profile'
 import type {
   VaultItem,
   VaultCreateRequest,
@@ -68,6 +69,7 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
   update: async (id, data) => {
     const item = await vaultApi.update(id, data)
     await get().fetchList()
+    if (item.type === 'password') await useProfileStore.getState().fetchProfiles()
     toast.success('凭据已更新')
     return item
   },

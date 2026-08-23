@@ -204,7 +204,7 @@ CREATE TABLE profiles (
     host         TEXT NOT NULL,
     port         INTEGER NOT NULL DEFAULT 22,
     username     TEXT NOT NULL DEFAULT 'root',
-    auth_type    TEXT NOT NULL DEFAULT 'password',  -- password | key | agent
+    auth_type    TEXT NOT NULL DEFAULT 'password',  -- password | key | agent | vault
     vault_id     TEXT,                              -- 关联凭据
     group_id     TEXT REFERENCES groups(id),
     tags         TEXT DEFAULT '[]',                 -- JSON 数组
@@ -232,6 +232,9 @@ CREATE TABLE vault (
     type        TEXT NOT NULL,             -- password | private_key
     data        TEXT NOT NULL,             -- AES-256-GCM 加密后的数据
     fingerprint TEXT,                      -- 密钥指纹（用于去重/识别）
+    name        TEXT NOT NULL DEFAULT '',
+    username    TEXT DEFAULT '',            -- 仅 password 类型使用
+    remark      TEXT DEFAULT '',
     created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -559,7 +562,15 @@ GET    /ws?session_id={id}           # 终端 WebSocket 连接
 }
 ```
 
-> 注意：密码/密钥在服务端加密后存入 Vault，响应中不返回凭据字段。
+用户名归属规则：
+
+- Profile 始终保存并使用实际 SSH 登录用户名，新建服务器必须设置用户名。
+- 密码 Vault 保存“用户名 + 密码”，被 Profile 引用时 Vault 用户名为唯一可信来源。
+- 私钥 Vault 只保存密钥材料，不绑定用户名；使用该私钥的每个 Profile 单独设置用户名。
+- 修改密码 Vault 用户名时，服务端在同一事务内同步所有引用 Profile。
+- `POST/PUT /api/vault` 仅在 `type=password` 时要求 `username`；其他类型会将该字段规范化为空字符串。
+
+凭据内容使用 AES-256-GCM 加密，Profile 与 Vault 的响应均不返回明文凭据字段。
 
 #### POST /api/profiles/:id/test
 
@@ -827,8 +838,9 @@ type VaultStore struct {
     key []byte  // AES-256 密钥，首次运行时生成
 }
 
-// 凭据存入 Vault 后，Profile 只存储 vault_id
-// 删除 Profile 时，引用计数为 0 的 Vault 条目自动清理
+// Profile 保存 vault_id 和实际登录 username。
+// password Vault 的用户名变更会原子同步到所有引用 Profile；
+// private_key Vault 的 username 始终为空。
 
 func (s *VaultStore) Store(cred *model.Credential) (vaultID string, error)
 func (s *VaultStore) Retrieve(vaultID string) (*model.Credential, error)

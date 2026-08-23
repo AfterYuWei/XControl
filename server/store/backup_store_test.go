@@ -174,6 +174,47 @@ func TestBackupExportImportRoundTrip(t *testing.T) {
 	}
 }
 
+func TestBackupImportNormalizesVaultUsernameOwnership(t *testing.T) {
+	backups, cleanup := setupBackupTest(t)
+	defer cleanup()
+	now := time.Now().Truncate(time.Second)
+	payload := &model.BackupPayload{
+		Groups: []*model.Group{},
+		Vault: []*model.BackupVaultItem{
+			{
+				ID: "key", Name: "key", Type: model.VaultTypePrivateKey, Username: "legacy-user",
+				Credential: &model.Credential{PrivKey: "key"}, CreatedAt: now, UpdatedAt: now,
+			},
+			{
+				ID: "password", Name: "password", Type: model.VaultTypePassword,
+				Credential: &model.Credential{Password: "secret"}, CreatedAt: now, UpdatedAt: now,
+			},
+		},
+		Profiles: []*model.BackupProfile{
+			{
+				ID: "profile", Name: "profile", Host: "host", Port: 22, Username: "deploy",
+				AuthType: "vault", VaultID: "password", Tags: []string{}, Options: "{}",
+				CreatedAt: now, UpdatedAt: now,
+			},
+		},
+		Snippets: []*model.Snippet{},
+	}
+	if _, err := backups.Import(payload, model.BackupStrategySkip); err != nil {
+		t.Fatal(err)
+	}
+	key, err := NewVaultStore(backups.db, backups.encryptor).Get("key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	password, err := NewVaultStore(backups.db, backups.encryptor).Get("password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key.Username != "" || password.Username != "deploy" {
+		t.Fatalf("normalized usernames: key=%q password=%q", key.Username, password.Username)
+	}
+}
+
 func TestTopoSortGroupsCycle(t *testing.T) {
 	groups := []*model.Group{
 		{ID: "a", ParentID: "b"},

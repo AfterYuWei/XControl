@@ -276,7 +276,11 @@ export function Layout() {
                             <KeyRound size={14} />
                             <span>
                               <strong>{item.name}</strong>
-                              <small>{item.type === 'private_key' ? '私钥' : '密码'} · {item.username || '未设置用户名'}</small>
+                              <small>
+                                {item.type === 'private_key'
+                                  ? '私钥'
+                                  : `密码 · ${item.username || '需补充用户名'}`}
+                              </small>
                             </span>
                           </button>
                         ))}

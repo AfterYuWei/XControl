@@ -13,9 +13,9 @@ func resolveProfileCredential(profile *model.Profile, vault store.VaultStore, en
 		return &model.Credential{}, nil
 	}
 
-	// Vault only provides secret material (password / private key / certificate).
-	// The effective login username always comes from profile.Username so a server
-	// can override the optional username metadata stored on the Vault item.
+	// Vault provides secret material. Profile.Username is the effective login
+	// user; password Vault updates keep that denormalized value synchronized,
+	// while reusable private keys never own a username.
 	if profile.AuthType == "vault" && profile.VaultID != "" {
 		cred, err := vault.Retrieve(profile.VaultID)
 		if err != nil {

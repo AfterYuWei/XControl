@@ -91,6 +91,7 @@ func (s *BackupStore) exportVault(tx *sql.Tx, p *model.BackupPayload) error {
 		if err := rows.Scan(&item.ID, &item.Type, &data, &item.Name, &item.Username, &item.Remark, &item.Fingerprint, &item.CreatedAt, &updatedAt); err != nil {
 			return err
 		}
+		item.Username = normalizeVaultUsername(item.Type, item.Username)
 		item.UpdatedAt = item.CreatedAt
 		if updatedAt.Valid {
 			item.UpdatedAt = updatedAt.Time
@@ -270,6 +271,9 @@ func (s *BackupStore) Import(p *model.BackupPayload, strategy string) (*model.Ba
 		}
 		addStat(result, action, func(r *model.BackupStats) *int { return &r.Snippets })
 	}
+	if err := normalizeVaultUsernameReferences(tx); err != nil {
+		return nil, fmt.Errorf("normalize vault usernames: %w", err)
+	}
 
 	if err := tx.Commit(); err != nil {
 		return nil, err
@@ -330,6 +334,7 @@ func (s *BackupStore) importVault(tx *sql.Tx, v *model.BackupVaultItem, strategy
 	if v.Credential == nil {
 		return actionSkipped, fmt.Errorf("vault item %s has no credential", v.ID)
 	}
+	v.Username = normalizeVaultUsername(v.Type, v.Username)
 	plaintext, fingerprint, err := encodePlaintext(v.Credential, v.Type)
 	if err != nil {
 		return actionSkipped, err

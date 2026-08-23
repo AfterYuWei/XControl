@@ -52,10 +52,12 @@ export function VaultItemRow({ item, onEdit, onDelete }: VaultItemRowProps) {
       </div>
 
       <div className="vault-card-body">
-        <div className="vault-card-field">
-          <span className="vault-card-label">用户名</span>
-          <span className="vault-card-value">{item.username || '-'}</span>
-        </div>
+        {item.type === 'password' ? (
+          <div className="vault-card-field">
+            <span className="vault-card-label">用户名</span>
+            <span className="vault-card-value">{item.username || '需补充用户名'}</span>
+          </div>
+        ) : null}
         {item.remark && (
           <div className="vault-card-field">
             <span className="vault-card-label">备注</span>

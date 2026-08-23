@@ -116,6 +116,7 @@ func (s *sqliteVaultStore) Store(cred *model.Credential, credType, name, usernam
 
 	id := uuid.New().String()
 	now := time.Now()
+	username = normalizeVaultUsername(credType, username)
 	_, err = s.db.Exec(
 		`INSERT INTO vault (id, type, data, fingerprint, name, username, remark, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, credType, encrypted, fingerprint, name, username, remark, now, now,
@@ -149,11 +150,36 @@ func (s *sqliteVaultStore) Update(id string, cred *model.Credential, credType, n
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(
+	username = normalizeVaultUsername(credType, username)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	now := time.Now()
+	if _, err = tx.Exec(
 		`UPDATE vault SET type = ?, data = ?, fingerprint = ?, name = ?, username = ?, remark = ?, updated_at = ? WHERE id = ?`,
-		credType, encrypted, fingerprint, name, username, remark, time.Now(), id,
-	)
-	return err
+		credType, encrypted, fingerprint, name, username, remark, now, id,
+	); err != nil {
+		return err
+	}
+	if credType == model.VaultTypePassword {
+		if _, err = tx.Exec(
+			`UPDATE profiles SET username = ?, updated_at = ? WHERE auth_type = 'vault' AND vault_id = ?`,
+			username, now, id,
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func normalizeVaultUsername(credType, username string) string {
+	if credType != model.VaultTypePassword {
+		return ""
+	}
+	return strings.TrimSpace(username)
 }
 
 func (s *sqliteVaultStore) Delete(id string) error {

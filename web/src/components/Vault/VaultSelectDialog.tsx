@@ -5,6 +5,7 @@ import { vaultApi } from '@/api/vault'
 import { toast } from 'sonner'
 import { VAULT_TYPE_LABELS, type VaultItem } from '@/types/vault'
 import { VAULT_TYPE_ICONS } from '@/lib/vaultIcons'
+import { vaultNeedsUsername } from '@/lib/vaultUsername'
 
 interface VaultSelectDialogProps {
   open: boolean
@@ -41,6 +42,7 @@ export function VaultSelectDialog({ open, onOpenChange, selectedId, onSelect }: 
     ? items.filter(
         (item) =>
           item.name.toLowerCase().includes(search.toLowerCase()) ||
+          (item.type === 'password' && item.username.toLowerCase().includes(search.toLowerCase())) ||
           item.remark.toLowerCase().includes(search.toLowerCase()),
       )
     : items
@@ -75,13 +77,16 @@ export function VaultSelectDialog({ open, onOpenChange, selectedId, onSelect }: 
             filtered.map((item) => {
               const Icon = VAULT_TYPE_ICONS[item.type]
               const isSelected = item.id === selectedId
+              const needsUsername = vaultNeedsUsername(item)
               return (
                 <div
                   key={item.id}
-                  className={`vault-select-row ${isSelected ? 'selected' : ''}`}
-                  onClick={() => handleSelect(item)}
+                  className={`vault-select-row ${isSelected ? 'selected' : ''} ${needsUsername ? 'disabled' : ''}`}
+                  onClick={() => !needsUsername && handleSelect(item)}
                   role="option"
                   aria-selected={isSelected}
+                  aria-disabled={needsUsername}
+                  title={needsUsername ? '请先编辑该密码凭据并补充用户名' : undefined}
                 >
                   <div className="vault-row-icon">
                     <Icon size={15} />
@@ -92,8 +97,12 @@ export function VaultSelectDialog({ open, onOpenChange, selectedId, onSelect }: 
                       <span className={`vault-row-badge vault-row-badge-${item.type}`}>{VAULT_TYPE_LABELS[item.type]}</span>
                     </div>
                     <div className="vault-row-meta">
-                      <span className="vault-row-user">{item.username || '-'}</span>
-                      <span className="vault-row-sep">·</span>
+                      {item.type === 'password' ? (
+                        <>
+                          <span className="vault-row-user">{item.username || '需补充用户名'}</span>
+                          <span className="vault-row-sep">·</span>
+                        </>
+                      ) : null}
                       <span>引用 {item.ref_count}</span>
                       <span className="vault-row-sep">·</span>
                       <span className="vault-row-date">{formatDate(item.updated_at)}</span>

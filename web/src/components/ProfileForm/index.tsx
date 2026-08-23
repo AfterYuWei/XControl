@@ -8,6 +8,7 @@ import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useProfileStore } from '@/store/profile'
 import { SERVER_ICONS, ServerIcon } from '@/lib/serverIcons'
+import { applyVaultUsernameToProfile } from '@/lib/vaultUsername'
 import { VaultSelectButton } from '@/components/Vault/VaultSelectButton'
 import type { Profile, ProfileCreateRequest } from '@/types/profile'
 import type { VaultItem } from '@/types/vault'
@@ -45,7 +46,7 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
       name: '',
       host: '',
       port: 22,
-      username: 'root',
+      username: '',
       auth_type: 'password',
       icon: 'server',
       vault_id: '',
@@ -63,8 +64,7 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
   const [iconOpen, setIconOpen] = useState(false)
   const [uploadingKey, setUploadingKey] = useState(false)
   const [selectedVaultItem, setSelectedVaultItem] = useState<VaultItem | null>(null)
-  const [vaultUsernameDirty, setVaultUsernameDirty] = useState(false)
-  const [lastAppliedVaultUsername, setLastAppliedVaultUsername] = useState('')
+  const autoVaultUsernameRef = useRef('')
   const iconBtnRef = useRef<HTMLButtonElement>(null)
   const iconPopoverRef = useRef<HTMLDivElement>(null)
   const privateKeyFileRef = useRef<HTMLInputElement>(null)
@@ -103,7 +103,12 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
     setError('')
 
     try {
-      const payload: ProfileCreateRequest = { ...form }
+      const payload: ProfileCreateRequest = { ...form, username: form.username.trim() }
+      if (!payload.username) {
+        setError('用户名不能为空')
+        setLoading(false)
+        return
+      }
       if (payload.auth_type === 'vault') {
         payload.password = ''
         payload.private_key = ''
@@ -155,30 +160,52 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
 
   const showPasswordAuth = form.auth_type === 'password'
   const showKeyAuth = form.auth_type === 'key'
-  const vaultHasUsername = !!selectedVaultItem?.username?.trim()
+  const isPasswordVault = form.auth_type === 'vault' && selectedVaultItem?.type === 'password'
   const vaultUsernameHelpText = selectedVaultItem
-    ? vaultHasUsername
-      ? '已从 Vault 回显用户名，可按需修改，仅作用于当前服务器。'
-      : '当前 Vault 凭据未设置用户名，请在此填写服务器登录用户名。'
-    : '选择 Vault 凭据后，请确认当前服务器使用的登录用户名。'
+    ? selectedVaultItem.type === 'password'
+      ? selectedVaultItem.username
+        ? '密码凭据已绑定用户名，服务器中不可单独修改。'
+        : '该密码凭据缺少用户名，请先前往 Vault 补充。'
+      : '私钥不绑定用户，请填写当前服务器的登录用户名。'
+    : '选择 Vault 凭据；服务器登录用户名始终需要确认。'
 
-  const handleVaultSelection = (item: VaultItem) => {
-    const incomingUsername = item.username?.trim() || ''
-    const currentUsername = form.username.trim()
-    const shouldApplyVaultUsername =
-      incomingUsername !== '' &&
-      (!vaultUsernameDirty || currentUsername === '' || form.username === lastAppliedVaultUsername)
+  const applyVaultItem = useCallback((item: VaultItem, updateVaultId: boolean) => {
+    const previousAutoUsername = autoVaultUsernameRef.current
+    setSelectedVaultItem(item)
+    setForm((prev) => {
+      const next = applyVaultUsernameToProfile(item, prev.username, previousAutoUsername)
+      autoVaultUsernameRef.current = next.autoUsername
+      return {
+        ...prev,
+        vault_id: updateVaultId ? item.id : prev.vault_id,
+        username: next.username,
+      }
+    })
+  }, [])
 
-    setLastAppliedVaultUsername(incomingUsername)
+  const handleVaultSelection = useCallback((item: VaultItem) => {
+    applyVaultItem(item, true)
+  }, [applyVaultItem])
+
+  const handleVaultResolved = useCallback((item: VaultItem | null) => {
+    if (item) applyVaultItem(item, false)
+    else setSelectedVaultItem(null)
+  }, [applyVaultItem])
+
+  const handleAuthTypeChange = (value: string) => {
+    const nextAuthType = value as 'password' | 'key' | 'vault'
+    const previousAutoUsername = autoVaultUsernameRef.current
+    if (nextAuthType !== 'vault') autoVaultUsernameRef.current = ''
     setForm((prev) => ({
       ...prev,
-      vault_id: item.id,
-      username: shouldApplyVaultUsername ? incomingUsername : prev.username,
+      auth_type: nextAuthType,
+      username:
+        nextAuthType === 'vault' && selectedVaultItem?.type === 'password'
+          ? selectedVaultItem.username.trim()
+          : previousAutoUsername && prev.username === previousAutoUsername
+            ? ''
+            : prev.username,
     }))
-
-    if (shouldApplyVaultUsername) {
-      setVaultUsernameDirty(false)
-    }
   }
 
   return (
@@ -274,11 +301,26 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
           </div>
 
           <div className="pf-field">
+            <Label htmlFor="username" className="pf-label">
+              用户名
+            </Label>
+            <Input
+              id="username"
+              value={form.username}
+              onChange={(event) => setForm({ ...form, username: event.target.value })}
+              placeholder="例如：root"
+              required
+              disabled={isPasswordVault}
+              className="pf-input-mono"
+            />
+          </div>
+
+          <div className="pf-field">
             <Label className="pf-label">认证方式</Label>
             <Select
               options={authOptions}
               value={form.auth_type}
-              onChange={(value) => setForm({ ...form, auth_type: value as 'password' | 'key' | 'vault' })}
+              onChange={handleAuthTypeChange}
             />
           </div>
 
@@ -287,87 +329,42 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
               <Label className="pf-label">凭据选择</Label>
               <VaultSelectButton
                 vaultId={form.vault_id}
-                onItemResolved={setSelectedVaultItem}
+                onItemResolved={handleVaultResolved}
                 onChange={handleVaultSelection}
               />
               <div className="pf-help-text">{vaultUsernameHelpText}</div>
-              <div className="pf-field" style={{ marginTop: '12px' }}>
-                <Label htmlFor="vault-username" className="pf-label">
-                  用户名
-                </Label>
-                <Input
-                  id="vault-username"
-                  value={form.username}
-                  onChange={(event) => {
-                    setVaultUsernameDirty(true)
-                    setForm({ ...form, username: event.target.value })
-                  }}
-                  placeholder="root"
-                  required
-                  className="pf-input-mono"
-                />
-              </div>
             </div>
           ) : (
             <>
               {showPasswordAuth && (
-                <div className="pf-grid-2 pf-grid-equal">
-                  <div className="pf-field">
-                    <Label htmlFor="username" className="pf-label">
-                      用户名
-                    </Label>
+                <div className="pf-field">
+                  <Label htmlFor="password" className="pf-label">
+                    密码
+                  </Label>
+                  <div className="pf-input-group pf-input-group-action">
                     <Input
-                      id="username"
-                      value={form.username}
-                      onChange={(event) => setForm({ ...form, username: event.target.value })}
-                      placeholder="root"
-                      required
+                      id="password"
+                      type={passwordVisible ? 'text' : 'password'}
+                      value={form.password}
+                      onChange={(event) => setForm({ ...form, password: event.target.value })}
+                      placeholder={isEditing ? '留空则不修改' : ''}
                       className="pf-input-mono"
                     />
-                  </div>
-                  <div className="pf-field">
-                    <Label htmlFor="password" className="pf-label">
-                      密码
-                    </Label>
-                    <div className="pf-input-group pf-input-group-action">
-                      <Input
-                        id="password"
-                        type={passwordVisible ? 'text' : 'password'}
-                        value={form.password}
-                        onChange={(event) => setForm({ ...form, password: event.target.value })}
-                        placeholder={isEditing ? '留空则不修改' : ''}
-                        className="pf-input-mono"
-                      />
-                      <button
-                        type="button"
-                        className="pf-inline-action"
-                        onClick={() => setPasswordVisible((value) => !value)}
-                        aria-label={passwordVisible ? '隐藏密码' : '显示密码'}
-                        title={passwordVisible ? '隐藏密码' : '显示密码'}
-                      >
-                        {passwordVisible ? <EyeOff size={14} /> : <Eye size={14} />}
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      className="pf-inline-action"
+                      onClick={() => setPasswordVisible((value) => !value)}
+                      aria-label={passwordVisible ? '隐藏密码' : '显示密码'}
+                      title={passwordVisible ? '隐藏密码' : '显示密码'}
+                    >
+                      {passwordVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
                   </div>
                 </div>
               )}
 
               {showKeyAuth && (
                 <>
-                  <div className="pf-field">
-                    <Label htmlFor="username" className="pf-label">
-                      用户名
-                    </Label>
-                    <Input
-                      id="username"
-                      value={form.username}
-                      onChange={(event) => setForm({ ...form, username: event.target.value })}
-                      placeholder="root"
-                      required
-                      className="pf-input-mono"
-                    />
-                  </div>
-
                   <div className="pf-field">
                     <div className="pf-field-head">
                       <Label htmlFor="private_key" className="pf-label">

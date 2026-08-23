@@ -4,7 +4,7 @@ export interface VaultItem {
   id: string
   name: string
   type: VaultType
-  username: string
+  username: string // password only; empty for reusable keys
   remark: string
   fingerprint: string
   ref_count: number

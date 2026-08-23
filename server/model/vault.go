@@ -32,7 +32,7 @@ type VaultItem struct {
 	ID            string    `json:"id"`
 	Name          string    `json:"name"`
 	Type          string    `json:"type"`
-	Username      string    `json:"username"`
+	Username      string    `json:"username"` // password only; empty for reusable keys
 	Remark        string    `json:"remark"`
 	Fingerprint   string    `json:"fingerprint"`
 	RefCount      int       `json:"ref_count"`

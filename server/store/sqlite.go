@@ -58,6 +58,7 @@ func migrate(db *sql.DB) error {
 		{version: 1, apply: migrateCoreSchema},
 		{version: 2, apply: migrateCredentialMetadata},
 		{version: 3, apply: migrateSyncSchema},
+		{version: 4, apply: migrateVaultUsernameOwnership},
 	}
 
 	for _, migration := range migrations {
@@ -223,6 +224,50 @@ func migrateSyncSchema(tx *sql.Tx) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_sync_events_time ON sync_events(created_at DESC)`,
 		`INSERT OR IGNORE INTO sync_state (id, next_version, status) VALUES (1, 1, 'idle')`,
+	})
+}
+
+// migrateVaultUsernameOwnership makes login usernames password-specific in
+// Vault. Reusable keys no longer own a username; profiles always keep the
+// effective SSH login user.
+func migrateVaultUsernameOwnership(tx *sql.Tx) error {
+	return normalizeVaultUsernameReferences(tx)
+}
+
+func normalizeVaultUsernameReferences(executor sqlExecutor) error {
+	return execStatements(executor, []string{
+		`UPDATE vault SET username = '' WHERE type != 'password' AND username != ''`,
+		`UPDATE vault SET username = TRIM(username) WHERE type = 'password'`,
+		`UPDATE vault
+		 SET username = (
+			 SELECT MIN(TRIM(p.username))
+			 FROM profiles p
+			 WHERE p.auth_type = 'vault'
+			   AND p.vault_id = vault.id
+			   AND TRIM(p.username) != ''
+		 )
+		 WHERE type = 'password'
+		   AND TRIM(username) = ''
+		   AND (
+			 SELECT COUNT(DISTINCT TRIM(p.username))
+			 FROM profiles p
+			 WHERE p.auth_type = 'vault'
+			   AND p.vault_id = vault.id
+			   AND TRIM(p.username) != ''
+		   ) = 1`,
+		`UPDATE profiles
+		 SET username = (
+			 SELECT v.username FROM vault v WHERE v.id = profiles.vault_id
+		 ),
+		 updated_at = CURRENT_TIMESTAMP
+		 WHERE auth_type = 'vault'
+		   AND EXISTS (
+			 SELECT 1 FROM vault v
+			 WHERE v.id = profiles.vault_id
+			   AND v.type = 'password'
+			   AND TRIM(v.username) != ''
+			   AND profiles.username != v.username
+		   )`,
 	})
 }
 

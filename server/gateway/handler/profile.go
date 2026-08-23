@@ -3,6 +3,7 @@ package handler
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -50,8 +51,11 @@ func (h *ProfileHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Name == "" || req.Host == "" || req.Username == "" {
-		writeError(w, http.StatusBadRequest, "VALIDATION", "name, host, username are required")
+	req.Name = strings.TrimSpace(req.Name)
+	req.Host = strings.TrimSpace(req.Host)
+	req.Username = strings.TrimSpace(req.Username)
+	if req.Name == "" || req.Host == "" {
+		writeError(w, http.StatusBadRequest, "VALIDATION", "name and host are required")
 		return
 	}
 	if req.Port == 0 {
@@ -67,6 +71,10 @@ func (h *ProfileHandler) Create(w http.ResponseWriter, r *http.Request) {
 	vaultID, inlineCredential, err := h.prepareCredentialOnCreate(&req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "VALIDATION", err.Error())
+		return
+	}
+	if req.Username == "" {
+		writeError(w, http.StatusBadRequest, "VALIDATION", "username is required")
 		return
 	}
 
@@ -150,11 +158,20 @@ func (h *ProfileHandler) prepareCredentialOnCreate(req *model.ProfileCreateReque
 		if req.VaultID == "" {
 			return "", "", fmt.Errorf("vault_id is required for vault auth")
 		}
-		if _, err := h.vault.Get(req.VaultID); err != nil {
+		item, err := h.vault.Get(req.VaultID)
+		if err != nil {
 			return "", "", fmt.Errorf("vault entry not found")
+		}
+		if err := applyVaultUsername(item, req.Username, func(username string) {
+			req.Username = username
+		}); err != nil {
+			return "", "", err
 		}
 		return req.VaultID, "", nil
 	case "password":
+		if req.Username == "" {
+			return "", "", fmt.Errorf("username is required")
+		}
 		if req.Password == "" {
 			return "", "", fmt.Errorf("password is required for password auth")
 		}
@@ -163,6 +180,9 @@ func (h *ProfileHandler) prepareCredentialOnCreate(req *model.ProfileCreateReque
 		})
 		return "", inlineCredential, err
 	case "key":
+		if req.Username == "" {
+			return "", "", fmt.Errorf("username is required")
+		}
 		if req.PrivKey == "" {
 			return "", "", fmt.Errorf("private_key is required for key auth")
 		}
@@ -172,6 +192,9 @@ func (h *ProfileHandler) prepareCredentialOnCreate(req *model.ProfileCreateReque
 		})
 		return "", inlineCredential, err
 	case "agent":
+		if req.Username == "" {
+			return "", "", fmt.Errorf("username is required")
+		}
 		return "", "", nil
 	default:
 		return "", "", fmt.Errorf("unsupported auth_type: %s", req.AuthType)
@@ -183,24 +206,47 @@ func (h *ProfileHandler) prepareCredentialOnUpdate(current *model.Profile, req *
 	if req.AuthType != nil && *req.AuthType != "" {
 		nextAuthType = *req.AuthType
 	}
+	nextUsername := strings.TrimSpace(current.Username)
+	requestedUsername := ""
+	if req.Username != nil {
+		trimmed := strings.TrimSpace(*req.Username)
+		req.Username = &trimmed
+		nextUsername = trimmed
+		requestedUsername = trimmed
+	}
 
 	switch nextAuthType {
 	case "vault":
+		vaultID := current.VaultID
 		if req.VaultID != nil {
 			if *req.VaultID == "" {
 				return fmt.Errorf("vault_id is required for vault auth")
 			}
-			if _, err := h.vault.Get(*req.VaultID); err != nil {
-				return fmt.Errorf("vault entry not found")
-			}
+			vaultID = *req.VaultID
 		} else if current.VaultID == "" {
 			return fmt.Errorf("vault_id is required for vault auth")
+		}
+		item, err := h.vault.Get(vaultID)
+		if err != nil {
+			return fmt.Errorf("vault entry not found")
+		}
+		vaultUsername := requestedUsername
+		if item.Type != model.VaultTypePassword {
+			vaultUsername = nextUsername
+		}
+		if err := applyVaultUsername(item, vaultUsername, func(username string) {
+			req.Username = &username
+		}); err != nil {
+			return err
 		}
 		empty := ""
 		req.InlineCredential = &empty
 		return nil
 
 	case "password", "key", "agent":
+		if nextUsername == "" {
+			return fmt.Errorf("username is required")
+		}
 		cred, err := resolveProfileCredential(current, h.vault, h.encryptor)
 		if err != nil {
 			return err
@@ -246,4 +292,28 @@ func (h *ProfileHandler) prepareCredentialOnUpdate(current *model.Profile, req *
 	default:
 		return fmt.Errorf("unsupported auth_type: %s", nextAuthType)
 	}
+}
+
+func applyVaultUsername(item *model.VaultItem, requestedUsername string, setUsername func(string)) error {
+	if item == nil {
+		return fmt.Errorf("vault entry not found")
+	}
+	requestedUsername = strings.TrimSpace(requestedUsername)
+	if item.Type != model.VaultTypePassword {
+		if requestedUsername == "" {
+			return fmt.Errorf("username is required")
+		}
+		setUsername(requestedUsername)
+		return nil
+	}
+
+	vaultUsername := strings.TrimSpace(item.Username)
+	if vaultUsername == "" {
+		return fmt.Errorf("password vault username is missing; update the vault entry before using it")
+	}
+	if requestedUsername != "" && requestedUsername != vaultUsername {
+		return fmt.Errorf("username must match the password vault username")
+	}
+	setUsername(vaultUsername)
+	return nil
 }

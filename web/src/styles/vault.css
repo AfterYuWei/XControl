@@ -858,6 +858,15 @@
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
+.vault-select-row.disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.vault-select-row.disabled:hover {
+  background: transparent;
+}
+
 .vault-select-empty {
   padding: 24px;
   text-align: center;

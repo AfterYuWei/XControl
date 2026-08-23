@@ -25,7 +25,6 @@ const ALGO_OPTIONS = [
 export function VaultGenerateDialog({ open, onOpenChange }: VaultGenerateDialogProps) {
   const { create } = useVaultStore()
   const [name, setName] = useState('')
-  const [username, setUsername] = useState('')
   const [comment, setComment] = useState('')
   const [algo, setAlgo] = useState('ed25519')
   const [passphrase, setPassphrase] = useState('')
@@ -35,7 +34,7 @@ export function VaultGenerateDialog({ open, onOpenChange }: VaultGenerateDialogP
   const [copiedField, setCopiedField] = useState<'public' | 'private' | ''>('')
 
   const isResultStep = result !== null
-  const canGenerate = name.trim().length > 0 && username.trim().length > 0 && !loading
+  const canGenerate = name.trim().length > 0 && !loading
 
   const publicKeyLine = useMemo(() => {
     if (!result?.public_key) return ''
@@ -53,15 +52,14 @@ export function VaultGenerateDialog({ open, onOpenChange }: VaultGenerateDialogP
     setCopiedField('')
     setComment('')
     setName('')
-    setUsername('')
     setAlgo('ed25519')
     setLoading(false)
     setSaving(false)
   }
 
   const validateRequiredFields = () => {
-    if (name.trim() && username.trim()) return true
-    toast.warning('请先填写名称和用户名')
+    if (name.trim()) return true
+    toast.warning('请先填写名称')
     return false
   }
 
@@ -111,7 +109,6 @@ export function VaultGenerateDialog({ open, onOpenChange }: VaultGenerateDialogP
     try {
       await create({
         name: name.trim(),
-        username: username.trim(),
         type: 'private_key',
         private_key: result.private_key,
         public_key: publicKeyLine || undefined,
@@ -164,11 +161,6 @@ export function VaultGenerateDialog({ open, onOpenChange }: VaultGenerateDialogP
                   </div>
 
                   <div className="pf-field">
-                    <Label className="pf-label">用户名</Label>
-                    <Input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="例如：root" className="pf-input-mono" />
-                  </div>
-
-                  <div className="pf-field">
                     <Label className="pf-label">密钥算法</Label>
                     <Select options={ALGO_OPTIONS} value={algo} onChange={(value) => setAlgo(value)} />
                   </div>
@@ -208,10 +200,6 @@ export function VaultGenerateDialog({ open, onOpenChange }: VaultGenerateDialogP
                 <div className="vault-gen-summary-item">
                   <span className="vault-gen-summary-label">名称</span>
                   <span className="vault-gen-summary-value">{name.trim()}</span>
-                </div>
-                <div className="vault-gen-summary-item">
-                  <span className="vault-gen-summary-label">登录用户</span>
-                  <span className="vault-gen-summary-value vault-gen-summary-value-mono">{username.trim()}</span>
                 </div>
                 <div className="vault-gen-summary-item">
                   <span className="vault-gen-summary-label">算法</span>

@@ -10,6 +10,7 @@ import { vaultApi } from '@/api/vault'
 import { toast } from 'sonner'
 import { useVaultStore } from '@/store/vault'
 import { buildPrivateKeyFilename, buildPublicKeyImportCommand } from '@/lib/vaultKeyActions'
+import { normalizeVaultUsername } from '@/lib/vaultUsername'
 import { VAULT_TYPE_LABELS, type VaultCreateRequest, type VaultItem, type VaultType } from '@/types/vault'
 import { VaultPasswordGenerator } from './VaultPasswordGenerator'
 
@@ -46,7 +47,7 @@ function buildInitialForm(item?: VaultItem | null): VaultCreateRequest {
   return {
     name: item.name,
     type: item.type,
-    username: item.username,
+    username: item.type === 'password' ? item.username : '',
     remark: item.remark,
     password: '',
     private_key: '',
@@ -299,15 +300,25 @@ function VaultFormDialogInner({ item, onOpenChange }: VaultFormDialogInnerProps)
       setError('名称不能为空')
       return
     }
+    if (form.type === 'password' && !form.username?.trim()) {
+      setError('密码凭据必须设置用户名')
+      return
+    }
+
+    const payload: VaultCreateRequest = {
+      ...form,
+      name: form.name.trim(),
+      username: normalizeVaultUsername(form.type, form.username),
+    }
 
     setLoading(true)
     setError('')
 
     try {
       if (isEditing && item) {
-        await update(item.id, form)
+        await update(item.id, payload)
       } else {
-        await create(form)
+        await create(payload)
       }
 
       onOpenChange(false)
@@ -345,16 +356,18 @@ function VaultFormDialogInner({ item, onOpenChange }: VaultFormDialogInnerProps)
             />
           </div>
 
-          <div className="pf-field">
-            <Label className="pf-label">用户名</Label>
-            <Input
-              value={form.username ?? ''}
-              onChange={(event) => updateField('username', event.target.value)}
-              placeholder="root"
-              required
-              className="pf-input-mono"
-            />
-          </div>
+          {form.type === 'password' ? (
+            <div className="pf-field">
+              <Label className="pf-label">用户名</Label>
+              <Input
+                value={form.username ?? ''}
+                onChange={(event) => updateField('username', event.target.value)}
+                placeholder="root"
+                required
+                className="pf-input-mono"
+              />
+            </div>
+          ) : null}
 
           <div className="pf-field vault-form-remark">
             <Label className="pf-label">备注（可选）</Label>

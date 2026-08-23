@@ -111,12 +111,13 @@ func (h *VaultHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "VALIDATION", "name is required")
 		return
 	}
-	if req.Username == "" {
-		writeError(w, http.StatusBadRequest, "VALIDATION", "username is required")
-		return
-	}
 	if !isValidVaultType(req.Type) {
 		writeError(w, http.StatusBadRequest, "VALIDATION", "invalid type")
+		return
+	}
+	req.Username = normalizedVaultUsername(req.Type, req.Username)
+	if req.Type == model.VaultTypePassword && req.Username == "" {
+		writeError(w, http.StatusBadRequest, "VALIDATION", "username is required for password type")
 		return
 	}
 
@@ -158,12 +159,13 @@ func (h *VaultHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "VALIDATION", "name is required")
 		return
 	}
-	if req.Username == "" {
-		writeError(w, http.StatusBadRequest, "VALIDATION", "username is required")
-		return
-	}
 	if !isValidVaultType(req.Type) {
 		writeError(w, http.StatusBadRequest, "VALIDATION", "invalid type")
+		return
+	}
+	req.Username = normalizedVaultUsername(req.Type, req.Username)
+	if req.Type == model.VaultTypePassword && req.Username == "" {
+		writeError(w, http.StatusBadRequest, "VALIDATION", "username is required for password type")
 		return
 	}
 	existing, err := h.vault.Get(id)
@@ -365,6 +367,13 @@ func validateCredential(cred *model.Credential, credType string) error {
 
 func isValidVaultType(t string) bool {
 	return t == model.VaultTypePassword || t == model.VaultTypePrivateKey
+}
+
+func normalizedVaultUsername(credType, username string) string {
+	if credType != model.VaultTypePassword {
+		return ""
+	}
+	return strings.TrimSpace(username)
 }
 
 func validateVaultTypeUpdate(existingType, requestedType string) error {

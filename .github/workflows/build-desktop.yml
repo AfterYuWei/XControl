@@ -1,10 +1,13 @@
 name: Build Desktop Apps
 
 # 触发条件：
-# - 推送 tag (v*):  自动构建并发布正式 GitHub Release（版本号=tag名）
-# - 手动触发:       可选择 release / nightly 模式
+# - 推送 main 分支:  自动构建 pre 版并发布 prerelease GitHub Release（版本号=短 commit）
+# - 推送 tag (v*):  自动构建 stable 版并发布正式 GitHub Release（版本号=tag名）
+# - 手动触发:       可选择 stable / pre 模式
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
   workflow_dispatch:
@@ -12,11 +15,11 @@ on:
       release_type:
         description: '构建类型'
         required: true
-        default: 'nightly'
+        default: 'pre'
         type: choice
         options:
-          - release
-          - nightly
+          - stable
+          - pre
 
 # 同一分支/标签的新构建取消旧的，避免资源浪费
 concurrency:
@@ -28,7 +31,7 @@ permissions:
   contents: write
 
 jobs:
-  # 判断本次构建是正式发布(tag)还是 nightly(main)
+  # 判断本次构建是 stable(tag) 还是 pre(main)
   prepare:
     runs-on: ubuntu-latest
     outputs:
@@ -39,9 +42,9 @@ jobs:
     steps:
       - id: meta
         run: |
-          # tag 触发 或 手动选 release => 正式发布
-          # main 触发 或 手动选 nightly => carry(nightly)
-          if [[ "${{ github.ref_type }}" == "tag" ]] || [[ "${{ inputs.release_type }}" == "release" ]]; then
+          # tag 触发 或 手动选 stable => stable
+          # main 推送 或 手动选 pre => pre
+          if [[ "${{ github.ref_type }}" == "tag" ]] || [[ "${{ inputs.release_type }}" == "stable" ]]; then
             echo "is_release=true" >> $GITHUB_OUTPUT
           else
             echo "is_release=false" >> $GITHUB_OUTPUT
@@ -51,20 +54,19 @@ jobs:
           echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
 
           # 版本号 & tag：
-          # - 正式版(tag): version=tag去v(如1.0.0), tag=原tag名
-          # - carry(main): version=0.0.0-dev.YYYYMMDD.sha(semver预发布格式), tag=short commit
+          # - stable(tag): version=tag去v(如1.0.0), tag=原tag名
+          # - pre(main):   version=0.0.0-pre.<短commit>(semver预发布格式, 便于应用内展示短commit), tag=短commit
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             TAG="${GITHUB_REF_NAME}"
             VERSION="${TAG#v}"
             echo "version=$VERSION" >> $GITHUB_OUTPUT
             echo "tag=$TAG" >> $GITHUB_OUTPUT
-            echo "release_name=XControl $VERSION" >> $GITHUB_OUTPUT
+            echo "release_name=XControl $VERSION (stable)" >> $GITHUB_OUTPUT
           else
-            DATE=$(date -u +%Y%m%d)
-            VERSION="0.0.0-dev.${DATE}.${SHORT_SHA}"
+            VERSION="0.0.0-pre.${SHORT_SHA}"
             echo "version=$VERSION" >> $GITHUB_OUTPUT
             echo "tag=$SHORT_SHA" >> $GITHUB_OUTPUT
-            echo "release_name=XControl Carry $SHORT_SHA" >> $GITHUB_OUTPUT
+            echo "release_name=XControl Pre $SHORT_SHA" >> $GITHUB_OUTPUT
           fi
 
   # 三平台并行构建
@@ -147,7 +149,7 @@ jobs:
           APP_VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           # 直接用 node 改写 package.json 的 version 字段。
-          # 不用 npm version：它要求 semver 格式，carry 版的 short commit(如 393687e) 非法。
+          # 不用 npm version：它要求 semver 格式，pre 版的 short commit(如 393687e) 非法。
           node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version=process.env.APP_VERSION;fs.writeFileSync('package.json',JSON.stringify(p,null,2));console.log('version set to:',process.env.APP_VERSION);"
 
       # macOS：CI 按 job 的 goarch 动态设置 mac.target 架构，确保后端二进制与 dmg 架构一致
@@ -201,7 +203,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm run ${{ matrix.dist_script }}
 
-      # 统一产物上传：正式版与 carry 版都先收集到 artifact，再由 release job 发到 Release
+      # 统一产物上传：stable 版与 pre 版都先收集到 artifact，再由 release job 发到 Release
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -214,7 +216,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # 发布：正式版(tag)发正式 Release，carry 版(main)发 prerelease Release
+  # 发布：stable 版(tag)发正式 Release，pre 版(main)发 prerelease Release
   # 都用 softprops/action-gh-release 创建 Release 并上传所有平台安装包
   release:
     needs: [prepare, build]
@@ -241,7 +243,7 @@ jobs:
           body: |
             ## XControl ${{ needs.prepare.outputs.version }}
 
-            ${{ needs.prepare.outputs.is_release == 'true' && '### ✅ 正式版' || '### 🔄 Carry 版（基于最新 main 分支构建）' }}
+            ${{ needs.prepare.outputs.is_release == 'true' && '### ✅ Stable 版' || '### 🔄 Pre 版（基于最新 main 分支构建）' }}
 
             ### 安装包
 
@@ -263,7 +265,7 @@ jobs:
             artifacts/XControl-*.deb
             artifacts/XControl-*.rpm
           draft: false
-          # carry 版标记为预发布，正式版为正式发布
+          # pre 版标记为预发布，stable 版为正式发布
           prerelease: ${{ needs.prepare.outputs.is_release != 'true' }}
           generate_release_notes: true
 

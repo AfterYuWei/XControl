@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useContext } from 'react'
+import { toast } from 'sonner'
 import { FilePane } from './FilePane'
 import { TransferQueue } from './TransferQueue'
 import { ServerPicker } from './ServerPicker'
@@ -31,6 +32,16 @@ export function SftpView() {
   useEffect(() => {
     store.getState().loadServers()
   }, [store])
+
+  useEffect(() => window.xcontrol?.fileDrag.onStatus((status) => {
+    const toastId = 'sftp-native-file-drag'
+    if (status.state === 'preparing') toast.loading(status.message, { id: toastId })
+    else if (status.state === 'error') toast.error(status.message, { id: toastId })
+    else {
+      toast.dismiss(toastId)
+      if (status.state === 'ended') store.getState().cancelDrag()
+    }
+  }), [store])
 
   // Auto-connect the local server on mount (left pane default)
   useEffect(() => {

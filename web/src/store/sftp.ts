@@ -264,6 +264,8 @@ export interface SftpStore {
   setDropTarget: (target: SftpDropTarget | null) => void
   cancelDrag: () => void
   commitDrop: (copyModifier: boolean) => Promise<boolean>
+  importExternalPaths: (sourceSessionId: string, paths: string[], target: SftpDropTarget) => Promise<void>
+  uploadExternalFiles: (files: File[], target: SftpDropTarget) => Promise<void>
   resolveDirectoryDrop: (mode: DirectoryTransferMode | null) => Promise<void>
   cancelTransfer: (id: string) => Promise<void>
   clearCompleted: () => Promise<void>
@@ -547,6 +549,30 @@ export function createSftpStore(): SftpStoreApi {
 
       await startExplicitTransfer(get, set, drag, target, 'preserve')
       return true
+    },
+
+    importExternalPaths: async (sourceSessionId, paths, target) => {
+      await runTransfer(get, set, {
+        sourceSessionId,
+        targetSessionId: target.sessionId,
+        paths,
+        destDir: target.destDir,
+        targetPane: target.pane,
+        targetTabId: target.tabId,
+        direction: 'upload',
+        directoryMode: 'preserve',
+      })
+    },
+
+    uploadExternalFiles: async (files, target) => {
+      try {
+        const res = await sftpApi.upload(target.sessionId, files, target.destDir)
+        if (res.tasks.length === 0) return
+        set((state) => ({ transfers: [...state.transfers, ...res.tasks] }))
+        void monitorUploadTasks(get, set, res.tasks.map((task) => task.id), target)
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : '上传失败')
+      }
     },
 
     resolveDirectoryDrop: async (mode) => {
@@ -974,6 +1000,36 @@ async function runTransfer(
       }
     }
   })()
+}
+
+async function monitorUploadTasks(
+  get: GetState,
+  set: SetState,
+  taskIds: string[],
+  target: SftpDropTarget,
+) {
+  const pending = new Set(taskIds)
+  const deadline = Date.now() + 10 * 60 * 1000
+  while (pending.size > 0 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 800))
+    try {
+      const tasks = await sftpApi.listTransfers()
+      const byId = new Map(tasks.map((task) => [task.id, task]))
+      set((state) => ({
+        transfers: state.transfers.map((task) => byId.get(task.id) ?? task),
+      }))
+      for (const id of [...pending]) {
+        const task = byId.get(id)
+        if (!task) continue
+        if (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') {
+          pending.delete(id)
+        }
+      }
+    } catch {
+      // Keep polling while the backend connection recovers.
+    }
+  }
+  await refreshTabById(get, set, target.pane, target.tabId)
 }
 
 /** Refresh a specific tab without changing the user's active tab. */

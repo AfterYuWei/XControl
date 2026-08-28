@@ -15,6 +15,24 @@ export interface DesktopStorageAPI {
   removeItem: (key: string) => boolean
 }
 
+export interface NativeFileDragPayload {
+  sourceSessionId: string
+  localSessionId?: string
+  sourceIsLocal: boolean
+  paths: string[]
+}
+
+export interface NativeFileDragStatus {
+  state: 'preparing' | 'ready' | 'error' | 'ended'
+  message: string
+}
+
+export interface NativeFileDragAPI {
+  getApiPath: (file: File) => string
+  start: (payload: NativeFileDragPayload) => void
+  onStatus: (callback: (status: NativeFileDragStatus) => void) => () => void
+}
+
 export interface XControlDesktop {
   desktop: true
   // 平台标识：darwin=macOS, win32=Windows, linux=Linux
@@ -26,6 +44,7 @@ export interface XControlDesktop {
   }
   window: WindowControlAPI
   storage: DesktopStorageAPI
+  fileDrag: NativeFileDragAPI
 }
 
 declare global {

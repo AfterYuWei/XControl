@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, Menu, ipcMain, dialog } = require('electron')
+const { app, BrowserWindow, shell, Menu, ipcMain, dialog, nativeImage } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const crypto = require('crypto')
@@ -12,6 +12,127 @@ let backendPort = 0
 let backendToken = ''
 let backendStopping = false
 const isSmokeTest = process.argv.includes('--smoke-test')
+const nativeDragTempDirs = new Set()
+
+function apiPathToNative(apiPath) {
+  const normalized = String(apiPath || '').replace(/\\/g, '/')
+  if (process.platform === 'win32' && /^\/[A-Za-z]:\//.test(normalized)) {
+    return path.normalize(normalized.slice(1))
+  }
+  return path.normalize(normalized)
+}
+
+function nativePathToAPI(nativePath) {
+  const normalized = nativePath.replace(/\\/g, '/')
+  if (process.platform === 'win32' && /^[A-Za-z]:\//.test(normalized)) {
+    return '/' + normalized
+  }
+  return normalized
+}
+
+function dragIcon() {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect x="3" y="3" width="26" height="26" rx="6" fill="#0070f3"/><path d="M9 11h6l2 2h6v10H9z" fill="white"/></svg>'
+  return nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`)
+}
+
+function backendJSON(method, requestPath, body) {
+  return new Promise((resolve, reject) => {
+    const raw = body === undefined ? null : Buffer.from(JSON.stringify(body))
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port: backendPort,
+      path: requestPath,
+      method,
+      headers: {
+        Authorization: `Bearer ${backendToken}`,
+        ...(raw ? { 'Content-Type': 'application/json', 'Content-Length': raw.length } : {}),
+      },
+    }, (res) => {
+      const chunks = []
+      res.on('data', (chunk) => chunks.push(chunk))
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8')
+        let data = {}
+        try { data = text ? JSON.parse(text) : {} } catch { data = {} }
+        resolve({ status: res.statusCode || 0, data })
+      })
+    })
+    req.on('error', reject)
+    if (raw) req.write(raw)
+    req.end()
+  })
+}
+
+async function waitForNativeDragTransfer(taskID) {
+  const deadline = Date.now() + 10 * 60 * 1000
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    const response = await backendJSON('GET', '/api/sftp/transfers')
+    const task = Array.isArray(response.data)
+      ? response.data.find((item) => item.id === taskID)
+      : null
+    if (!task) continue
+    if (task.status === 'completed') return
+    if (task.status === 'failed' || task.status === 'cancelled') {
+      throw new Error(task.error_message || `传输${task.status === 'failed' ? '失败' : '已取消'}`)
+    }
+  }
+  throw new Error('准备拖出文件超时')
+}
+
+function removeNativeDragTemp(dir) {
+  if (!nativeDragTempDirs.delete(dir)) return
+  try { fs.rmSync(dir, { recursive: true, force: true }) } catch (error) {
+    console.error('cleanup native drag temp failed', error)
+  }
+}
+
+function sweepNativeDragTemps() {
+  const tempRoot = app.getPath('temp')
+  try {
+    for (const name of fs.readdirSync(tempRoot)) {
+      if (!name.startsWith('xcontrol-drag-')) continue
+      const candidate = path.join(tempRoot, name)
+      const stat = fs.statSync(candidate)
+      if (Date.now() - stat.mtimeMs > 24 * 60 * 60 * 1000) {
+        fs.rmSync(candidate, { recursive: true, force: true })
+      }
+    }
+  } catch (error) {
+    console.error('sweep native drag temp failed', error)
+  }
+}
+
+async function materializeRemoteDrag(payload) {
+  if (!payload.localSessionId) throw new Error('本机文件会话尚未就绪')
+  const names = payload.paths.map((sourcePath) => path.posix.basename(sourcePath.replace(/\\/g, '/')))
+  const comparableNames = process.platform === 'win32' ? names.map((name) => name.toLowerCase()) : names
+  if (new Set(comparableNames).size !== comparableNames.length) {
+    throw new Error('所选项目包含同名文件，暂时无法同时拖出')
+  }
+  const tempDir = fs.mkdtempSync(path.join(app.getPath('temp'), 'xcontrol-drag-'))
+  nativeDragTempDirs.add(tempDir)
+  try {
+    const response = await backendJSON('POST', '/api/sftp/transfer', {
+      source_session_id: payload.sourceSessionId,
+      target_session_id: payload.localSessionId,
+      paths: payload.paths,
+      dest_dir: nativePathToAPI(tempDir),
+      conflict_resolution: 'overwrite',
+      directory_mode: 'preserve',
+    })
+    if (response.status !== 202 || !response.data.task_id) {
+      throw new Error(response.data?.error?.message || '无法准备拖出文件')
+    }
+    await waitForNativeDragTransfer(response.data.task_id)
+    const files = names.map((name) => path.join(tempDir, name))
+    if (files.some((file) => !fs.existsSync(file))) throw new Error('拖出文件准备不完整')
+    return { files, tempDir }
+  } catch (error) {
+    removeNativeDragTemp(tempDir)
+    throw error
+  }
+}
 
 function getSettingsFilePath() {
   return path.join(app.getPath('userData'), 'settings.json')
@@ -314,6 +435,56 @@ ipcMain.on('settings-storage:remove', (event, key) => {
   event.returnValue = writeSettingsStore(store)
 })
 
+function isTrustedRenderer(sender) {
+  try {
+    const url = new URL(sender.getURL())
+    return url.protocol === 'http:' && url.hostname === '127.0.0.1' && Number(url.port) === backendPort
+  } catch {
+    return false
+  }
+}
+
+ipcMain.on('file-drag:start', (event, rawPayload) => {
+  const sender = event.sender
+  if (!isTrustedRenderer(sender)) return
+  const payload = rawPayload && typeof rawPayload === 'object' ? rawPayload : {}
+  const paths = Array.isArray(payload.paths)
+    ? [...new Set(payload.paths.filter((item) => typeof item === 'string' && item.length > 0))].slice(0, 256)
+    : []
+  if (paths.length === 0 || typeof payload.sourceSessionId !== 'string') return
+
+  const start = (files) => {
+    const existing = files.filter((file) => path.isAbsolute(file) && fs.existsSync(file))
+    if (existing.length !== files.length || sender.isDestroyed()) throw new Error('有文件不存在或已无法访问')
+    sender.startDrag({ file: existing[0], files: existing, icon: dragIcon() })
+    if (!sender.isDestroyed()) sender.send('file-drag:status', { state: 'ended', message: '' })
+  }
+
+  if (payload.sourceIsLocal === true) {
+    try {
+      start(paths.map(apiPathToNative))
+    } catch (error) {
+      if (!sender.isDestroyed()) sender.send('file-drag:status', { state: 'error', message: error.message || String(error) })
+    }
+    return
+  }
+
+  if (typeof payload.localSessionId !== 'string' || !payload.localSessionId) {
+    sender.send('file-drag:status', { state: 'error', message: '本机文件会话尚未连接，无法拖出远程文件' })
+    return
+  }
+  sender.send('file-drag:status', { state: 'preparing', message: '正在准备远程文件…' })
+  void materializeRemoteDrag({ ...payload, paths }).then(({ files, tempDir }) => {
+    setTimeout(() => removeNativeDragTemp(tempDir), 60 * 60 * 1000).unref()
+    if (!sender.isDestroyed()) {
+      sender.send('file-drag:status', { state: 'ready', message: '文件已准备完成' })
+      start(files)
+    }
+  }).catch((error) => {
+    if (!sender.isDestroyed()) sender.send('file-drag:status', { state: 'error', message: error.message || String(error) })
+  })
+})
+
 // 单实例锁，避免重复启动导致后端端口抢占
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
@@ -327,6 +498,7 @@ if (!gotLock) {
   })
 
   app.whenReady().then(() => {
+    sweepNativeDragTemps()
     // 隐藏默认菜单栏（可按需注释保留）
     Menu.setApplicationMenu(null)
     createWindow().catch((error) => {

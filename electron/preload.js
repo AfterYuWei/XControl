@@ -1,4 +1,14 @@
-const { contextBridge, ipcRenderer } = require('electron')
+const { contextBridge, ipcRenderer, webUtils } = require('electron')
+
+function apiPathForFile(file) {
+  const nativePath = webUtils.getPathForFile(file)
+  if (!nativePath) return ''
+  const normalized = nativePath.replace(/\\/g, '/')
+  if (process.platform === 'win32' && /^[A-Za-z]:\//.test(normalized)) {
+    return '/' + normalized
+  }
+  return normalized
+}
 
 // 桌面环境标识、平台信息与版本信息
 contextBridge.exposeInMainWorld('xcontrol', {
@@ -29,5 +39,14 @@ contextBridge.exposeInMainWorld('xcontrol', {
     getItem: (key) => ipcRenderer.sendSync('settings-storage:get', key),
     setItem: (key, value) => ipcRenderer.sendSync('settings-storage:set', key, value),
     removeItem: (key) => ipcRenderer.sendSync('settings-storage:remove', key),
+  },
+  fileDrag: {
+    getApiPath: (file) => apiPathForFile(file),
+    start: (payload) => ipcRenderer.send('file-drag:start', payload),
+    onStatus: (callback) => {
+      const handler = (_event, status) => callback(status)
+      ipcRenderer.on('file-drag:status', handler)
+      return () => ipcRenderer.removeListener('file-drag:status', handler)
+    },
   },
 })

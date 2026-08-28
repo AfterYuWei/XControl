@@ -262,6 +262,14 @@
   color: var(--fg);
   font-weight: 500;
 }
+/* 折叠中间层级的「…」按钮 */
+.sftp-crumb-ellipsis {
+  color: var(--fg-4);
+  padding: 3px 4px;
+}
+.sftp-crumb-ellipsis:hover {
+  color: var(--fg);
+}
 .sftp-crumb-input {
   flex: 1;
   height: 24px;

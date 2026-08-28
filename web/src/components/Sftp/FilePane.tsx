@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
   Server,
   FolderOpen,
@@ -10,6 +10,7 @@ import {
   Trash2,
   Copy,
   FileEdit,
+  FolderInput,
 } from 'lucide-react'
 import { Breadcrumb } from './Breadcrumb'
 import { FileRow } from './FileRow'
@@ -22,6 +23,7 @@ import {
   parentPath,
   flattenEntries,
   dropAction,
+  matchesDropTarget,
   validateDrop,
   type SftpDropTarget,
   type PaneSide,
@@ -35,23 +37,11 @@ interface FilePaneProps {
 
 export function FilePane({ pane, onPickServer }: FilePaneProps) {
   const store = useSftpStore()
-  const activeDrag = store.dragSession
-  const navigateStore = store.navigate
   const [ctx, setCtx] = useState<{ x: number; y: number; entry: SftpEntry | null } | null>(null)
-  const [hoverTimer, setHoverTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
-  const [hoverPath, setHoverPath] = useState<string | null>(null)
-  const [springOriginPath, setSpringOriginPath] = useState<string | null>(null)
 
   const tabs = pane === 'left' ? store.leftTabs : store.rightTabs
   const activeId = pane === 'left' ? store.activeLeftTabId : store.activeRightTabId
   const activeTab = tabs.find((t) => t.id === activeId)
-
-  useEffect(() => {
-    if (!activeDrag && springOriginPath) {
-      navigateStore(pane, springOriginPath)
-      setSpringOriginPath(null)
-    }
-  }, [activeDrag, navigateStore, pane, springOriginPath])
 
   // --- Empty state: no server connected yet in this pane. ---
   if (!activeTab) {
@@ -127,28 +117,19 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
     if (!store.dragSession) return
     e.preventDefault()
     e.stopPropagation()
-    if (hoverTimer) clearTimeout(hoverTimer)
-    setHoverTimer(null)
-    setHoverPath(null)
-    setSpringOriginPath(null)
     if (target) store.setDropTarget(target)
     await store.commitDrop(copyModifier(e))
   }
 
   const folderOver = (e: React.DragEvent, entry: SftpEntry, kind: SftpDropTarget['kind'] = 'folder') => {
     e.stopPropagation()
-    const target = makeTarget(entry.path, kind)
-    targetOver(e, target)
-    if (kind !== 'tree' && entry.name !== '..' && store.dragSession && hoverPath !== entry.path) {
-      if (hoverTimer) clearTimeout(hoverTimer)
-      setHoverPath(entry.path)
-      const timer = setTimeout(() => {
-        setSpringOriginPath((origin) => origin ?? path)
-        navigate(entry.path)
-        setHoverTimer(null)
-      }, 700)
-      setHoverTimer(timer)
-    }
+    targetOver(e, makeTarget(entry.path, kind))
+  }
+
+  const leaveList = (e: React.DragEvent) => {
+    if (e.target !== e.currentTarget) return
+    if (e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) return
+    if (store.dropTarget?.pane === pane) store.setDropTarget(null)
   }
 
   const startDrag = (e: React.DragEvent, entry: SftpEntry, candidates: SftpEntry[]) => {
@@ -201,12 +182,29 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
   ]
 
   const handleRefresh = () => navigate(path)
+  const handleCurrentDragOver = (e: React.DragEvent) => {
+    // A directory row owns its whole hit area. Do not let the surrounding
+    // list replace that destination with the current directory.
+    if (e.target instanceof Element && e.target.closest('.sftp-row.is-dir, .sftp-trow.is-dir')) return
+    targetOver(e, makeTarget(path, 'current'))
+  }
+  const handleCurrentDrop = (e: React.DragEvent) => drop(e, makeTarget(path, 'current'))
+  const handleFolderDrop = (e: React.DragEvent, entry: SftpEntry) => drop(e, makeTarget(entry.path, 'folder'))
+  const handleTreeFolderOver = (e: React.DragEvent, entry: SftpEntry) => folderOver(e, entry, 'tree')
+  const handleTreeFolderDrop = (e: React.DragEvent, entry: SftpEntry) => drop(e, makeTarget(entry.path, 'tree'))
+  const handleBreadcrumbOver = (e: React.DragEvent, segmentPath: string) => {
+    e.stopPropagation()
+    targetOver(e, makeTarget(segmentPath, 'breadcrumb'))
+  }
+  const handleBreadcrumbDrop = (e: React.DragEvent, segmentPath: string) =>
+    drop(e, makeTarget(segmentPath, 'breadcrumb'))
 
   const renderListView = () => (
     <div
-      className={`sftp-list ${store.dropTarget?.pane === pane && store.dropTarget.kind === 'current' ? 'drop-current' : ''}`}
-      onDragOver={(e) => targetOver(e, makeTarget(path, 'current'))}
-      onDrop={(e) => drop(e, makeTarget(path, 'current'))}
+      className="sftp-list"
+      onDragOver={handleCurrentDragOver}
+      onDragLeave={leaveList}
+      onDrop={handleCurrentDrop}
       onClick={() => clearSel()}
       onContextMenu={(e) => {
         // Only show context menu when clicking on empty area (not on file rows)
@@ -229,7 +227,7 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
           entry={upEntry}
           selected={false}
           dragging={false}
-          isDropTarget={store.dropTarget?.pane === pane && store.dropTarget.destDir === upEntry.path}
+          isDropTarget={matchesDropTarget(store.dropTarget, pane, activeTab.id, 'folder', upEntry.path)}
           onSelect={(e) => {
             e.stopPropagation()
             // Single-click on ".." only selects; double-click to go up.
@@ -238,9 +236,8 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
           onContextMenu={(e) => e.preventDefault()}
           onDragStart={(e) => e.preventDefault()}
           onDragEnd={() => {}}
-          onDragOver={(e) => folderOver(e, upEntry)}
-          onDragLeave={() => store.setDropTarget(null)}
-          onDrop={(e) => drop(e, makeTarget(upEntry.path, 'folder'))}
+          onDragOver={folderOver}
+          onDrop={handleFolderDrop}
         />
       )}
 
@@ -256,7 +253,8 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
             entry={entry}
             selected={selected.has(entry.path)}
             dragging={store.dragSession?.sourceTabId === activeTab.id && store.dragSession.entries.some((item) => item.path === entry.path)}
-            isDropTarget={entry.is_dir && store.dropTarget?.pane === pane && store.dropTarget.destDir === entry.path}
+            isDropTarget={entry.is_dir
+              && matchesDropTarget(store.dropTarget, pane, activeTab.id, 'folder', entry.path)}
             onSelect={(e) => {
               e.stopPropagation()
               selectFn(entry.path, { additive: e.metaKey || e.ctrlKey })
@@ -272,14 +270,8 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
               startDrag(e, entry, sorted)
             }}
             onDragEnd={() => store.cancelDrag()}
-            onDragOver={entry.is_dir ? (e) => folderOver(e, entry) : undefined}
-            onDragLeave={entry.is_dir ? () => {
-              if (hoverTimer) clearTimeout(hoverTimer)
-              setHoverTimer(null)
-              setHoverPath(null)
-              store.setDropTarget(null)
-            } : undefined}
-            onDrop={entry.is_dir ? (e) => drop(e, makeTarget(entry.path, 'folder')) : undefined}
+            onDragOver={entry.is_dir ? folderOver : undefined}
+            onDrop={entry.is_dir ? handleFolderDrop : undefined}
           />
         ))
       )}
@@ -288,9 +280,10 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
 
   const renderTreeView = () => (
     <div
-      className={`sftp-list sftp-list-tree ${store.dropTarget?.pane === pane && store.dropTarget.kind === 'current' ? 'drop-current' : ''}`}
-      onDragOver={(e) => targetOver(e, makeTarget(path, 'current'))}
-      onDrop={(e) => drop(e, makeTarget(path, 'current'))}
+      className="sftp-list sftp-list-tree"
+      onDragOver={handleCurrentDragOver}
+      onDragLeave={leaveList}
+      onDrop={handleCurrentDrop}
       onClick={() => clearSel()}
       onContextMenu={(e) => {
         // Only show context menu when clicking on empty area
@@ -318,11 +311,12 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
             startDrag(e, entry, flattenEntries(treeRoot))
           }}
           onDragEnd={() => store.cancelDrag()}
-          dropTargetPath={store.dropTarget?.pane === pane ? store.dropTarget.destDir : null}
+          dropTargetPath={matchesDropTarget(store.dropTarget, pane, activeTab.id, 'tree')
+            ? store.dropTarget?.destDir
+            : null}
           draggingPaths={store.dragSession?.sourceTabId === activeTab.id ? new Set(store.dragSession.entries.map((item) => item.path)) : undefined}
-          onDragOverEntry={(e, entry) => folderOver(e, entry, 'tree')}
-          onDragLeaveEntry={() => store.setDropTarget(null)}
-          onDropEntry={(e, entry) => drop(e, makeTarget(entry.path, 'tree'))}
+          onDragOverEntry={handleTreeFolderOver}
+          onDropEntry={handleTreeFolderDrop}
         />
       ) : (
         <div className="sftp-list-empty">
@@ -341,12 +335,11 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
         <Breadcrumb
           path={path}
           onNavigate={navigate}
-          dropTargetPath={store.dropTarget?.pane === pane ? store.dropTarget.destDir : null}
-          onDragOverSegment={(e, segmentPath) => {
-            e.stopPropagation()
-            targetOver(e, makeTarget(segmentPath, 'breadcrumb'))
-          }}
-          onDropSegment={(e, segmentPath) => drop(e, makeTarget(segmentPath, 'breadcrumb'))}
+          dropTargetPath={matchesDropTarget(store.dropTarget, pane, activeTab.id, 'breadcrumb')
+            ? store.dropTarget?.destDir
+            : null}
+          onDragOverSegment={handleBreadcrumbOver}
+          onDropSegment={handleBreadcrumbDrop}
         />
         <PaneActions
           view={view}
@@ -373,12 +366,26 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
 
       {view === 'list' ? renderListView() : renderTreeView()}
 
-      {store.dragSession && store.dropTarget?.pane === pane && (
-        <div className="sftp-drop-status">
-          {dropAction(store.dragSession, store.dropTarget, Boolean(store.dropTarget.copyModifier)) === 'move' ? '移动' : '复制'} {store.dragSession.entries.length} 项到
-          <strong>{store.dropTarget.serverName}:{store.dropTarget.destDir}</strong>
-        </div>
-      )}
+      {store.dragSession && store.dropTarget?.pane === pane && (() => {
+        const action = dropAction(store.dragSession, store.dropTarget, Boolean(store.dropTarget.copyModifier))
+        const destinationType = store.dropTarget.kind === 'folder' || store.dropTarget.kind === 'tree'
+          ? '放入文件夹'
+          : store.dropTarget.kind === 'current'
+            ? '放入当前文件夹'
+            : '放入目录'
+        return (
+          <div className="sftp-drop-status" role="status" aria-live="polite">
+            <span className="sftp-drop-status-action">
+              {action === 'move' ? <FolderInput size={14} /> : <Copy size={14} />}
+              {action === 'move' ? '移动' : '复制'}
+            </span>
+            <span>{store.dragSession.entries.length} 项 · {destinationType}</span>
+            <strong title={`${store.dropTarget.serverName}:${store.dropTarget.destDir}`}>
+              {store.dropTarget.serverName}:{store.dropTarget.destDir}
+            </strong>
+          </div>
+        )
+      })()}
 
       {ctx && (
         <SftpContextMenu

@@ -11,9 +11,9 @@ interface FileRowProps {
   onContextMenu: (e: React.MouseEvent) => void
   onDragStart: (e: React.DragEvent) => void
   onDragEnd: () => void
-  onDragOver?: (e: React.DragEvent) => void
+  onDragOver?: (e: React.DragEvent, entry: SftpEntry) => void
   onDragLeave?: (e: React.DragEvent) => void
-  onDrop?: (e: React.DragEvent) => void
+  onDrop?: (e: React.DragEvent, entry: SftpEntry) => void
 }
 
 /** Render the appropriate line icon for a file name as JSX (avoids creating
@@ -74,9 +74,9 @@ export function FileRow({
       onContextMenu={onContextMenu}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      onDragOver={onDragOver}
+      onDragOver={onDragOver ? (e) => onDragOver(e, entry) : undefined}
       onDragLeave={onDragLeave}
-      onDrop={onDrop}
+      onDrop={onDrop ? (e) => onDrop(e, entry) : undefined}
       onKeyDown={(e) => {
         if (e.key === 'Enter') onOpen()
       }}

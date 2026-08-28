@@ -54,9 +54,14 @@ export function PaneTabs({ pane, onPickServer }: PaneTabsProps) {
                   }
                 }
               }}
-              onDragLeave={() => {
+              onDragLeave={(e) => {
+                if (e.target !== e.currentTarget) return
+                if (e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) return
                 if (hoverRef.current?.id === tab.id) clearTimeout(hoverRef.current.timer)
                 hoverRef.current = null
+                if (store.dropTarget?.tabId === tab.id && store.dropTarget.kind === 'tab') {
+                  store.setDropTarget(null)
+                }
               }}
               onDrop={async (e) => {
                 const target = makeTarget()

@@ -112,6 +112,8 @@ export function FileTree({
             }
           } : undefined}
           onDragLeave={e.is_dir ? (ev) => {
+            if (ev.target !== ev.currentTarget) return
+            if (ev.relatedTarget instanceof Node && ev.currentTarget.contains(ev.relatedTarget)) return
             if (springTimer.current) clearTimeout(springTimer.current)
             springTimer.current = null
             onDragLeaveEntry?.(ev, e)

@@ -109,6 +109,22 @@ export interface SftpDropTarget {
   copyModifier?: boolean
 }
 
+/** A path can appear in several drop surfaces at once (for example `..` and
+ *  the matching breadcrumb). Match the whole surface identity so only the
+ *  element currently under the pointer is highlighted. */
+export function matchesDropTarget(
+  target: SftpDropTarget | null,
+  pane: PaneSide,
+  tabId: string,
+  kind: SftpDropTarget['kind'],
+  destDir?: string,
+): boolean {
+  return target?.pane === pane
+    && target.tabId === tabId
+    && target.kind === kind
+    && (destDir === undefined || target.destDir === destDir)
+}
+
 export interface PendingDirectoryDrop {
   drag: SftpDragSession
   target: SftpDropTarget
@@ -138,6 +154,20 @@ export function validateDrop(drag: SftpDragSession, target: SftpDropTarget, copy
     if (!copyModifier && parentPath(entry.path) === target.destDir) return '文件已位于目标目录'
   }
   return null
+}
+
+/** Dragover fires many times per second. Avoid publishing an unchanged target
+ *  because every publication makes both file panes render again. */
+function sameDropTarget(a: SftpDropTarget | null, b: SftpDropTarget | null): boolean {
+  if (a === b) return true
+  if (!a || !b) return false
+  return a.pane === b.pane
+    && a.tabId === b.tabId
+    && a.sessionId === b.sessionId
+    && a.destDir === b.destDir
+    && a.serverName === b.serverName
+    && a.kind === b.kind
+    && Boolean(a.copyModifier) === Boolean(b.copyModifier)
 }
 
 /** Stored when a transfer is blocked by destination conflicts. The UI renders
@@ -478,7 +508,9 @@ export function createSftpStore(): SftpStoreApi {
       dropTarget: null,
     }),
 
-    setDropTarget: (target) => set({ dropTarget: target }),
+    setDropTarget: (target) => set((state) =>
+      sameDropTarget(state.dropTarget, target) ? state : { dropTarget: target }
+    ),
 
     cancelDrag: () => set({ dragSession: null, dropTarget: null }),
 

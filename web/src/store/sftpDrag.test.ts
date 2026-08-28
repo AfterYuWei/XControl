@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  createSftpStore,
   dropAction,
+  matchesDropTarget,
   normalizeDraggedEntries,
   validateDrop,
   type SftpDragSession,
@@ -61,5 +63,27 @@ describe('SFTP drag helpers', () => {
     const source = drag([entry('/root/a.txt')])
     expect(validateDrop(source, target('/root', 'session-a'), false)).toContain('目标目录')
     expect(validateDrop(source, target('/root', 'session-a'), true)).toBeNull()
+  })
+
+  it('does not publish repeated dragover updates for the same target', () => {
+    const store = createSftpStore()
+    let updates = 0
+    const unsubscribe = store.subscribe(() => { updates += 1 })
+    const destination = target('/tmp')
+
+    store.getState().setDropTarget(destination)
+    store.getState().setDropTarget({ ...destination })
+    store.getState().setDropTarget({ ...destination, copyModifier: false })
+
+    expect(updates).toBe(1)
+    unsubscribe()
+  })
+
+  it('highlights only the exact drop surface when paths are shared', () => {
+    const destination = { ...target('/root'), kind: 'folder' as const }
+
+    expect(matchesDropTarget(destination, 'right', 'right-tab', 'folder', '/root')).toBe(true)
+    expect(matchesDropTarget(destination, 'right', 'right-tab', 'breadcrumb', '/root')).toBe(false)
+    expect(matchesDropTarget(destination, 'right', 'another-tab', 'folder', '/root')).toBe(false)
   })
 })

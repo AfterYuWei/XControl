@@ -28,6 +28,14 @@ interface UseTerminalOptions {
   onResize?: (cols: number, rows: number) => void // 终端尺寸变化时调用（字体变化、容器resize）
 }
 
+// 打开终端内链接：浏览器里开新标签；Electron 里由主进程
+// setWindowOpenHandler 收到真实 URL 后转给系统默认浏览器。
+const openLink = (uri: string) => {
+  if (/^https?:\/\//i.test(uri)) {
+    window.open(uri, '_blank', 'noopener,noreferrer')
+  }
+}
+
 export function useTerminal(options: UseTerminalOptions) {
   const { containerRef, fontSize = 14, fontFamily, fontFamilyCN, terminalTheme = 'default', onData, onFontSizeChange, onResize } = options
   const terminalRef = useRef<Terminal | null>(null)
@@ -70,12 +78,8 @@ export function useTerminal(options: UseTerminalOptions) {
       cursorBlink: true,
       scrollback: 10000,
       linkHandler: {
-        activate: (_event, uri) => {
-          // Only open http/https URLs in a new tab
-          if (/^https?:\/\//i.test(uri)) {
-            window.open(uri, '_blank', 'noopener,noreferrer')
-          }
-        },
+        // 仅对 OSC 8 超链接生效；普通 URL 由下方 WebLinksAddon 的 handler 处理
+        activate: (_event, uri) => openLink(uri),
         hover: () => {
           terminal.element?.classList.add('xterm-cursor-pointer')
         },
@@ -86,7 +90,10 @@ export function useTerminal(options: UseTerminalOptions) {
     })
 
     const fitAddon = new FitAddon()
-    const webLinksAddon = new WebLinksAddon()
+    // 必须显式传 handler：默认实现会 window.open() 开空白窗口再改 location.href，
+    // 在 Electron 中该空白窗口(about:blank)会被主进程 setWindowOpenHandler deny，
+    // 导致链接无法打开。
+    const webLinksAddon = new WebLinksAddon((_event, uri) => openLink(uri))
     const unicode11Addon = new Unicode11Addon()
 
     terminal.loadAddon(fitAddon)

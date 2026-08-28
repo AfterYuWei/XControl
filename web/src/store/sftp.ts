@@ -332,6 +332,8 @@ export function createSftpStore(): SftpStoreApi {
           host: p.host,
           port: p.port,
           username: p.username,
+          groupId: p.group_id,
+          icon: p.icon,
         }))
         set({ servers, serversLoading: false })
       } catch {

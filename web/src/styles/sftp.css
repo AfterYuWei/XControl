@@ -1055,6 +1055,41 @@
   font: 400 var(--sans-size) / 1.4 var(--sans);
   color: var(--fg-4);
 }
+/* Group classification headers (consistent with the sidebar group labels) */
+.sftp-picker-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sftp-picker-grp {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 2px 0;
+  font: 600 11px / 1.2 var(--sans);
+  color: var(--fg-3);
+  letter-spacing: 0.02em;
+}
+.sftp-picker-grp.muted .sftp-picker-grp-text {
+  color: var(--fg-4);
+  font-weight: 500;
+}
+.sftp-picker-grp-icon {
+  color: var(--fg-4);
+}
+.sftp-picker-grp-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sftp-picker-grp-cnt {
+  font: 500 10px / 1 var(--mono);
+  color: var(--fg-4);
+  padding: 2px 6px;
+  border-radius: var(--r-pill);
+  background: var(--bg-elevated);
+}
 
 /* ===== CONFLICT DIALOG ===== */
 .sftp-conflict {

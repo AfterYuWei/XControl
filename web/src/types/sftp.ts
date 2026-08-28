@@ -41,6 +41,10 @@ export interface SftpServer {
   host: string
   port: number
   username: string
+  /** 所属分组 id（未分组为空） */
+  groupId?: string
+  /** 图标 key，由前端 resolveServerIcon 解析为 Lucide 组件 */
+  icon?: string
 }
 
 /** Response type for POST /api/sftp/sessions */

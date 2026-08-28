@@ -13,6 +13,8 @@ import type {
   SftpFileReadResponse,
   SftpFileWriteRequest,
   SftpFileWriteResponse,
+  DirectoryTransferMode,
+  SftpMoveResponse,
 } from '@/types/sftp'
 
 /** SFTP session info returned by GET /api/sftp/sessions/{id} */
@@ -82,6 +84,7 @@ export const sftpApi = {
     paths: string[],
     destDir: string,
     conflictResolution: ConflictResolution = 'ask',
+    directoryMode: DirectoryTransferMode = 'archive',
   ): Promise<SftpTransferResponse> => {
     const res = await fetch('/api/sftp/transfer', {
       method: 'POST',
@@ -92,12 +95,32 @@ export const sftpApi = {
         paths,
         dest_dir: destDir,
         conflict_resolution: conflictResolution,
+        directory_mode: directoryMode,
       }),
     })
     const data = (await res.json().catch(() => ({}))) as SftpTransferResponse
     if (!res.ok && res.status !== 409) {
       const err = (data as unknown as { error?: { message?: string } })?.error
       throw new Error(err?.message || `transfer failed: ${res.statusText}`)
+    }
+    return data
+  },
+
+  move: async (
+    sessionId: string,
+    paths: string[],
+    destDir: string,
+    conflictResolution: ConflictResolution = 'ask',
+  ): Promise<SftpMoveResponse> => {
+    const res = await fetch(`/api/sftp/sessions/${sessionId}/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths, dest_dir: destDir, conflict_resolution: conflictResolution }),
+    })
+    const data = (await res.json().catch(() => ({}))) as SftpMoveResponse
+    if (!res.ok && res.status !== 409) {
+      const err = (data as unknown as { error?: { message?: string } })?.error
+      throw new Error(err?.message || `move failed: ${res.statusText}`)
     }
     return data
   },

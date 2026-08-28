@@ -5,6 +5,7 @@ import { ServerPicker } from './ServerPicker'
 import { ConflictDialog } from './ConflictDialog'
 import { InputDialog, validateSftpName } from './InputDialog'
 import { DeleteConfirmDialog } from './DeleteConfirmDialog'
+import { DirectoryTransferDialog } from './DirectoryTransferDialog'
 import { EditorDialog } from '@/components/Editor/EditorDialog'
 import { SftpStoreContext, useSftpStore } from './storeContext'
 import { createSftpStore, type SftpStoreApi, type PaneSide, parentPath } from '@/store/sftp'
@@ -104,6 +105,7 @@ export function SftpView() {
         />
 
         <ConflictDialog />
+        <DirectoryTransferDialog />
         <SftpDialogs />
         <EditorDialog />
       </div>

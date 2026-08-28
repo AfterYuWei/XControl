@@ -33,7 +33,8 @@ export function ConflictDialog() {
           </button>
         </div>
         <div className="sftp-conflict-sub">
-          目标位置已存在 {conflicts.length} 个同名文件。请选择处理方式（将应用到全部冲突文件，未冲突文件正常传输）。
+          目标位置已存在 {conflicts.length} 个同名项目。请选择处理方式（将应用到全部冲突项）。
+          {conflicts.some((c) => c.dest_is_dir) && ' 覆盖文件夹会递归删除目标端原有目录。'}
         </div>
 
         <div className="sftp-conflict-list">
@@ -45,9 +46,9 @@ export function ConflictDialog() {
                   {baseName(c.dest_path)}
                 </div>
                 <div className="sftp-conflict-row-meta">
-                  <span>源 {formatSize(c.source_size)}</span>
+                  <span>源 {c.source_is_dir ? '文件夹' : formatSize(c.source_size)}</span>
                   <span className="sftp-conflict-row-sep">→</span>
-                  <span>目标 {formatSize(c.dest_size)}</span>
+                  <span>目标 {c.dest_is_dir ? '文件夹' : formatSize(c.dest_size)}</span>
                 </div>
                 <div className="sftp-conflict-row-path" title={c.dest_path}>
                   {c.dest_path}
@@ -62,7 +63,7 @@ export function ConflictDialog() {
             className="sftp-conflict-btn primary"
             onClick={() => choose('overwrite')}
           >
-            覆盖
+            {conflicts.some((c) => c.dest_is_dir) ? '覆盖并删除目标目录' : '覆盖'}
           </button>
           <button
             className="sftp-conflict-btn"
@@ -74,7 +75,7 @@ export function ConflictDialog() {
             className="sftp-conflict-btn"
             onClick={() => choose('skip')}
           >
-            跳过冲突文件
+            跳过冲突项
           </button>
           <button className="sftp-conflict-btn ghost" onClick={dismiss}>
             取消

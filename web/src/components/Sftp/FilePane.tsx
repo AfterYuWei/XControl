@@ -1,6 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
-  FolderUp,
   Server,
   FolderOpen,
   Inbox,
@@ -21,6 +20,10 @@ import { SftpContextMenu, type MenuItem } from './SftpContextMenu'
 import { useSftpStore } from './storeContext'
 import {
   parentPath,
+  flattenEntries,
+  dropAction,
+  validateDrop,
+  type SftpDropTarget,
   type PaneSide,
 } from '@/store/sftp'
 import type { SftpEntry } from '@/types/sftp'
@@ -32,12 +35,23 @@ interface FilePaneProps {
 
 export function FilePane({ pane, onPickServer }: FilePaneProps) {
   const store = useSftpStore()
-  const [dragOver, setDragOver] = useState(false)
+  const activeDrag = store.dragSession
+  const navigateStore = store.navigate
   const [ctx, setCtx] = useState<{ x: number; y: number; entry: SftpEntry | null } | null>(null)
+  const [hoverTimer, setHoverTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
+  const [hoverPath, setHoverPath] = useState<string | null>(null)
+  const [springOriginPath, setSpringOriginPath] = useState<string | null>(null)
 
   const tabs = pane === 'left' ? store.leftTabs : store.rightTabs
   const activeId = pane === 'left' ? store.activeLeftTabId : store.activeRightTabId
   const activeTab = tabs.find((t) => t.id === activeId)
+
+  useEffect(() => {
+    if (!activeDrag && springOriginPath) {
+      navigateStore(pane, springOriginPath)
+      setSpringOriginPath(null)
+    }
+  }, [activeDrag, navigateStore, pane, springOriginPath])
 
   // --- Empty state: no server connected yet in this pane. ---
   if (!activeTab) {
@@ -89,22 +103,70 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
     }
   }
 
-  // --- Drag & drop (cross-pane file transfer). Direction is derived from
-  //     source vs target pane: dropping onto the *other* pane transfers. ---
-  const handleDrop = (e: React.DragEvent) => {
+  const makeTarget = (destDir: string, kind: SftpDropTarget['kind']): SftpDropTarget | null =>
+    activeTab.sessionId ? {
+      pane,
+      tabId: activeTab.id,
+      sessionId: activeTab.sessionId,
+      destDir,
+      serverName: server.name,
+      kind,
+    } : null
+
+  const copyModifier = (e: React.DragEvent) => e.ctrlKey || e.altKey
+
+  const targetOver = (e: React.DragEvent, target: SftpDropTarget | null) => {
+    if (!store.dragSession || !target) return
     e.preventDefault()
-    setDragOver(false)
-    const raw = e.dataTransfer.getData('application/sftp-entry')
-    if (!raw) return
-    try {
-      const { entries: dropped, from }: { entries: SftpEntry[]; from: PaneSide } = JSON.parse(raw)
-      if (from === pane) return // same pane, no transfer
-      const direction: 'upload' | 'download' = from === 'left' ? 'upload' : 'download'
-      // Include directories — the backend archives them as .tar.gz.
-      if (dropped.length) store.startTransfer(dropped, direction)
-    } catch {
-      /* ignore malformed drag payload */
+    const invalid = validateDrop(store.dragSession, target, copyModifier(e))
+    e.dataTransfer.dropEffect = invalid ? 'none' : dropAction(store.dragSession, target, copyModifier(e))
+    store.setDropTarget(invalid ? null : { ...target, copyModifier: copyModifier(e) })
+  }
+
+  const drop = async (e: React.DragEvent, target?: SftpDropTarget | null) => {
+    if (!store.dragSession) return
+    e.preventDefault()
+    e.stopPropagation()
+    if (hoverTimer) clearTimeout(hoverTimer)
+    setHoverTimer(null)
+    setHoverPath(null)
+    setSpringOriginPath(null)
+    if (target) store.setDropTarget(target)
+    await store.commitDrop(copyModifier(e))
+  }
+
+  const folderOver = (e: React.DragEvent, entry: SftpEntry, kind: SftpDropTarget['kind'] = 'folder') => {
+    e.stopPropagation()
+    const target = makeTarget(entry.path, kind)
+    targetOver(e, target)
+    if (kind !== 'tree' && entry.name !== '..' && store.dragSession && hoverPath !== entry.path) {
+      if (hoverTimer) clearTimeout(hoverTimer)
+      setHoverPath(entry.path)
+      const timer = setTimeout(() => {
+        setSpringOriginPath((origin) => origin ?? path)
+        navigate(entry.path)
+        setHoverTimer(null)
+      }, 700)
+      setHoverTimer(timer)
     }
+  }
+
+  const startDrag = (e: React.DragEvent, entry: SftpEntry, candidates: SftpEntry[]) => {
+    if (!activeTab.sessionId) {
+      e.preventDefault()
+      return
+    }
+    const entries = selected.has(entry.path) ? candidates.filter((item) => selected.has(item.path)) : [entry]
+    if (!selected.has(entry.path)) selectFn(entry.path)
+    store.beginDrag({ sourcePane: pane, sourceTabId: activeTab.id, sourceSessionId: activeTab.sessionId, entries })
+    e.dataTransfer.setData('application/x-xcontrol-sftp', activeTab.id)
+    e.dataTransfer.effectAllowed = 'copyMove'
+    const ghost = document.createElement('div')
+    ghost.className = 'sftp-drag-ghost'
+    ghost.textContent = entries.length === 1 ? entries[0].name : `${entries[0].name} 等 ${entries.length} 项`
+    document.body.appendChild(ghost)
+    e.dataTransfer.setDragImage(ghost, 14, 14)
+    setTimeout(() => ghost.remove(), 0)
   }
 
   // --- Context menu builders ---
@@ -142,7 +204,9 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
 
   const renderListView = () => (
     <div
-      className="sftp-list"
+      className={`sftp-list ${store.dropTarget?.pane === pane && store.dropTarget.kind === 'current' ? 'drop-current' : ''}`}
+      onDragOver={(e) => targetOver(e, makeTarget(path, 'current'))}
+      onDrop={(e) => drop(e, makeTarget(path, 'current'))}
       onClick={() => clearSel()}
       onContextMenu={(e) => {
         // Only show context menu when clicking on empty area (not on file rows)
@@ -152,13 +216,6 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
         }
       }}
     >
-      {dragOver && (
-        <div className="sftp-drop-hint">
-          <FolderUp size={18} />
-          <span>释放以传输到{server.name}</span>
-        </div>
-      )}
-
       <div className="sftp-list-head">
         <span className="sftp-cell sftp-cell-icon" />
         <span className="sftp-cell sftp-cell-name">名称</span>
@@ -172,7 +229,7 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
           entry={upEntry}
           selected={false}
           dragging={false}
-          isDropTarget={false}
+          isDropTarget={store.dropTarget?.pane === pane && store.dropTarget.destDir === upEntry.path}
           onSelect={(e) => {
             e.stopPropagation()
             // Single-click on ".." only selects; double-click to go up.
@@ -181,6 +238,9 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
           onContextMenu={(e) => e.preventDefault()}
           onDragStart={(e) => e.preventDefault()}
           onDragEnd={() => {}}
+          onDragOver={(e) => folderOver(e, upEntry)}
+          onDragLeave={() => store.setDropTarget(null)}
+          onDrop={(e) => drop(e, makeTarget(upEntry.path, 'folder'))}
         />
       )}
 
@@ -195,8 +255,8 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
             key={entry.path}
             entry={entry}
             selected={selected.has(entry.path)}
-            dragging={false}
-            isDropTarget={false}
+            dragging={store.dragSession?.sourceTabId === activeTab.id && store.dragSession.entries.some((item) => item.path === entry.path)}
+            isDropTarget={entry.is_dir && store.dropTarget?.pane === pane && store.dropTarget.destDir === entry.path}
             onSelect={(e) => {
               e.stopPropagation()
               selectFn(entry.path, { additive: e.metaKey || e.ctrlKey })
@@ -209,14 +269,17 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
               setCtx({ x: e.clientX, y: e.clientY, entry })
             }}
             onDragStart={(e) => {
-              const sel = selected.has(entry.path) ? sorted.filter((s) => selected.has(s.path)) : [entry]
-              e.dataTransfer.setData(
-                'application/sftp-entry',
-                JSON.stringify({ entries: sel, from: pane })
-              )
-              e.dataTransfer.effectAllowed = 'copyMove'
+              startDrag(e, entry, sorted)
             }}
-            onDragEnd={() => {}}
+            onDragEnd={() => store.cancelDrag()}
+            onDragOver={entry.is_dir ? (e) => folderOver(e, entry) : undefined}
+            onDragLeave={entry.is_dir ? () => {
+              if (hoverTimer) clearTimeout(hoverTimer)
+              setHoverTimer(null)
+              setHoverPath(null)
+              store.setDropTarget(null)
+            } : undefined}
+            onDrop={entry.is_dir ? (e) => drop(e, makeTarget(entry.path, 'folder')) : undefined}
           />
         ))
       )}
@@ -225,7 +288,9 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
 
   const renderTreeView = () => (
     <div
-      className="sftp-list sftp-list-tree"
+      className={`sftp-list sftp-list-tree ${store.dropTarget?.pane === pane && store.dropTarget.kind === 'current' ? 'drop-current' : ''}`}
+      onDragOver={(e) => targetOver(e, makeTarget(path, 'current'))}
+      onDrop={(e) => drop(e, makeTarget(path, 'current'))}
       onClick={() => clearSel()}
       onContextMenu={(e) => {
         // Only show context menu when clicking on empty area
@@ -235,12 +300,6 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
         }
       }}
     >
-      {dragOver && (
-        <div className="sftp-drop-hint">
-          <FolderUp size={18} />
-          <span>释放以传输到{server.name}</span>
-        </div>
-      )}
       {treeRoot ? (
         <FileTree
           root={treeRoot}
@@ -256,12 +315,14 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
             setCtx({ x: e.clientX, y: e.clientY, entry })
           }}
           onDragStart={(e, entry) => {
-            e.dataTransfer.setData(
-              'application/sftp-entry',
-              JSON.stringify({ entries: [entry], from: pane })
-            )
-            e.dataTransfer.effectAllowed = 'copyMove'
+            startDrag(e, entry, flattenEntries(treeRoot))
           }}
+          onDragEnd={() => store.cancelDrag()}
+          dropTargetPath={store.dropTarget?.pane === pane ? store.dropTarget.destDir : null}
+          draggingPaths={store.dragSession?.sourceTabId === activeTab.id ? new Set(store.dragSession.entries.map((item) => item.path)) : undefined}
+          onDragOverEntry={(e, entry) => folderOver(e, entry, 'tree')}
+          onDragLeaveEntry={() => store.setDropTarget(null)}
+          onDropEntry={(e, entry) => drop(e, makeTarget(entry.path, 'tree'))}
         />
       ) : (
         <div className="sftp-list-empty">
@@ -273,21 +334,20 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
   )
 
   return (
-    <div
-      className={`sftp-pane ${dragOver ? 'drag-over' : ''}`}
-      onDragOver={(e) => {
-        e.preventDefault()
-        if (!dragOver) setDragOver(true)
-      }}
-      onDragLeave={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false)
-      }}
-      onDrop={handleDrop}
-    >
+    <div className="sftp-pane">
       <PaneTabs pane={pane} onPickServer={onPickServer} />
 
       <div className="sftp-crumb-row">
-        <Breadcrumb path={path} onNavigate={navigate} />
+        <Breadcrumb
+          path={path}
+          onNavigate={navigate}
+          dropTargetPath={store.dropTarget?.pane === pane ? store.dropTarget.destDir : null}
+          onDragOverSegment={(e, segmentPath) => {
+            e.stopPropagation()
+            targetOver(e, makeTarget(segmentPath, 'breadcrumb'))
+          }}
+          onDropSegment={(e, segmentPath) => drop(e, makeTarget(segmentPath, 'breadcrumb'))}
+        />
         <PaneActions
           view={view}
           showHidden={activeTab.showHidden}
@@ -312,6 +372,13 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
       </div>
 
       {view === 'list' ? renderListView() : renderTreeView()}
+
+      {store.dragSession && store.dropTarget?.pane === pane && (
+        <div className="sftp-drop-status">
+          {dropAction(store.dragSession, store.dropTarget, Boolean(store.dropTarget.copyModifier)) === 'move' ? '移动' : '复制'} {store.dragSession.entries.length} 项到
+          <strong>{store.dropTarget.serverName}:{store.dropTarget.destDir}</strong>
+        </div>
+      )}
 
       {ctx && (
         <SftpContextMenu

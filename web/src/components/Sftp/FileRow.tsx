@@ -11,6 +11,9 @@ interface FileRowProps {
   onContextMenu: (e: React.MouseEvent) => void
   onDragStart: (e: React.DragEvent) => void
   onDragEnd: () => void
+  onDragOver?: (e: React.DragEvent) => void
+  onDragLeave?: (e: React.DragEvent) => void
+  onDrop?: (e: React.DragEvent) => void
 }
 
 /** Render the appropriate line icon for a file name as JSX (avoids creating
@@ -46,6 +49,9 @@ export function FileRow({
   onContextMenu,
   onDragStart,
   onDragEnd,
+  onDragOver,
+  onDragLeave,
+  onDrop,
 }: FileRowProps) {
   const cls = [
     'sftp-row',
@@ -68,6 +74,9 @@ export function FileRow({
       onContextMenu={onContextMenu}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
       onKeyDown={(e) => {
         if (e.key === 'Enter') onOpen()
       }}

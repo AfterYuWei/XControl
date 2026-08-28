@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ChevronUp,
   Trash2,
+  Copy,
 } from 'lucide-react'
 import { useSftpStore } from './storeContext'
 import type { TransferTask } from '@/types/sftp'
@@ -95,7 +96,7 @@ export function TransferQueue() {
             return (
               <div key={task.id} className={`sftp-tx-item ${meta.cls}`}>
                 <span className="sftp-tx-dir">
-                  {task.direction === 'upload' ? <ArrowUp size={13} /> : <ArrowDown size={13} />}
+                  {task.direction === 'upload' ? <ArrowUp size={13} /> : task.direction === 'download' ? <ArrowDown size={13} /> : <Copy size={13} />}
                 </span>
                 <span className="sftp-tx-name" title={task.file_name}>
                   {task.file_name}

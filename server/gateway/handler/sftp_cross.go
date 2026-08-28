@@ -60,6 +60,15 @@ func (h *SftpHandler) CrossSessionTransfer(w http.ResponseWriter, r *http.Reques
 		cleanPaths[i] = fileutil.CleanPath(p)
 	}
 	destDir := fileutil.CleanPath(req.DestDir)
+	directoryMode := req.DirectoryMode
+	if directoryMode == "" {
+		// Preserve the behaviour of callers predating directory_mode.
+		directoryMode = model.DirectoryTransferArchive
+	}
+	if directoryMode != model.DirectoryTransferPreserve && directoryMode != model.DirectoryTransferArchive {
+		writeError(w, http.StatusBadRequest, "VALIDATION", "directory_mode must be preserve or archive")
+		return
+	}
 
 	// Resolve the conflict strategy. The legacy `overwrite` boolean is kept as
 	// an alias for conflict_resolution=overwrite for backward compatibility.
@@ -71,6 +80,10 @@ func (h *SftpHandler) CrossSessionTransfer(w http.ResponseWriter, r *http.Reques
 			resolution = model.ConflictAsk
 		}
 	}
+	if !validConflictResolution(resolution) {
+		writeError(w, http.StatusBadRequest, "VALIDATION", "invalid conflict_resolution")
+		return
+	}
 
 	// --- Pre-transfer conflict detection ---
 	// For every source path, compute the destination path and check whether a
@@ -78,6 +91,7 @@ func (h *SftpHandler) CrossSessionTransfer(w http.ResponseWriter, r *http.Reques
 	// caller when the strategy is "ask"; otherwise they are handled according
 	// to the chosen strategy below.
 	conflicts := make([]model.SftpConflictInfo, 0)
+	hasDirectory := false
 	for _, p := range cleanPaths {
 		info, err := srcSession.Backend.Stat(r.Context(), p)
 		if err != nil {
@@ -85,20 +99,32 @@ func (h *SftpHandler) CrossSessionTransfer(w http.ResponseWriter, r *http.Reques
 			// error if appropriate.
 			continue
 		}
-		// Compute the destination path: files keep their name, directories
-		// are archived as <dirname>.tar.gz on the target.
-		var destPath string
 		if info.IsDir {
+			hasDirectory = true
+			if srcSession.ID == tgtSession.ID && pathWithin(destDir, p) {
+				writeError(w, http.StatusBadRequest, "INVALID_DESTINATION", "cannot copy a directory into itself")
+				return
+			}
+		}
+		// Compute the destination path according to the selected directory mode.
+		var destPath string
+		if info.IsDir && directoryMode == model.DirectoryTransferArchive {
 			destPath = fileutil.JoinPath(destDir, dirArchiveName(p))
 		} else {
 			destPath = fileutil.JoinPath(destDir, info.Name)
 		}
-		if destInfo, err := tgtSession.Backend.Stat(r.Context(), destPath); err == nil && !destInfo.IsDir {
+		if srcSession.ID == tgtSession.ID && fileutil.CleanPath(p) == fileutil.CleanPath(destPath) && resolution == model.ConflictOverwrite {
+			writeError(w, http.StatusBadRequest, "INVALID_DESTINATION", "cannot overwrite a source item with itself; choose rename or skip")
+			return
+		}
+		if destInfo, err := tgtSession.Backend.Stat(r.Context(), destPath); err == nil {
 			conflicts = append(conflicts, model.SftpConflictInfo{
-				SourcePath: p,
-				DestPath:   destPath,
-				SourceSize: info.Size,
-				DestSize:   destInfo.Size,
+				SourcePath:  p,
+				DestPath:    destPath,
+				SourceSize:  info.Size,
+				DestSize:    destInfo.Size,
+				SourceIsDir: info.IsDir,
+				DestIsDir:   destInfo.IsDir,
 			})
 		}
 	}
@@ -155,8 +181,9 @@ func (h *SftpHandler) CrossSessionTransfer(w http.ResponseWriter, r *http.Reques
 	h.transfers.mu.Unlock()
 
 	go func() {
-		// Phase 1: Try direct scp on source host (only for remote→remote)
-		if srcSession.ProfileID != "local" && tgtSession.ProfileID != "local" {
+		// Archive mode must be deterministic, so directory batches use the
+		// relay compressor instead of scp -r. Same-session copies also relay.
+		if srcSession.ID != tgtSession.ID && srcSession.ProfileID != "local" && tgtSession.ProfileID != "local" && !(hasDirectory && directoryMode == model.DirectoryTransferArchive) {
 			method := h.tryDirectTransfer(ctx, entry, srcSession, tgtSession, cleanPaths, destDir, resolution)
 			if method == directOK {
 				return
@@ -171,7 +198,7 @@ func (h *SftpHandler) CrossSessionTransfer(w http.ResponseWriter, r *http.Reques
 			h.transfers.mu.Unlock()
 		}
 		// Phase 2: Stream relay (no temp file, cross-platform)
-		h.doStreamRelay(ctx, entry, srcSession, tgtSession, cleanPaths, destDir, resolution)
+		h.doStreamRelay(ctx, entry, srcSession, tgtSession, cleanPaths, destDir, resolution, directoryMode)
 	}()
 
 	writeJSON(w, http.StatusAccepted, model.SftpTransferResponse{
@@ -184,9 +211,9 @@ func (h *SftpHandler) CrossSessionTransfer(w http.ResponseWriter, r *http.Reques
 type directResult int
 
 const (
-	directOK      directResult = iota // success
-	directSkip                        // not applicable (no exec, local, etc.)
-	directFail                        // attempted but failed
+	directOK   directResult = iota // success
+	directSkip                     // not applicable (no exec, local, etc.)
+	directFail                     // attempted but failed
 )
 
 // tryDirectTransfer attempts to execute scp on the source host to push files
@@ -334,12 +361,8 @@ func (h *SftpHandler) directTransferOne(
 
 	switch resolution {
 	case model.ConflictOverwrite:
-		rmFlag := "-f"
-		if isDir {
-			rmFlag = "-rf"
-		}
 		rmCmd := fmt.Sprintf("%sssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 %s 'rm %s %q'",
-			sshPrefix, remoteTarget, rmFlag, destPath)
+			sshPrefix, remoteTarget, "-rf", destPath)
 		execDriver.Exec(rmCmd) // ignore errors
 	case model.ConflictSkip:
 		testCmd := fmt.Sprintf("%sssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 %s 'test -e %q'",
@@ -390,6 +413,7 @@ func (h *SftpHandler) doStreamRelay(
 	ctx context.Context, entry *transferEntry,
 	src, tgt *SftpSession,
 	paths []string, destDir string, resolution model.ConflictResolution,
+	directoryMode model.DirectoryTransferMode,
 ) {
 	task := entry.task
 	task.Status = "transferring"
@@ -415,7 +439,7 @@ func (h *SftpHandler) doStreamRelay(
 			h.transfers.sem <- struct{}{}
 			defer func() { <-h.transfers.sem }()
 
-			if err := h.transferOneStreamRelay(ctx, entry, src, tgt, p, destDir, resolution, &totalTransferred); err != nil {
+			if err := h.transferOneStreamRelay(ctx, entry, src, tgt, p, destDir, resolution, directoryMode, &totalTransferred); err != nil {
 				failuresMu.Lock()
 				failures = append(failures, p+": "+err.Error())
 				failuresMu.Unlock()
@@ -457,6 +481,7 @@ func (h *SftpHandler) transferOneStreamRelay(
 	ctx context.Context, entry *transferEntry,
 	src, tgt *SftpSession,
 	p, destDir string, resolution model.ConflictResolution,
+	directoryMode model.DirectoryTransferMode,
 	totalTransferred *atomic.Int64,
 ) error {
 	select {
@@ -471,6 +496,9 @@ func (h *SftpHandler) transferOneStreamRelay(
 	}
 
 	if info.IsDir {
+		if directoryMode == model.DirectoryTransferPreserve {
+			return h.transferDirPreserve(ctx, src, tgt, p, destDir, resolution, totalTransferred)
+		}
 		return h.transferDirAsTarGz(ctx, entry, src, tgt, p, destDir, resolution, totalTransferred)
 	}
 
@@ -484,7 +512,7 @@ func (h *SftpHandler) transferOneStreamRelay(
 	if _, statErr := tgt.Backend.Stat(ctx, destPath); statErr == nil {
 		switch resolution {
 		case model.ConflictOverwrite:
-			if err := tgt.Backend.Remove(ctx, destPath); err != nil {
+			if err := fileutil.RemoveAll(ctx, tgt.Backend, destPath); err != nil {
 				return fmt.Errorf("overwrite dest %s: %w", destPath, err)
 			}
 		case model.ConflictRename:
@@ -547,6 +575,91 @@ func (h *SftpHandler) transferOneStreamRelay(
 	}
 }
 
+// transferDirPreserve recreates a source directory tree at the destination
+// and streams every file without staging it on disk.
+func (h *SftpHandler) transferDirPreserve(
+	ctx context.Context,
+	src, tgt *SftpSession,
+	srcDir, destDir string,
+	resolution model.ConflictResolution,
+	totalTransferred *atomic.Int64,
+) error {
+	dirName := fileutil.BaseName(srcDir)
+	if dirName == "" || dirName == "/" {
+		return fmt.Errorf("cannot preserve-copy filesystem root")
+	}
+	destRoot := fileutil.JoinPath(destDir, dirName)
+	if _, err := tgt.Backend.Stat(ctx, destRoot); err == nil {
+		switch resolution {
+		case model.ConflictOverwrite:
+			if err := fileutil.RemoveAll(ctx, tgt.Backend, destRoot); err != nil {
+				return fmt.Errorf("overwrite dest %s: %w", destRoot, err)
+			}
+		case model.ConflictRename:
+			var renameErr error
+			destRoot, renameErr = fileutil.AutoRename(ctx, tgt.Backend, destRoot)
+			if renameErr != nil {
+				return renameErr
+			}
+		case model.ConflictSkip:
+			return nil
+		default:
+			return nil
+		}
+	}
+	return fileutil.Walk(ctx, src.Backend, srcDir, func(walkPath string, info fileutil.FileInfo) error {
+		rel := strings.TrimPrefix(walkPath, srcDir)
+		rel = strings.TrimPrefix(rel, "/")
+		destPath := destRoot
+		if rel != "" {
+			destPath = fileutil.JoinPath(destRoot, rel)
+		}
+		if info.IsDir {
+			if err := tgt.Backend.MkdirP(ctx, destPath); err != nil {
+				return fmt.Errorf("mkdir %s: %w", destPath, err)
+			}
+			return nil
+		}
+
+		rc, err := src.Backend.OpenRead(ctx, walkPath)
+		if err != nil {
+			return err
+		}
+		wc, err := tgt.Backend.OpenWrite(ctx, destPath)
+		if err != nil {
+			rc.Close()
+			return err
+		}
+		buf := make([]byte, 64*1024)
+		for {
+			select {
+			case <-ctx.Done():
+				rc.Close()
+				wc.Close()
+				return ctx.Err()
+			default:
+			}
+			n, readErr := rc.Read(buf)
+			if n > 0 {
+				if _, writeErr := wc.Write(buf[:n]); writeErr != nil {
+					rc.Close()
+					wc.Close()
+					return writeErr
+				}
+				totalTransferred.Add(int64(n))
+			}
+			if readErr != nil {
+				rc.Close()
+				wc.Close()
+				if readErr == io.EOF {
+					return nil
+				}
+				return readErr
+			}
+		}
+	})
+}
+
 // dirArchiveName returns the .tar.gz file name for a source directory path.
 // "/var/log/nginx" → "nginx.tar.gz"; "/" → "archive.tar.gz".
 func dirArchiveName(srcDir string) string {
@@ -586,7 +699,7 @@ func (h *SftpHandler) transferDirAsTarGz(
 	if _, err := tgt.Backend.Stat(ctx, destPath); err == nil {
 		switch resolution {
 		case model.ConflictOverwrite:
-			if err := tgt.Backend.Remove(ctx, destPath); err != nil {
+			if err := fileutil.RemoveAll(ctx, tgt.Backend, destPath); err != nil {
 				return fmt.Errorf("overwrite dest %s: %w", destPath, err)
 			}
 		case model.ConflictRename:

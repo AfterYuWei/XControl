@@ -16,7 +16,8 @@ export interface SftpTreeNode extends SftpEntry {
   children?: SftpTreeNode[]
 }
 
-export type TransferDirection = 'upload' | 'download'
+export type TransferDirection = 'upload' | 'download' | 'transfer'
+export type DirectoryTransferMode = 'preserve' | 'archive'
 export type TransferStatus = 'queued' | 'transferring' | 'completed' | 'failed' | 'cancelled'
 
 export interface TransferTask {
@@ -89,6 +90,20 @@ export interface SftpConflictInfo {
   dest_path: string
   source_size: number
   dest_size: number
+  source_is_dir?: boolean
+  dest_is_dir?: boolean
+}
+
+export interface SftpMoveFailure {
+  path: string
+  message: string
+}
+
+export interface SftpMoveResponse {
+  moved: string[]
+  skipped: string[]
+  failures: SftpMoveFailure[]
+  conflicts?: SftpConflictInfo[]
 }
 
 /** Response type for POST /api/sftp/transfer.

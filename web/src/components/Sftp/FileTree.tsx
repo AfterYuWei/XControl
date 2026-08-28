@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { ChevronRight, Folder, FileText, FileCode, FileArchive, FileImage } from 'lucide-react'
 import { ancestorsOf, type TreeNode, type PaneSide } from '@/store/sftp'
 import type { SftpEntry } from '@/types/sftp'
@@ -11,6 +11,12 @@ interface FileTreeProps {
   onActivate: (entry: SftpEntry) => void
   onContextMenu: (e: React.MouseEvent, entry: SftpEntry) => void
   onDragStart: (e: React.DragEvent, entry: SftpEntry) => void
+  onDragEnd?: () => void
+  dropTargetPath?: string | null
+  draggingPaths?: Set<string>
+  onDragOverEntry?: (e: React.DragEvent, entry: SftpEntry) => void
+  onDragLeaveEntry?: (e: React.DragEvent, entry: SftpEntry) => void
+  onDropEntry?: (e: React.DragEvent, entry: SftpEntry) => void
   pane: PaneSide
 }
 
@@ -33,11 +39,18 @@ export function FileTree({
   onActivate,
   onContextMenu,
   onDragStart,
+  onDragEnd,
+  dropTargetPath,
+  draggingPaths,
+  onDragOverEntry,
+  onDragLeaveEntry,
+  onDropEntry,
 }: FileTreeProps) {
   // Extra folders the user has explicitly expanded beyond the active path's
   // ancestors. Collapsing an ancestor of the active path is ignored (kept
   // open) so the current location never disappears.
   const [userExpanded, setUserExpanded] = useState<Set<string>>(() => new Set())
+  const springTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const expanded = useMemo(
     () => new Set<string>([...ancestorsOf(activePath), ...userExpanded]),
@@ -63,6 +76,8 @@ export function FileTree({
       'sftp-trow',
       isSelected ? 'sel' : '',
       isActive ? 'active-path' : '',
+      dropTargetPath === e.path ? 'drop-target' : '',
+      draggingPaths?.has(e.path) ? 'dragging' : '',
       e.is_dir ? 'is-dir' : 'is-file',
     ]
       .filter(Boolean)
@@ -86,6 +101,22 @@ export function FileTree({
           }}
           onContextMenu={(ev) => onContextMenu(ev, e)}
           onDragStart={(ev) => onDragStart(ev, e)}
+          onDragEnd={onDragEnd}
+          onDragOver={e.is_dir ? (ev) => {
+            onDragOverEntry?.(ev, e)
+            if (!isExpanded && !springTimer.current) {
+              springTimer.current = setTimeout(() => {
+                setUserExpanded((prev) => new Set(prev).add(e.path))
+                springTimer.current = null
+              }, 700)
+            }
+          } : undefined}
+          onDragLeave={e.is_dir ? (ev) => {
+            if (springTimer.current) clearTimeout(springTimer.current)
+            springTimer.current = null
+            onDragLeaveEntry?.(ev, e)
+          } : undefined}
+          onDrop={e.is_dir ? (ev) => onDropEntry?.(ev, e) : undefined}
           onKeyDown={(ev) => {
             if (ev.key === 'Enter') {
               if (e.is_dir) toggle(e.path)

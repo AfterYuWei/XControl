@@ -10,6 +10,7 @@ import type {
   TransferDirection,
   ConflictResolution,
   SftpConflictInfo,
+  DirectoryTransferMode,
 } from '@/types/sftp'
 import { toast } from 'sonner'
 
@@ -91,18 +92,69 @@ export function ancestorsOf(path: string): string[] {
 export type SftpViewMode = 'list' | 'tree'
 export type PaneSide = 'left' | 'right'
 
+export interface SftpDragSession {
+  sourcePane: PaneSide
+  sourceTabId: string
+  sourceSessionId: string
+  entries: SftpEntry[]
+}
+
+export interface SftpDropTarget {
+  pane: PaneSide
+  tabId: string
+  sessionId: string
+  destDir: string
+  serverName: string
+  kind: 'current' | 'folder' | 'breadcrumb' | 'tab' | 'tree'
+  copyModifier?: boolean
+}
+
+export interface PendingDirectoryDrop {
+  drag: SftpDragSession
+  target: SftpDropTarget
+}
+
+export function normalizeDraggedEntries(entries: SftpEntry[]): SftpEntry[] {
+  const unique = Array.from(new Map(entries.map((entry) => [entry.path, entry])).values())
+  return unique.filter((entry) => !unique.some((candidate) =>
+    candidate.is_dir && candidate.path !== entry.path && pathWithin(entry.path, candidate.path)
+  ))
+}
+
+export function pathWithin(candidate: string, root: string): boolean {
+  const cleanRoot = root === '/' ? '/' : root.replace(/\/$/, '')
+  return candidate === cleanRoot || (cleanRoot !== '/' && candidate.startsWith(`${cleanRoot}/`))
+}
+
+export function dropAction(drag: SftpDragSession, target: SftpDropTarget, copyModifier: boolean): 'copy' | 'move' {
+  return drag.sourceSessionId === target.sessionId && !copyModifier ? 'move' : 'copy'
+}
+
+export function validateDrop(drag: SftpDragSession, target: SftpDropTarget, copyModifier: boolean): string | null {
+  if (!target.sessionId) return '目标标签页尚未连接'
+  if (drag.sourceSessionId !== target.sessionId) return null
+  for (const entry of drag.entries) {
+    if (entry.is_dir && pathWithin(target.destDir, entry.path)) return '不能将文件夹放入自身或其子目录'
+    if (!copyModifier && parentPath(entry.path) === target.destDir) return '文件已位于目标目录'
+  }
+  return null
+}
+
 /** Stored when a transfer is blocked by destination conflicts. The UI renders
  *  a conflict dialog from `conflicts`; the user's choice is fed back via
  *  resolveConflict(), which retries the transfer with the chosen strategy. */
 export interface PendingConflict {
   conflicts: SftpConflictInfo[]
+  operation: 'transfer' | 'move'
   // Original request context used to retry after resolution
   sourceSessionId: string
   targetSessionId: string
   paths: string[]
   destDir: string
   targetPane: PaneSide
+  targetTabId: string
   direction: TransferDirection
+  directoryMode?: DirectoryTransferMode
 }
 
 /** Dialog state types for file operations */
@@ -154,6 +206,9 @@ export interface SftpStore {
   transfers: TransferTask[]
   servers: SftpServer[]
   serversLoading: boolean
+  dragSession: SftpDragSession | null
+  dropTarget: SftpDropTarget | null
+  pendingDirectoryDrop: PendingDirectoryDrop | null
 
   // Per-pane actions
   navigate: (pane: PaneSide, path: string) => Promise<void>
@@ -175,7 +230,11 @@ export interface SftpStore {
   deleteSelected: (pane: PaneSide) => Promise<void>
 
   // Transfers
-  startTransfer: (entries: SftpEntry[], direction: TransferDirection, destPane?: PaneSide) => Promise<void>
+  beginDrag: (drag: SftpDragSession) => void
+  setDropTarget: (target: SftpDropTarget | null) => void
+  cancelDrag: () => void
+  commitDrop: (copyModifier: boolean) => Promise<boolean>
+  resolveDirectoryDrop: (mode: DirectoryTransferMode | null) => Promise<void>
   cancelTransfer: (id: string) => Promise<void>
   clearCompleted: () => Promise<void>
 
@@ -253,6 +312,9 @@ export function createSftpStore(): SftpStoreApi {
     servers: [],
     serversLoading: false,
     pendingConflict: null,
+    dragSession: null,
+    dropTarget: null,
+    pendingDirectoryDrop: null,
 
     // Dialog states
     newFileDialog: null,
@@ -409,33 +471,55 @@ export function createSftpStore(): SftpStoreApi {
       }
     },
 
-    startTransfer: async (entries, direction, destPane) => {
-      // Cross-pane transfer uses the backend /api/sftp/transfer endpoint,
-      // which tries direct server-to-server copy first (scp on source host),
-      // then falls back to backend relay. Conflicts are detected server-side;
-      // when found, the request returns 409 with a conflicts list and we
-      // surface a dialog so the user can choose how to proceed.
-      const state = get()
-      const sourcePane: PaneSide = direction === 'upload' ? 'left' : 'right'
-      const targetPane: PaneSide = destPane ?? (direction === 'upload' ? 'right' : 'left')
+    beginDrag: (drag) => set({
+      dragSession: { ...drag, entries: normalizeDraggedEntries(drag.entries) },
+      dropTarget: null,
+    }),
 
-      const sourceTab = activeTabOf(state, sourcePane)
-      const targetTab = activeTabOf(state, targetPane)
-      if (!sourceTab?.sessionId || !targetTab?.sessionId) return
+    setDropTarget: (target) => set({ dropTarget: target }),
 
-      // Include both files and directories — directories are archived as
-      // .tar.gz by the backend before transfer.
-      const paths = entries.map((e) => e.path)
-      if (paths.length === 0) return
+    cancelDrag: () => set({ dragSession: null, dropTarget: null }),
 
-      await runTransfer(get, set, {
-        sourceSessionId: sourceTab.sessionId,
-        targetSessionId: targetTab.sessionId,
-        paths,
-        destDir: targetTab.path,
-        targetPane,
-        direction,
-      })
+    commitDrop: async (copyModifier) => {
+      const { dragSession: drag, dropTarget: target } = get()
+      if (!drag || !target) return false
+      const invalid = validateDrop(drag, target, copyModifier)
+      if (invalid) {
+        toast.warning(invalid)
+        set({ dropTarget: null })
+        return false
+      }
+
+      const action = dropAction(drag, target, copyModifier)
+      // A tab itself is a valid destination even when it was not activated by
+      // the spring-load timer. Activate it so refreshes target the right tab.
+      set({ ...setTabs(target.pane, tabsOf(get(), target.pane).tabs, target.tabId), dragSession: null, dropTarget: null })
+
+      if (action === 'move') {
+        await runMove(get, set, {
+          sessionId: drag.sourceSessionId,
+          paths: drag.entries.map((entry) => entry.path),
+          destDir: target.destDir,
+          targetPane: target.pane,
+          targetTabId: target.tabId,
+        })
+        return true
+      }
+
+      if (drag.entries.some((entry) => entry.is_dir)) {
+        set({ pendingDirectoryDrop: { drag, target } })
+        return true
+      }
+
+      await startExplicitTransfer(get, set, drag, target, 'preserve')
+      return true
+    },
+
+    resolveDirectoryDrop: async (mode) => {
+      const pending = get().pendingDirectoryDrop
+      set({ pendingDirectoryDrop: null })
+      if (!pending || !mode) return
+      await startExplicitTransfer(get, set, pending.drag, pending.target, mode)
     },
 
     dismissConflict: () => set({ pendingConflict: null }),
@@ -478,15 +562,28 @@ export function createSftpStore(): SftpStoreApi {
       const pending = get().pendingConflict
       if (!pending) return
       set({ pendingConflict: null })
-      await runTransfer(get, set, {
-        sourceSessionId: pending.sourceSessionId,
-        targetSessionId: pending.targetSessionId,
-        paths: pending.paths,
-        destDir: pending.destDir,
-        targetPane: pending.targetPane,
-        direction: pending.direction,
-        resolution,
-      })
+      if (pending.operation === 'move') {
+        await runMove(get, set, {
+          sessionId: pending.sourceSessionId,
+          paths: pending.paths,
+          destDir: pending.destDir,
+          targetPane: pending.targetPane,
+          targetTabId: pending.targetTabId,
+          resolution,
+        })
+      } else {
+        await runTransfer(get, set, {
+          sourceSessionId: pending.sourceSessionId,
+          targetSessionId: pending.targetSessionId,
+          paths: pending.paths,
+          destDir: pending.destDir,
+          targetPane: pending.targetPane,
+          targetTabId: pending.targetTabId,
+          direction: pending.direction,
+          directoryMode: pending.directoryMode ?? 'archive',
+          resolution,
+        })
+      }
     },
 
     cancelTransfer: async (id) => {
@@ -609,6 +706,79 @@ function setTabs(pane: PaneSide, tabs: SftpTab[], activeId: string): Partial<Sft
 type GetState = () => SftpStore
 type SetState = (partial: Partial<SftpStore> | ((s: SftpStore) => Partial<SftpStore>)) => void
 
+function transferDirection(source: PaneSide, target: PaneSide): TransferDirection {
+  if (source === 'left' && target === 'right') return 'upload'
+  if (source === 'right' && target === 'left') return 'download'
+  return 'transfer'
+}
+
+async function startExplicitTransfer(
+  get: GetState,
+  set: SetState,
+  drag: SftpDragSession,
+  target: SftpDropTarget,
+  directoryMode: DirectoryTransferMode,
+) {
+  await runTransfer(get, set, {
+    sourceSessionId: drag.sourceSessionId,
+    targetSessionId: target.sessionId,
+    paths: drag.entries.map((entry) => entry.path),
+    destDir: target.destDir,
+    targetPane: target.pane,
+    targetTabId: target.tabId,
+    direction: transferDirection(drag.sourcePane, target.pane),
+    directoryMode,
+  })
+}
+
+async function runMove(
+  get: GetState,
+  set: SetState,
+  params: {
+    sessionId: string
+    paths: string[]
+    destDir: string
+    targetPane: PaneSide
+    targetTabId: string
+    resolution?: ConflictResolution
+  },
+) {
+  try {
+    const res = await sftpApi.move(
+      params.sessionId,
+      params.paths,
+      params.destDir,
+      params.resolution ?? 'ask',
+    )
+    if (res.conflicts?.length) {
+      set({
+        pendingConflict: {
+          operation: 'move',
+          conflicts: res.conflicts,
+          sourceSessionId: params.sessionId,
+          targetSessionId: params.sessionId,
+          paths: params.paths,
+          destDir: params.destDir,
+          targetPane: params.targetPane,
+          targetTabId: params.targetTabId,
+          direction: 'transfer',
+        },
+      })
+      return
+    }
+    await refreshTabById(get, set, params.targetPane, params.targetTabId)
+    if (res.failures.length > 0) {
+      toast.warning(`已移动 ${res.moved.length} 项，${res.failures.length} 项失败`)
+    } else if (res.skipped.length > 0) {
+      toast.info(`已移动 ${res.moved.length} 项，跳过 ${res.skipped.length} 项`)
+    } else {
+      toast.success(`已移动 ${res.moved.length} 项`)
+    }
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : '移动失败')
+  }
+}
+
 /** Connect to a server and fetch the root listing. */
 async function connectAndNavigate(
   get: GetState,
@@ -676,7 +846,9 @@ async function runTransfer(
     paths: string[]
     destDir: string
     targetPane: PaneSide
+    targetTabId: string
     direction: TransferDirection
+    directoryMode: DirectoryTransferMode
     resolution?: ConflictResolution
   },
 ) {
@@ -689,9 +861,11 @@ async function runTransfer(
       params.paths,
       params.destDir,
       resolution,
+      params.directoryMode,
     )
   } catch (err) {
     console.error('transfer failed', err)
+    toast.error(err instanceof Error ? err.message : '传输失败')
     return
   }
 
@@ -700,13 +874,16 @@ async function runTransfer(
   if (res.conflicts && res.conflicts.length > 0 && !res.task_id) {
     set({
       pendingConflict: {
+        operation: 'transfer',
         conflicts: res.conflicts,
         sourceSessionId: params.sourceSessionId,
         targetSessionId: params.targetSessionId,
         paths: params.paths,
         destDir: params.destDir,
         targetPane: params.targetPane,
+        targetTabId: params.targetTabId,
         direction: params.direction,
+        directoryMode: params.directoryMode,
       },
     })
     return
@@ -715,7 +892,12 @@ async function runTransfer(
   if (!res.task_id || !res.tasks || res.tasks.length === 0) return
 
   // Add the backend-created task(s) to the store for progress tracking
-  set((s) => ({ transfers: [...s.transfers, ...res.tasks!] }))
+  set((s) => ({
+    transfers: [
+      ...s.transfers,
+      ...res.tasks!.map((task) => ({ ...task, direction: params.direction })),
+    ],
+  }))
 
   // Poll the task status in background until completion
   const taskId = res.task_id
@@ -746,7 +928,10 @@ async function runTransfer(
 
         if (t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled') {
           if (t.status === 'completed') {
-            get().refresh(params.targetPane)
+            await refreshTabById(get, set, params.targetPane, params.targetTabId)
+            if (t.error_message) toast.warning(`传输部分完成：${t.error_message}`)
+          } else if (t.status === 'failed') {
+            toast.error(t.error_message || '传输失败')
           }
           return
         }
@@ -755,6 +940,35 @@ async function runTransfer(
       }
     }
   })()
+}
+
+/** Refresh a specific tab without changing the user's active tab. */
+async function refreshTabById(
+  get: GetState,
+  set: SetState,
+  pane: PaneSide,
+  tabId: string,
+) {
+  const { tabs, activeId } = tabsOf(get(), pane)
+  const tab = tabs.find((item) => item.id === tabId)
+  if (!tab?.sessionId) return
+  if (activeId === tabId) {
+    await fetchEntries(get, set, pane, tab.path)
+    return
+  }
+  try {
+    const res = await sftpApi.list(tab.sessionId, tab.path, tab.showHidden)
+    set(updateTabById(get(), pane, tabId, (current) => ({
+      ...current,
+      entries: res.entries,
+      path: res.path,
+      loading: false,
+      error: null,
+    })))
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    set(updateTabById(get(), pane, tabId, (current) => ({ ...current, error: message })))
+  }
 }
 
 /** Fetch directory listing and update the active tab's entries. Uses a

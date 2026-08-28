@@ -4,6 +4,9 @@ import { ChevronRight, Home } from 'lucide-react'
 interface BreadcrumbProps {
   path: string
   onNavigate: (path: string) => void
+  dropTargetPath?: string | null
+  onDragOverSegment?: (e: React.DragEvent, path: string) => void
+  onDropSegment?: (e: React.DragEvent, path: string) => void
 }
 
 /** Split an absolute path into clickable segments. `/a/b/c` → [/, /a, /a/b, /a/b/c]. */
@@ -20,7 +23,7 @@ function segments(path: string): { label: string; path: string }[] {
 }
 
 /** Path navigation breadcrumb with inline path editor. */
-export function Breadcrumb({ path, onNavigate }: BreadcrumbProps) {
+export function Breadcrumb({ path, onNavigate, dropTargetPath, onDragOverSegment, onDropSegment }: BreadcrumbProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(path)
   const segs = segments(path)
@@ -66,8 +69,11 @@ export function Breadcrumb({ path, onNavigate }: BreadcrumbProps) {
         <span key={s.path} className="sftp-crumb-seg-wrap">
           {i > 0 && <ChevronRight size={12} className="sftp-crumb-sep" />}
           <button
-            className="sftp-crumb-seg"
+            className={`sftp-crumb-seg ${dropTargetPath === s.path ? 'drop-target' : ''}`}
             onClick={() => onNavigate(s.path)}
+            onDragOver={(e) => onDragOverSegment?.(e, s.path)}
+            onDragLeave={() => {}}
+            onDrop={(e) => onDropSegment?.(e, s.path)}
             title={s.path}
           >
             {s.label}

@@ -5,12 +5,12 @@ import "time"
 // SftpEntry represents a file or directory entry. Field names use snake_case
 // to match the frontend types/sftp.ts contract.
 type SftpEntry struct {
-	Name    string `json:"name"`               // base name without path
-	Path    string `json:"path"`               // absolute POSIX path (no trailing slash)
-	IsDir   bool   `json:"is_dir"`             // true for directories
-	Size    int64  `json:"size"`               // bytes; 0 for directories
-	ModTime string `json:"mod_time"`           // RFC 3339 timestamp
-	Mode    string `json:"mode,omitempty"`     // Unix permission string e.g. "rwxr-xr-x" (optional)
+	Name    string `json:"name"`           // base name without path
+	Path    string `json:"path"`           // absolute POSIX path (no trailing slash)
+	IsDir   bool   `json:"is_dir"`         // true for directories
+	Size    int64  `json:"size"`           // bytes; 0 for directories
+	ModTime string `json:"mod_time"`       // RFC 3339 timestamp
+	Mode    string `json:"mode,omitempty"` // Unix permission string e.g. "rwxr-xr-x" (optional)
 }
 
 // SftpTreeNode is a tree entry used by the recursive tree endpoint.
@@ -69,8 +69,8 @@ type SftpListResponse struct {
 }
 
 type SftpTreeResponse struct {
-	Path    string          `json:"path"`
-	Entries []SftpTreeNode  `json:"entries"`
+	Path    string         `json:"path"`
+	Entries []SftpTreeNode `json:"entries"`
 }
 
 type SftpMkdirRequest struct {
@@ -127,32 +127,63 @@ const (
 	ConflictSkip      ConflictResolution = "skip"
 )
 
+// DirectoryTransferMode controls how directory sources are represented at
+// the destination. The empty value intentionally keeps the legacy archive
+// behaviour for API compatibility.
+type DirectoryTransferMode string
+
+const (
+	DirectoryTransferPreserve DirectoryTransferMode = "preserve"
+	DirectoryTransferArchive  DirectoryTransferMode = "archive"
+)
+
 // SftpTransferRequest initiates a cross-session file transfer. The backend
 // first tries a direct server-to-server copy (scp on the source host); if that
 // fails (e.g. network unreachable, scp not installed), it falls back to relay
 // through the backend.
 type SftpTransferRequest struct {
-	SourceSessionID     string             `json:"source_session_id"`
-	TargetSessionID     string             `json:"target_session_id"`
-	Paths               []string           `json:"paths"`        // source paths on source session
-	DestDir             string             `json:"dest_dir"`     // target directory on target session
-	Overwrite           bool               `json:"overwrite,omitempty"`           // legacy alias for conflict_resolution=overwrite
-	ConflictResolution ConflictResolution `json:"conflict_resolution,omitempty"` // ask|overwrite|rename|skip
+	SourceSessionID    string                `json:"source_session_id"`
+	TargetSessionID    string                `json:"target_session_id"`
+	Paths              []string              `json:"paths"`                         // source paths on source session
+	DestDir            string                `json:"dest_dir"`                      // target directory on target session
+	Overwrite          bool                  `json:"overwrite,omitempty"`           // legacy alias for conflict_resolution=overwrite
+	ConflictResolution ConflictResolution    `json:"conflict_resolution,omitempty"` // ask|overwrite|rename|skip
+	DirectoryMode      DirectoryTransferMode `json:"directory_mode,omitempty"`      // preserve|archive; empty defaults to archive
 }
 
 // SftpConflictInfo describes a single file collision detected before transfer.
 type SftpConflictInfo struct {
-	SourcePath string `json:"source_path"` // absolute path on source session
-	DestPath   string `json:"dest_path"`   // absolute path on target session
-	SourceSize int64  `json:"source_size"` // bytes
-	DestSize   int64  `json:"dest_size"`   // bytes
+	SourcePath  string `json:"source_path"` // absolute path on source session
+	DestPath    string `json:"dest_path"`   // absolute path on target session
+	SourceSize  int64  `json:"source_size"` // bytes
+	DestSize    int64  `json:"dest_size"`   // bytes
+	SourceIsDir bool   `json:"source_is_dir"`
+	DestIsDir   bool   `json:"dest_is_dir"`
 }
 
 type SftpTransferResponse struct {
 	TaskID    string             `json:"task_id,omitempty"`
-	Method    string             `json:"method,omitempty"`    // "direct" | "relay"
+	Method    string             `json:"method,omitempty"` // "direct" | "relay"
 	Tasks     []TransferTask     `json:"tasks,omitempty"`
 	Conflicts []SftpConflictInfo `json:"conflicts,omitempty"` // populated on 409
+}
+
+type SftpMoveRequest struct {
+	Paths              []string           `json:"paths"`
+	DestDir            string             `json:"dest_dir"`
+	ConflictResolution ConflictResolution `json:"conflict_resolution,omitempty"`
+}
+
+type SftpMoveFailure struct {
+	Path    string `json:"path"`
+	Message string `json:"message"`
+}
+
+type SftpMoveResponse struct {
+	Moved     []string           `json:"moved"`
+	Skipped   []string           `json:"skipped"`
+	Failures  []SftpMoveFailure  `json:"failures"`
+	Conflicts []SftpConflictInfo `json:"conflicts,omitempty"`
 }
 
 // --- SFTP built-in editor DTOs ---
@@ -179,20 +210,20 @@ const (
 
 // SftpFileReadResponse is returned by GET /api/sftp/sessions/{id}/file.
 type SftpFileReadResponse struct {
-	Path       string      `json:"path"`
-	Content    string      `json:"content"`
-	Size       int64       `json:"size"`
-	ModTime    string      `json:"mod_time"`     // RFC 3339; used as optimistic-lock token on write
-	Language   string      `json:"language"`     // Monaco language id, e.g. "shell", "json", "nginx"
-	LineEnding LineEnding  `json:"line_ending"`  // "lf" | "crlf"
-	ReadOnly   bool        `json:"read_only"`    // true when the file is not writable on the remote
+	Path       string     `json:"path"`
+	Content    string     `json:"content"`
+	Size       int64      `json:"size"`
+	ModTime    string     `json:"mod_time"`    // RFC 3339; used as optimistic-lock token on write
+	Language   string     `json:"language"`    // Monaco language id, e.g. "shell", "json", "nginx"
+	LineEnding LineEnding `json:"line_ending"` // "lf" | "crlf"
+	ReadOnly   bool       `json:"read_only"`   // true when the file is not writable on the remote
 }
 
 // SftpFileWriteRequest is the body of PUT /api/sftp/sessions/{id}/file.
 type SftpFileWriteRequest struct {
 	Content         string     `json:"content"`
-	ExpectedModTime string     `json:"expected_mod_time"`         // RFC 3339; must match current Stat.ModTime
-	LineEnding      LineEnding `json:"line_ending,omitempty"`     // preserve original; default "lf"
+	ExpectedModTime string     `json:"expected_mod_time"`     // RFC 3339; must match current Stat.ModTime
+	LineEnding      LineEnding `json:"line_ending,omitempty"` // preserve original; default "lf"
 }
 
 // SftpFileWriteResponse is returned by PUT /api/sftp/sessions/{id}/file on

@@ -117,13 +117,24 @@ export function CompletionPanel({ popup, getTerminal, containerRef, onHoverItem,
     }
   }, [popup.open, popup.columns, getTerminal, containerRef])
 
-  // 键盘导航时滚动到选中项
+  // 键盘导航时滚动到选中项。只滚动活动列（面板根节点的直接子元素按列顺序排列），
+  // 并手动计算 scrollTop：querySelector 全局查找会命中父级来源列的弱高亮项，
+  // scrollIntoView 则可能连带滚动终端等其他滚动祖先。
   useEffect(() => {
     if (!popup.open) return
     const panel = panelRef.current
     if (!panel) return
-    const selected = panel.querySelector('[data-selected="true"]') as HTMLElement | null
-    selected?.scrollIntoView({ block: 'nearest' })
+    const column = panel.children[popup.activeColumn] as HTMLElement | undefined
+    if (!column) return
+    const selected = column.querySelector('[data-selected="true"]') as HTMLElement | null
+    if (!selected) return
+    const colRect = column.getBoundingClientRect()
+    const rowRect = selected.getBoundingClientRect()
+    if (rowRect.top < colRect.top) {
+      column.scrollTop -= colRect.top - rowRect.top
+    } else if (rowRect.bottom > colRect.bottom) {
+      column.scrollTop += rowRect.bottom - colRect.bottom
+    }
   }, [popup.open, popup.columns, popup.activeColumn])
 
   // 清理悬停定时器

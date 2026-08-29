@@ -25,7 +25,11 @@ import (
 )
 
 // poolKey returns the cache key for a server address.
-func poolKey(host string, port int, username string) string {
+func poolKey(opts protocol.DriverOpts) string {
+	if opts.PoolKey != "" {
+		return opts.PoolKey
+	}
+	host, port, username := opts.Host, opts.Port, opts.Username
 	if port == 0 {
 		port = 22
 	}
@@ -110,7 +114,7 @@ func (p *Pool) AcquireExec(ctx context.Context, opts protocol.DriverOpts) (*Entr
 }
 
 func (p *Pool) acquire(ctx context.Context, opts protocol.DriverOpts, needSSH, needSFTP bool) (*Entry, error) {
-	key := poolKey(opts.Host, opts.Port, opts.Username)
+	key := poolKey(opts)
 
 	p.mu.Lock()
 	entry, exists := p.entries[key]

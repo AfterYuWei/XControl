@@ -271,20 +271,19 @@ CREATE INDEX idx_audit_time ON audit_logs(timestamp);
 
 ```jsonc
 {
-  // 跳板机（Jump Host）
-  "jump_host": {
-    "host": "bastion.example.com",
-    "port": 22,
-    "username": "admin",
-    "vault_id": "vault-uuid"
+  // 代理设置（每个 Profile 只能配置一种；密码单独加密存储）
+  "proxy": {
+    "type": "socks5",        // socks5 | http | jump
+    "host": "proxy.example.com",
+    "port": 1080,
+    "username": "proxy-user"
   },
 
-  // 代理设置
-  "proxy": {
-    "type": "socks5",        // socks5 | http
-    "host": "proxy.example.com",
-    "port": 1080
-  },
+  // SSH 跳板机通过已有 Profile 引用，可递归使用该 Profile 的代理
+  // "proxy": {
+  //   "type": "jump",
+  //   "jump_profile_id": "profile-uuid"
+  // },
 
   // SSH 选项
   "ssh_options": {

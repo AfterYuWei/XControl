@@ -21,6 +21,16 @@ type DriverOpts struct {
 	Passphrase         string
 	HostKeyFingerprint string      // expected SSH host key fingerprint (SHA256:...)
 	JumpHost           *DriverOpts // optional jump host
+	Proxy              *ProxyOpts  // optional SOCKS5/HTTP CONNECT proxy
+	PoolKey            string      // stable route-aware connection-pool key
+}
+
+type ProxyOpts struct {
+	Type     string
+	Host     string
+	Port     int
+	Username string
+	Password string
 }
 
 func NewManager() *Manager {

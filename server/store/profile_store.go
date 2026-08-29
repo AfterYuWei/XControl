@@ -17,7 +17,7 @@ func NewProfileStore(db *sql.DB) ProfileStore {
 }
 
 func (s *sqliteProfileStore) List(groupID, search string) ([]*model.Profile, error) {
-	query := `SELECT id, name, host, port, username, auth_type, icon, vault_id, inline_credential, group_id, tags, options, note, sort_order, last_used_at, created_at, updated_at FROM profiles WHERE 1=1`
+	query := `SELECT id, name, host, port, username, auth_type, icon, vault_id, inline_credential, proxy_credential, group_id, tags, options, note, sort_order, last_used_at, created_at, updated_at FROM profiles WHERE 1=1`
 	args := []any{}
 
 	if groupID != "" {
@@ -43,7 +43,7 @@ func (s *sqliteProfileStore) List(groupID, search string) ([]*model.Profile, err
 		p := &model.Profile{}
 		var tagsJSON string
 		var lastUsed sql.NullTime
-		err := rows.Scan(&p.ID, &p.Name, &p.Host, &p.Port, &p.Username, &p.AuthType, &p.Icon, &p.VaultID, &p.InlineCredential, &p.GroupID, &tagsJSON, &p.Options, &p.Note, &p.SortOrder, &lastUsed, &p.CreatedAt, &p.UpdatedAt)
+		err := rows.Scan(&p.ID, &p.Name, &p.Host, &p.Port, &p.Username, &p.AuthType, &p.Icon, &p.VaultID, &p.InlineCredential, &p.ProxyCredential, &p.GroupID, &tagsJSON, &p.Options, &p.Note, &p.SortOrder, &lastUsed, &p.CreatedAt, &p.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -54,6 +54,7 @@ func (s *sqliteProfileStore) List(groupID, search string) ([]*model.Profile, err
 		if lastUsed.Valid {
 			p.LastUsedAt = &lastUsed.Time
 		}
+		hydrateProfileProxy(p)
 		profiles = append(profiles, p)
 	}
 	return profiles, nil
@@ -63,8 +64,8 @@ func (s *sqliteProfileStore) Get(id string) (*model.Profile, error) {
 	p := &model.Profile{}
 	var tagsJSON string
 	var lastUsed sql.NullTime
-	err := s.db.QueryRow(`SELECT id, name, host, port, username, auth_type, icon, vault_id, inline_credential, group_id, tags, options, note, sort_order, last_used_at, created_at, updated_at FROM profiles WHERE id = ?`, id).
-		Scan(&p.ID, &p.Name, &p.Host, &p.Port, &p.Username, &p.AuthType, &p.Icon, &p.VaultID, &p.InlineCredential, &p.GroupID, &tagsJSON, &p.Options, &p.Note, &p.SortOrder, &lastUsed, &p.CreatedAt, &p.UpdatedAt)
+	err := s.db.QueryRow(`SELECT id, name, host, port, username, auth_type, icon, vault_id, inline_credential, proxy_credential, group_id, tags, options, note, sort_order, last_used_at, created_at, updated_at FROM profiles WHERE id = ?`, id).
+		Scan(&p.ID, &p.Name, &p.Host, &p.Port, &p.Username, &p.AuthType, &p.Icon, &p.VaultID, &p.InlineCredential, &p.ProxyCredential, &p.GroupID, &tagsJSON, &p.Options, &p.Note, &p.SortOrder, &lastUsed, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -75,13 +76,14 @@ func (s *sqliteProfileStore) Get(id string) (*model.Profile, error) {
 	if lastUsed.Valid {
 		p.LastUsedAt = &lastUsed.Time
 	}
+	hydrateProfileProxy(p)
 	return p, nil
 }
 
 func (s *sqliteProfileStore) Create(p *model.Profile) error {
 	tagsJSON, _ := json.Marshal(p.Tags)
-	_, err := s.db.Exec(`INSERT INTO profiles (id, name, host, port, username, auth_type, icon, vault_id, inline_credential, group_id, tags, options, note, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.ID, p.Name, p.Host, p.Port, p.Username, p.AuthType, p.Icon, p.VaultID, p.InlineCredential, p.GroupID, string(tagsJSON), p.Options, p.Note, p.SortOrder, p.CreatedAt, p.UpdatedAt)
+	_, err := s.db.Exec(`INSERT INTO profiles (id, name, host, port, username, auth_type, icon, vault_id, inline_credential, proxy_credential, group_id, tags, options, note, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.Name, p.Host, p.Port, p.Username, p.AuthType, p.Icon, p.VaultID, p.InlineCredential, p.ProxyCredential, p.GroupID, string(tagsJSON), p.Options, p.Note, p.SortOrder, p.CreatedAt, p.UpdatedAt)
 	return err
 }
 
@@ -115,6 +117,9 @@ func (s *sqliteProfileStore) Update(id string, req *model.ProfileUpdateRequest) 
 	if req.InlineCredential != nil {
 		p.InlineCredential = *req.InlineCredential
 	}
+	if req.ProxyCredential != nil {
+		p.ProxyCredential = *req.ProxyCredential
+	}
 	if req.GroupID != nil {
 		p.GroupID = *req.GroupID
 	}
@@ -130,9 +135,14 @@ func (s *sqliteProfileStore) Update(id string, req *model.ProfileUpdateRequest) 
 	p.UpdatedAt = time.Now()
 
 	tagsJSON, _ := json.Marshal(p.Tags)
-	_, err = s.db.Exec(`UPDATE profiles SET name=?, host=?, port=?, username=?, auth_type=?, icon=?, vault_id=?, inline_credential=?, group_id=?, tags=?, options=?, note=?, updated_at=? WHERE id=?`,
-		p.Name, p.Host, p.Port, p.Username, p.AuthType, p.Icon, p.VaultID, p.InlineCredential, p.GroupID, string(tagsJSON), p.Options, p.Note, p.UpdatedAt, id)
+	_, err = s.db.Exec(`UPDATE profiles SET name=?, host=?, port=?, username=?, auth_type=?, icon=?, vault_id=?, inline_credential=?, proxy_credential=?, group_id=?, tags=?, options=?, note=?, updated_at=? WHERE id=?`,
+		p.Name, p.Host, p.Port, p.Username, p.AuthType, p.Icon, p.VaultID, p.InlineCredential, p.ProxyCredential, p.GroupID, string(tagsJSON), p.Options, p.Note, p.UpdatedAt, id)
 	return err
+}
+
+func hydrateProfileProxy(p *model.Profile) {
+	p.Proxy = model.ParseProxyOptions(p.Options)
+	p.Proxy.HasPassword = p.ProxyCredential != ""
 }
 
 func (s *sqliteProfileStore) Delete(id string) error {
@@ -149,4 +159,18 @@ func (s *sqliteProfileStore) CountByGroup(groupID string) (int, error) {
 	var count int
 	err := s.db.QueryRow(`SELECT COUNT(*) FROM profiles WHERE group_id = ?`, groupID).Scan(&count)
 	return count, err
+}
+
+func (s *sqliteProfileStore) JumpReferences(profileID string) ([]model.ProfileRef, error) {
+	profiles, err := s.List("", "")
+	if err != nil {
+		return nil, err
+	}
+	refs := make([]model.ProfileRef, 0)
+	for _, profile := range profiles {
+		if profile.Proxy.Type == model.ProxyTypeJump && profile.Proxy.JumpProfileID == profileID {
+			refs = append(refs, model.ProfileRef{ID: profile.ID, Name: profile.Name})
+		}
+	}
+	return refs, nil
 }

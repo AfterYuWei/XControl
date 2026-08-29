@@ -174,6 +174,60 @@ func TestBackupExportImportRoundTrip(t *testing.T) {
 	}
 }
 
+func TestBackupProxyCredentialRoundTripAndJumpRemap(t *testing.T) {
+	src, cleanup := setupBackupTest(t)
+	defer cleanup()
+	options, err := model.WithProxyOptions(`{"host_key_fingerprint":"SHA256:test"}`, model.ProxyConfig{
+		Type: model.ProxyTypeSOCKS5, Host: "proxy.internal", Port: 1080, Username: "alice",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxyCredential, err := src.encryptor.Encrypt("proxy-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := &model.Profile{
+		ID: "proxy-profile", Name: "proxy-profile", Host: "target.internal", Port: 22,
+		Username: "root", AuthType: "agent", Options: options, ProxyCredential: proxyCredential,
+		Tags: []string{}, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := NewProfileStore(src.db).Create(profile); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := src.Export()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Profiles) != 1 || payload.Profiles[0].ProxyPassword != "proxy-secret" {
+		t.Fatalf("proxy password not exported: %+v", payload.Profiles)
+	}
+
+	dst, cleanupDst := setupBackupTest(t)
+	defer cleanupDst()
+	if _, err := dst.Import(payload, model.BackupStrategySkip); err != nil {
+		t.Fatal(err)
+	}
+	got, err := NewProfileStore(dst.db).Get(profile.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decrypted, err := dst.encryptor.Decrypt(got.ProxyCredential)
+	if err != nil || decrypted != "proxy-secret" {
+		t.Fatalf("proxy password round trip = %q, %v", decrypted, err)
+	}
+
+	target := &model.BackupProfile{ID: "target", Options: "{}"}
+	jumpOptions, _ := model.WithProxyOptions("{}", model.ProxyConfig{Type: model.ProxyTypeJump, JumpProfileID: target.ID})
+	dependent := &model.BackupProfile{ID: "dependent", Options: jumpOptions}
+	remapPayload := &model.BackupPayload{Profiles: []*model.BackupProfile{target, dependent}}
+	remapIDs(remapPayload)
+	remappedProxy := model.ParseProxyOptions(dependent.Options)
+	if target.ID == "target" || dependent.ID == "dependent" || remappedProxy.JumpProfileID != target.ID {
+		t.Fatalf("jump reference was not remapped: target=%s dependent=%s proxy=%+v", target.ID, dependent.ID, remappedProxy)
+	}
+}
+
 func TestBackupImportNormalizesVaultUsernameOwnership(t *testing.T) {
 	backups, cleanup := setupBackupTest(t)
 	defer cleanup()

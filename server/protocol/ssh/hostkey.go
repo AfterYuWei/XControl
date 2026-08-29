@@ -23,13 +23,14 @@ func InspectHostKeyFingerprint(ctx context.Context, opts protocol.DriverOpts) (s
 	}
 
 	addr := net.JoinHostPort(opts.Host, fmt.Sprintf("%d", opts.Port))
-	dialer := &net.Dialer{}
-
-	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	conn, upstream, err := dialForInspection(ctx, opts, addr)
 	if err != nil {
 		return "", err
 	}
 	defer conn.Close()
+	if upstream != nil {
+		defer upstream.Close()
+	}
 
 	if deadline, ok := ctx.Deadline(); ok {
 		if err := conn.SetDeadline(deadline); err != nil {
@@ -55,6 +56,23 @@ func InspectHostKeyFingerprint(ctx context.Context, opts protocol.DriverOpts) (s
 		return "", err
 	}
 	return "", fmt.Errorf("host key fingerprint not received")
+}
+
+func dialForInspection(ctx context.Context, opts protocol.DriverOpts, addr string) (net.Conn, *Client, error) {
+	if opts.JumpHost != nil {
+		jumpClient, err := Dial(ctx, *opts.JumpHost)
+		if err != nil {
+			return nil, nil, fmt.Errorf("连接跳板机: %w", err)
+		}
+		conn, err := jumpClient.Dial("tcp", addr)
+		if err != nil {
+			jumpClient.Close()
+			return nil, nil, fmt.Errorf("通过跳板机连接目标: %w", err)
+		}
+		return conn, jumpClient, nil
+	}
+	conn, err := dialTransport(ctx, addr, opts.Proxy)
+	return conn, nil, err
 }
 
 var errHostKeyCaptured = fmt.Errorf("host key captured")

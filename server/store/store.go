@@ -10,6 +10,7 @@ type ProfileStore interface {
 	Delete(id string) error
 	UpdateLastUsed(id string) error
 	CountByGroup(groupID string) (int, error)
+	JumpReferences(profileID string) ([]model.ProfileRef, error)
 }
 
 type GroupStore interface {

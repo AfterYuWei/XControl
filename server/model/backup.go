@@ -55,22 +55,23 @@ type BackupPayload struct {
 
 // BackupProfile mirrors Profile but carries the decrypted inline credential.
 type BackupProfile struct {
-	ID               string          `json:"id"`
-	Name             string          `json:"name"`
-	Host             string          `json:"host"`
-	Port             int             `json:"port"`
-	Username         string          `json:"username"`
-	AuthType         string          `json:"auth_type"`
-	Icon             string          `json:"icon,omitempty"`
-	VaultID          string          `json:"vault_id,omitempty"`
-	InlineCredential *Credential     `json:"inline_credential,omitempty"`
-	GroupID          string          `json:"group_id,omitempty"`
-	Tags             []string        `json:"tags"`
-	Options          string          `json:"options,omitempty"`
-	Note             string          `json:"note,omitempty"`
-	SortOrder        int             `json:"sort_order"`
-	CreatedAt        time.Time       `json:"created_at"`
-	UpdatedAt        time.Time       `json:"updated_at"`
+	ID               string      `json:"id"`
+	Name             string      `json:"name"`
+	Host             string      `json:"host"`
+	Port             int         `json:"port"`
+	Username         string      `json:"username"`
+	AuthType         string      `json:"auth_type"`
+	Icon             string      `json:"icon,omitempty"`
+	VaultID          string      `json:"vault_id,omitempty"`
+	InlineCredential *Credential `json:"inline_credential,omitempty"`
+	ProxyPassword    string      `json:"proxy_password,omitempty"`
+	GroupID          string      `json:"group_id,omitempty"`
+	Tags             []string    `json:"tags"`
+	Options          string      `json:"options,omitempty"`
+	Note             string      `json:"note,omitempty"`
+	SortOrder        int         `json:"sort_order"`
+	CreatedAt        time.Time   `json:"created_at"`
+	UpdatedAt        time.Time   `json:"updated_at"`
 }
 
 // BackupVaultItem mirrors a vault row with decrypted credential data.

@@ -11,20 +11,20 @@ import (
 	"fmt"
 	"net"
 
-	gossh "golang.org/x/crypto/ssh"
 	"github.com/pkg/sftp"
+	gossh "golang.org/x/crypto/ssh"
 
 	"github.com/yuweinfo/xcontrol/fileutil"
-	sshdriver "github.com/yuweinfo/xcontrol/protocol/ssh"
 	"github.com/yuweinfo/xcontrol/protocol"
+	sshdriver "github.com/yuweinfo/xcontrol/protocol/ssh"
 )
 
 type Driver struct {
-	opts   protocol.DriverOpts
-	client *gossh.Client
-	sftp   *sftp.Client
+	opts    protocol.DriverOpts
+	client  *sshdriver.Client
+	sftp    *sftp.Client
 	backend fileutil.FileBackend
-	info   protocol.ConnectionInfo
+	info    protocol.ConnectionInfo
 }
 
 func NewDriver(opts protocol.DriverOpts) (protocol.Driver, error) {
@@ -40,7 +40,7 @@ func (d *Driver) Connect(ctx context.Context) error {
 	d.client = client
 
 	// Open SFTP subsystem (tuned for throughput, see fileutil.NewSftpClient)
-	sc, err := fileutil.NewSftpClient(client)
+	sc, err := fileutil.NewSftpClient(client.Client)
 	if err != nil {
 		client.Close()
 		return fmt.Errorf("new sftp client: %w", err)
@@ -99,7 +99,10 @@ func (d *Driver) SftpClient() *sftp.Client {
 
 // SSHClient returns the underlying SSH client (e.g. for port forwarding).
 func (d *Driver) SSHClient() *gossh.Client {
-	return d.client
+	if d.client == nil {
+		return nil
+	}
+	return d.client.Client
 }
 
 // ExecProvider is an optional interface for drivers that can execute remote

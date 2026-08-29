@@ -68,6 +68,38 @@ func (h *ProfileHandler) Create(w http.ResponseWriter, r *http.Request) {
 		req.Icon = "server"
 	}
 
+	profileID := uuid.New().String()
+	proxy, err := normalizeProxyInput(req.Proxy)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_PROXY_CONFIG", err.Error())
+		return
+	}
+	if err := validateProxyChain(h.profiles, profileID, proxy); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_PROXY_CHAIN", err.Error())
+		return
+	}
+	req.Options, err = model.WithProxyOptions(req.Options, proxy)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_OPTIONS", "连接高级配置不是有效 JSON")
+		return
+	}
+	proxyCredential := ""
+	if req.Proxy != nil && req.Proxy.Password != nil {
+		if proxy.Username != "" && *req.Proxy.Password == "" {
+			writeError(w, http.StatusBadRequest, "INVALID_PROXY_CONFIG", "代理用户名和密码必须同时填写")
+			return
+		}
+		proxyCredential, err = encodeProxyPassword(*req.Proxy.Password, h.encryptor)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "ENCRYPT_FAILED", err.Error())
+			return
+		}
+	}
+	if proxy.Username != "" && proxyCredential == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_PROXY_CONFIG", "代理用户名和密码必须同时填写")
+		return
+	}
+
 	vaultID, inlineCredential, err := h.prepareCredentialOnCreate(&req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "VALIDATION", err.Error())
@@ -80,7 +112,7 @@ func (h *ProfileHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now()
 	profile := &model.Profile{
-		ID:               uuid.New().String(),
+		ID:               profileID,
 		Name:             req.Name,
 		Host:             req.Host,
 		Port:             req.Port,
@@ -89,6 +121,8 @@ func (h *ProfileHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Icon:             req.Icon,
 		VaultID:          vaultID,
 		InlineCredential: inlineCredential,
+		ProxyCredential:  proxyCredential,
+		Proxy:            proxy,
 		GroupID:          req.GroupID,
 		Tags:             req.Tags,
 		Options:          req.Options,
@@ -96,6 +130,7 @@ func (h *ProfileHandler) Create(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}
+	profile.Proxy.HasPassword = proxyCredential != ""
 	if profile.Tags == nil {
 		profile.Tags = []string{}
 	}
@@ -128,6 +163,10 @@ func (h *ProfileHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "VALIDATION", err.Error())
 		return
 	}
+	if err := h.prepareProxyOnUpdate(current, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_PROXY_CONFIG", err.Error())
+		return
+	}
 
 	if err := h.profiles.Update(id, &req); err != nil {
 		writeError(w, http.StatusInternalServerError, "DB_ERROR", err.Error())
@@ -144,12 +183,77 @@ func (h *ProfileHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 func (h *ProfileHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	refs, err := h.profiles.JumpReferences(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "DB_ERROR", err.Error())
+		return
+	}
+	if len(refs) > 0 {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error":      APIError{Code: "PROFILE_IN_USE_AS_JUMP", Message: "该连接正被其他服务器用作 SSH 跳板机"},
+			"references": refs,
+		})
+		return
+	}
 
 	if err := h.profiles.Delete(id); err != nil {
 		writeError(w, http.StatusInternalServerError, "DB_ERROR", err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *ProfileHandler) prepareProxyOnUpdate(current *model.Profile, req *model.ProfileUpdateRequest) error {
+	if req.Proxy == nil {
+		if req.Options != nil {
+			merged, err := model.WithProxyOptions(*req.Options, current.Proxy)
+			if err != nil {
+				return fmt.Errorf("连接高级配置不是有效 JSON")
+			}
+			req.Options = &merged
+		}
+		return nil
+	}
+
+	next, err := normalizeProxyInput(req.Proxy)
+	if err != nil {
+		return err
+	}
+	if err := validateProxyChain(h.profiles, current.ID, next); err != nil {
+		return err
+	}
+	rawOptions := current.Options
+	if req.Options != nil {
+		rawOptions = *req.Options
+	}
+	merged, err := model.WithProxyOptions(rawOptions, next)
+	if err != nil {
+		return fmt.Errorf("连接高级配置不是有效 JSON")
+	}
+	req.Options = &merged
+
+	proxyCredential := current.ProxyCredential
+	if next.Type == model.ProxyTypeDirect || next.Type == model.ProxyTypeJump {
+		proxyCredential = ""
+	} else if req.Proxy.Password != nil {
+		if *req.Proxy.Password == "" {
+			proxyCredential = ""
+		} else {
+			proxyCredential, err = encodeProxyPassword(*req.Proxy.Password, h.encryptor)
+			if err != nil {
+				return err
+			}
+		}
+	} else if !sameProxyIdentity(current.Proxy, next) {
+		proxyCredential = ""
+	}
+	if next.Username == "" {
+		proxyCredential = ""
+	} else if proxyCredential == "" {
+		return fmt.Errorf("代理用户名和密码必须同时填写")
+	}
+	req.ProxyCredential = &proxyCredential
+	return nil
 }
 
 func (h *ProfileHandler) prepareCredentialOnCreate(req *model.ProfileCreateRequest) (vaultID string, inlineCredential string, err error) {

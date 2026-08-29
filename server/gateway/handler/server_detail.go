@@ -117,35 +117,21 @@ func (h *ServerDetailHandler) CreateSession(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	var password, privKey, passphrase string
-	cred, err := resolveProfileCredential(profile, h.vault, h.encryptor)
-	if err != nil {
-		slog.Warn("server detail: failed to resolve credential", "error", err)
-	} else {
-		password = cred.Password
-		privKey = cred.PrivKey
-		passphrase = cred.Passphrase
-	}
-
-	opts := protocol.DriverOpts{
-		Host:               profile.Host,
-		Port:               profile.Port,
-		Username:           profile.Username,
-		Password:           password,
-		PrivKey:            privKey,
-		Passphrase:         passphrase,
-		HostKeyFingerprint: profileHostKeyFingerprint(profile.Options),
-	}
-
 	ctx, cancel := context.WithTimeout(r.Context(), sshproto.DefaultConnectTimeout+15*time.Second)
 	defer cancel()
-
-	// Acquire from connection pool — blocks until connected (or timeout)
-	entry, err := h.pool.Acquire(ctx, opts)
+	resolved, err := resolveProfileConnection(ctx, profile, h.profiles, h.vault, h.encryptor, nil, nil)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "CONNECT_FAILED", "连接失败: "+err.Error())
 		return
 	}
+
+	// Acquire from connection pool — blocks until connected (or timeout)
+	entry, err := h.pool.Acquire(ctx, resolved.Opts())
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "CONNECT_FAILED", "连接失败: "+err.Error())
+		return
+	}
+	resolved.PersistHostKeys()
 
 	sessionID := uuid.New().String()
 	homeDir := h.resolveHomeDir(profile.Username, entry)

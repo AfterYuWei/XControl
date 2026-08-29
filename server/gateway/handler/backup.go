@@ -112,6 +112,7 @@ func stripCredentials(p *model.BackupPayload) {
 	p.Vault = []*model.BackupVaultItem{}
 	for _, pr := range p.Profiles {
 		pr.InlineCredential = nil
+		pr.ProxyPassword = ""
 		pr.VaultID = ""
 		if pr.AuthType == "vault" {
 			pr.AuthType = "none"

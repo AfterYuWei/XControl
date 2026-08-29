@@ -3,13 +3,38 @@ package ssh
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
+	"sync"
 	"time"
 
 	gossh "golang.org/x/crypto/ssh"
 
 	"github.com/yuweinfo/xcontrol/protocol"
 )
+
+// Client owns the target SSH client and every upstream jump connection used
+// to reach it. Closing it tears the whole route down exactly once.
+type Client struct {
+	*gossh.Client
+	upstream  []io.Closer
+	closeOnce sync.Once
+}
+
+func (c *Client) Close() error {
+	var firstErr error
+	c.closeOnce.Do(func() {
+		if c.Client != nil {
+			firstErr = c.Client.Close()
+		}
+		for _, closer := range c.upstream {
+			if err := closer.Close(); firstErr == nil && err != nil {
+				firstErr = err
+			}
+		}
+	})
+	return firstErr
+}
 
 const (
 	// DefaultConnectTimeout covers TCP connect plus the initial SSH handshake
@@ -58,14 +83,8 @@ func BuildSSHConfig(opts protocol.DriverOpts) (*gossh.ClientConfig, error) {
 
 // ConnectViaJump dials the target SSH server through a jump host. Exported for
 // reuse by other protocol drivers that need ProxyJump support.
-func ConnectViaJump(ctx context.Context, jumpOpts *protocol.DriverOpts, targetAddr string, targetConfig *gossh.ClientConfig) (*gossh.Client, error) {
-	jumpConfig, err := BuildSSHConfig(*jumpOpts)
-	if err != nil {
-		return nil, fmt.Errorf("jump host config: %w", err)
-	}
-
-	jumpAddr := net.JoinHostPort(jumpOpts.Host, fmt.Sprintf("%d", jumpOpts.Port))
-	jumpClient, err := dialClient(ctx, jumpAddr, jumpConfig)
+func ConnectViaJump(ctx context.Context, jumpOpts *protocol.DriverOpts, targetAddr string, targetConfig *gossh.ClientConfig) (*Client, error) {
+	jumpClient, err := Dial(ctx, *jumpOpts)
 	if err != nil {
 		return nil, fmt.Errorf("dial jump host: %w", err)
 	}
@@ -96,7 +115,7 @@ func ConnectViaJump(ctx context.Context, jumpOpts *protocol.DriverOpts, targetAd
 
 	_ = conn.SetDeadline(time.Time{})
 
-	return gossh.NewClient(ncc, chans, reqs), nil
+	return &Client{Client: gossh.NewClient(ncc, chans, reqs), upstream: []io.Closer{jumpClient}}, nil
 }
 
 func withConnectTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -109,12 +128,11 @@ func withConnectTimeout(ctx context.Context) (context.Context, context.CancelFun
 	return context.WithTimeout(ctx, DefaultConnectTimeout)
 }
 
-func dialClient(ctx context.Context, addr string, config *gossh.ClientConfig) (*gossh.Client, error) {
+func dialClient(ctx context.Context, addr string, config *gossh.ClientConfig, proxyOpts *protocol.ProxyOpts) (*Client, error) {
 	dialCtx, cancel := withConnectTimeout(ctx)
 	defer cancel()
 
-	dialer := &net.Dialer{}
-	conn, err := dialer.DialContext(dialCtx, "tcp", addr)
+	conn, err := dialTransport(dialCtx, addr, proxyOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -136,12 +154,12 @@ func dialClient(ctx context.Context, addr string, config *gossh.ClientConfig) (*
 	// open indefinitely after the initial connect/auth flow completes.
 	_ = conn.SetDeadline(time.Time{})
 
-	return gossh.NewClient(ncc, chans, reqs), nil
+	return &Client{Client: gossh.NewClient(ncc, chans, reqs)}, nil
 }
 
 // Dial establishes an SSH connection, optionally through a jump host. This is
 // a convenience wrapper combining BuildSSHConfig + direct/jump dial.
-func Dial(ctx context.Context, opts protocol.DriverOpts) (*gossh.Client, error) {
+func Dial(ctx context.Context, opts protocol.DriverOpts) (*Client, error) {
 	config, err := BuildSSHConfig(opts)
 	if err != nil {
 		return nil, fmt.Errorf("build ssh config: %w", err)
@@ -152,7 +170,7 @@ func Dial(ctx context.Context, opts protocol.DriverOpts) (*gossh.Client, error) 
 	if opts.JumpHost != nil {
 		return ConnectViaJump(ctx, opts.JumpHost, addr, config)
 	}
-	client, err := dialClient(ctx, addr, config)
+	client, err := dialClient(ctx, addr, config, opts.Proxy)
 	if err != nil {
 		return nil, fmt.Errorf("dial target: %w", err)
 	}

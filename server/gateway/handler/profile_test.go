@@ -22,9 +22,12 @@ func (s *profileHandlerTestStore) Create(profile *model.Profile) error {
 	return nil
 }
 func (s *profileHandlerTestStore) Update(string, *model.ProfileUpdateRequest) error { return nil }
-func (s *profileHandlerTestStore) Delete(string) error { return nil }
-func (s *profileHandlerTestStore) UpdateLastUsed(string) error { return nil }
-func (s *profileHandlerTestStore) CountByGroup(string) (int, error) { return 0, nil }
+func (s *profileHandlerTestStore) Delete(string) error                              { return nil }
+func (s *profileHandlerTestStore) UpdateLastUsed(string) error                      { return nil }
+func (s *profileHandlerTestStore) CountByGroup(string) (int, error)                 { return 0, nil }
+func (s *profileHandlerTestStore) JumpReferences(string) ([]model.ProfileRef, error) {
+	return nil, nil
+}
 
 func TestApplyVaultUsername(t *testing.T) {
 	var got string

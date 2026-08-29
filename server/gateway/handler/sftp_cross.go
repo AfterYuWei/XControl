@@ -185,7 +185,7 @@ func (h *SftpHandler) CrossSessionTransfer(w http.ResponseWriter, r *http.Reques
 	go func() {
 		// Archive mode must be deterministic, so directory batches use the
 		// relay compressor instead of scp -r. Same-session copies also relay.
-		if srcSession.ID != tgtSession.ID && srcSession.ProfileID != "local" && tgtSession.ProfileID != "local" && !(hasDirectory && directoryMode == model.DirectoryTransferArchive) {
+		if srcSession.ID != tgtSession.ID && srcSession.ProfileID != "local" && tgtSession.ProfileID != "local" && !srcSession.UsesProxy && !tgtSession.UsesProxy && !(hasDirectory && directoryMode == model.DirectoryTransferArchive) {
 			method := h.tryDirectTransfer(ctx, entry, srcSession, tgtSession, cleanPaths, destDir, resolution)
 			if method == directOK {
 				return

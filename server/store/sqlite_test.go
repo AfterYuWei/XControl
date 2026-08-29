@@ -39,7 +39,7 @@ func TestInitDBConfiguresSQLiteAndVersionsMigrations(t *testing.T) {
 		Scan(&migrationCount, &maxVersion); err != nil {
 		t.Fatal(err)
 	}
-	if migrationCount != 4 || maxVersion != 4 {
+	if migrationCount != 5 || maxVersion != 5 {
 		t.Fatalf("migrations = %d max = %d", migrationCount, maxVersion)
 	}
 }
@@ -64,7 +64,7 @@ func TestMigrationsAreIdempotentAcrossReopen(t *testing.T) {
 	if err := reopened.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 4 {
+	if count != 5 {
 		t.Fatalf("migration count after reopen = %d", count)
 	}
 }

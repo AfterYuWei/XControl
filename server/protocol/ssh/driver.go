@@ -22,23 +22,23 @@ func init() {
 // keepaliveMaxFailures is the consecutive failure count that marks the connection dead.
 // keepaliveRequestTimeout is the max wait for a single keepalive reply.
 const (
-	keepaliveInterval        = 30 * time.Second
-	keepaliveMaxFailures     = 3
-	keepaliveRequestTimeout  = 10 * time.Second
+	keepaliveInterval       = 30 * time.Second
+	keepaliveMaxFailures    = 3
+	keepaliveRequestTimeout = 10 * time.Second
 )
 
 type Driver struct {
 	opts   protocol.DriverOpts
-	client *gossh.Client
+	client *Client
 	info   protocol.ConnectionInfo
 
 	// Lifecycle management: keepalive probing + connection death detection
-	doneCh     chan struct{}    // closed on Close() to signal goroutines to exit
-	closeOnce  sync.Once        // guards doneCh from being closed twice
-	dead       atomic.Bool      // set when the connection is detected dead
-	deadReason string           // reason code (remote_shutdown | keepalive_timeout | ...)
+	doneCh     chan struct{} // closed on Close() to signal goroutines to exit
+	closeOnce  sync.Once     // guards doneCh from being closed twice
+	dead       atomic.Bool   // set when the connection is detected dead
+	deadReason string        // reason code (remote_shutdown | keepalive_timeout | ...)
 	deadCbs    []func(reason string)
-	cbMu       sync.Mutex       // protects deadCbs and deadReason
+	cbMu       sync.Mutex // protects deadCbs and deadReason
 }
 
 func NewDriver(opts protocol.DriverOpts) (protocol.Driver, error) {
@@ -309,7 +309,10 @@ func (d *Driver) ExecContext(ctx context.Context, cmd string) (stdout []byte, st
 // (e.g. SFTP). Used by the connection pool to share one SSH connection for
 // both command execution and file operations.
 func (d *Driver) SSHClient() *gossh.Client {
-	return d.client
+	if d.client == nil {
+		return nil
+	}
+	return d.client.Client
 }
 
 // Ping measures the round-trip time to the remote SSH server by sending a

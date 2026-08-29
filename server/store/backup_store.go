@@ -107,18 +107,19 @@ func (s *BackupStore) exportVault(tx *sql.Tx, p *model.BackupPayload) error {
 }
 
 func (s *BackupStore) exportProfiles(tx *sql.Tx, p *model.BackupPayload) error {
-	rows, err := tx.Query(`SELECT id, name, host, port, username, auth_type, icon, vault_id, inline_credential, group_id, tags, options, note, sort_order, created_at, updated_at FROM profiles ORDER BY sort_order, name`)
+	rows, err := tx.Query(`SELECT id, name, host, port, username, auth_type, icon, vault_id, inline_credential, proxy_credential, group_id, tags, options, note, sort_order, created_at, updated_at FROM profiles ORDER BY sort_order, name`)
 	if err != nil {
 		return fmt.Errorf("export profiles: %w", err)
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var (
-			item    model.BackupProfile
-			inline  string
-			tagsJSON string
+			item            model.BackupProfile
+			inline          string
+			proxyCredential string
+			tagsJSON        string
 		)
-		if err := rows.Scan(&item.ID, &item.Name, &item.Host, &item.Port, &item.Username, &item.AuthType, &item.Icon, &item.VaultID, &inline, &item.GroupID, &tagsJSON, &item.Options, &item.Note, &item.SortOrder, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.Name, &item.Host, &item.Port, &item.Username, &item.AuthType, &item.Icon, &item.VaultID, &inline, &proxyCredential, &item.GroupID, &tagsJSON, &item.Options, &item.Note, &item.SortOrder, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return err
 		}
 		json.Unmarshal([]byte(tagsJSON), &item.Tags)
@@ -131,6 +132,13 @@ func (s *BackupStore) exportProfiles(tx *sql.Tx, p *model.BackupPayload) error {
 				return fmt.Errorf("decode inline credential for profile %s: %w", item.ID, err)
 			}
 			item.InlineCredential = cred
+		}
+		if proxyCredential != "" {
+			password, err := s.encryptor.Decrypt(proxyCredential)
+			if err != nil {
+				return fmt.Errorf("decode proxy credential for profile %s: %w", item.ID, err)
+			}
+			item.ProxyPassword = password
 		}
 		p.Profiles = append(p.Profiles, &item)
 	}
@@ -366,13 +374,20 @@ func (s *BackupStore) importProfile(tx *sql.Tx, p *model.BackupProfile, strategy
 	if err != nil {
 		return actionSkipped, err
 	}
+	proxyCredential := ""
+	if p.ProxyPassword != "" {
+		proxyCredential, err = s.encryptor.Encrypt(p.ProxyPassword)
+		if err != nil {
+			return actionSkipped, err
+		}
+	}
 	tagsJSON, _ := json.Marshal(p.Tags)
 	verb := "INSERT"
 	if strategy == model.BackupStrategyOverwrite {
 		verb = "INSERT OR REPLACE"
 	}
-	_, err = tx.Exec(verb+` INTO profiles (id, name, host, port, username, auth_type, icon, vault_id, inline_credential, group_id, tags, options, note, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.ID, p.Name, p.Host, p.Port, p.Username, p.AuthType, p.Icon, p.VaultID, inline, p.GroupID, string(tagsJSON), p.Options, p.Note, p.SortOrder, p.CreatedAt, p.UpdatedAt)
+	_, err = tx.Exec(verb+` INTO profiles (id, name, host, port, username, auth_type, icon, vault_id, inline_credential, proxy_credential, group_id, tags, options, note, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.Name, p.Host, p.Port, p.Username, p.AuthType, p.Icon, p.VaultID, inline, proxyCredential, p.GroupID, string(tagsJSON), p.Options, p.Note, p.SortOrder, p.CreatedAt, p.UpdatedAt)
 	return actionImported, err
 }
 
@@ -440,6 +455,13 @@ func remapIDs(p *model.BackupPayload) {
 		pr.ID = idMap[pr.ID]
 		pr.GroupID = remap(pr.GroupID)
 		pr.VaultID = remap(pr.VaultID)
+		proxy := model.ParseProxyOptions(pr.Options)
+		if proxy.Type == model.ProxyTypeJump {
+			proxy.JumpProfileID = remap(proxy.JumpProfileID)
+			if options, err := model.WithProxyOptions(pr.Options, proxy); err == nil {
+				pr.Options = options
+			}
+		}
 	}
 	for _, sn := range p.Snippets {
 		sn.ID = idMap[sn.ID]

@@ -13,7 +13,6 @@ import (
 	"github.com/yuweinfo/xcontrol/crypto"
 	"github.com/yuweinfo/xcontrol/model"
 	"github.com/yuweinfo/xcontrol/protocol"
-	sshproto "github.com/yuweinfo/xcontrol/protocol/ssh"
 	"github.com/yuweinfo/xcontrol/store"
 )
 
@@ -164,64 +163,34 @@ func (h *SessionHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 func (h *SessionHandler) connectSession(ctx context.Context, session *Session, profile *model.Profile, cols, rows int) {
 	session.setStage(ConnectionStageCredential, "info", "正在准备连接凭据")
-
-	var password, privKey, passphrase string
-	cred, err := resolveProfileCredential(profile, h.vault, h.encryptor)
-	if err != nil {
-		session.appendLog("warn", ConnectionStageCredential, fmt.Sprintf("读取连接凭据失败，将继续尝试连接: %v", err))
-		slog.Warn("failed to resolve profile credential", "profile_id", profile.ID, "error", err)
-	} else if cred != nil {
-		password = cred.Password
-		privKey = cred.PrivKey
-		passphrase = cred.Passphrase
-		if password == "" && privKey == "" {
-			session.appendLog("info", ConnectionStageCredential, "未检测到密码或私钥，将尝试无凭据连接")
-		} else {
-			session.appendLog("info", ConnectionStageCredential, "连接凭据已就绪")
-		}
-	}
-
 	session.setStage(ConnectionStageHostKeyCheck, "info", "正在检查服务器主机指纹")
-	knownHostKeyFingerprint := profileHostKeyFingerprint(profile.Options)
-	currentHostKeyFingerprint, err := sshproto.InspectHostKeyFingerprint(ctx, protocol.DriverOpts{
-		Host:     profile.Host,
-		Port:     profile.Port,
-		Username: profile.Username,
-	})
+	resolved, err := resolveProfileConnection(ctx, profile, h.profiles, h.vault, h.encryptor,
+		func(node *model.Profile, current, known string) bool {
+			session.appendLog("warn", ConnectionStageHostKeyConfirm, fmt.Sprintf("%s 的主机指纹发生变化", node.Name))
+			session.setHostKeyPrompt(current, known)
+			select {
+			case decision := <-session.hostKeyDecision:
+				if !decision.approved {
+					return false
+				}
+				session.clearHostKeyPrompt(fmt.Sprintf("已确认 %s 的新主机指纹", node.Name))
+				return true
+			case <-ctx.Done():
+				return false
+			}
+		}, func(stage model.ProfileTestStage) {
+			if stage.Stage == "proxy" {
+				session.appendLog("info", ConnectionStageEstablishingSSH, stage.Message)
+			}
+		})
 	if err != nil {
 		session.setDisconnected(ConnectionStageHostKeyCheck, fmt.Sprintf("主机指纹检查失败: %v", err))
-		slog.Error("inspect host key failed", "profile_id", profile.ID, "error", err)
+		slog.Error("resolve ssh route failed", "profile_id", profile.ID, "error", err)
 		return
-	}
-	session.appendLog("info", ConnectionStageHostKeyCheck, fmt.Sprintf("服务器主机指纹: %s", currentHostKeyFingerprint))
-
-	if knownHostKeyFingerprint != "" && knownHostKeyFingerprint != currentHostKeyFingerprint {
-		session.setHostKeyPrompt(currentHostKeyFingerprint, knownHostKeyFingerprint)
-		select {
-		case decision := <-session.hostKeyDecision:
-			if !decision.approved {
-				session.setDisconnected(ConnectionStageHostKeyConfirm, "用户取消了主机指纹确认")
-				return
-			}
-			session.clearHostKeyPrompt("新的主机指纹已确认，继续建立连接")
-		case <-ctx.Done():
-			session.setDisconnected(ConnectionStageHostKeyConfirm, "连接已取消")
-			return
-		}
 	}
 
 	session.setStage(ConnectionStageEstablishingSSH, "info", "正在建立 TCP 连接并协商 SSH 安全通道")
-	opts := protocol.DriverOpts{
-		Host:               profile.Host,
-		Port:               profile.Port,
-		Username:           profile.Username,
-		Password:           password,
-		PrivKey:            privKey,
-		Passphrase:         passphrase,
-		HostKeyFingerprint: currentHostKeyFingerprint,
-	}
-
-	driver, err := h.pm.Create("ssh", opts)
+	driver, err := h.pm.Create("ssh", resolved.Opts())
 	if err != nil {
 		session.setDisconnected(ConnectionStageEstablishingSSH, fmt.Sprintf("创建 SSH 驱动失败: %v", err))
 		slog.Error("create driver failed", "profile_id", profile.ID, "error", err)
@@ -273,16 +242,7 @@ func (h *SessionHandler) connectSession(ctx context.Context, session *Session, p
 		}
 	}
 	session.setConnected(ConnectionStageStartingShell, "远程 Shell 已启动，等待终端附着")
-
-	if knownHostKeyFingerprint != currentHostKeyFingerprint {
-		if nextOptions, optErr := withProfileHostKeyFingerprint(profile.Options, currentHostKeyFingerprint); optErr != nil {
-			slog.Warn("failed to encode host key fingerprint", "profile_id", profile.ID, "error", optErr)
-		} else if err := h.profiles.Update(profile.ID, &model.ProfileUpdateRequest{Options: &nextOptions}); err != nil {
-			slog.Warn("failed to persist host key fingerprint", "profile_id", profile.ID, "error", err)
-		} else {
-			session.appendLog("info", ConnectionStageHostKeyCheck, "新的主机指纹已保存到连接配置")
-		}
-	}
+	resolved.PersistHostKeys()
 
 	h.profiles.UpdateLastUsed(profile.ID)
 	h.audit.Log(&model.AuditLog{

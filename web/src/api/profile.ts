@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { Profile, ProfileCreateRequest, ProfileUpdateRequest } from '@/types/profile'
+import type { Profile, ProfileCreateRequest, ProfileTestResult, ProfileUpdateRequest } from '@/types/profile'
 
 export const profileApi = {
   list: (params?: { group_id?: string; search?: string }) => {
@@ -20,8 +20,12 @@ export const profileApi = {
 
   delete: (id: string) => api.delete<void>(`/api/profiles/${id}`),
 
-  test: (id: string) =>
-    api.post<{ success: boolean; message: string; latency_ms: number }>(
-      `/api/profiles/${id}/test`
-    ),
+  testNew: (data: ProfileCreateRequest) =>
+    api.post<ProfileTestResult>('/api/profiles/test', data),
+
+  test: (id: string, data: ProfileUpdateRequest = {}) =>
+    api.post<ProfileTestResult>(`/api/profiles/${id}/test`, data),
+
+  confirmHostKey: (id: string, fingerprint: string) =>
+    api.post<{ ok: boolean; fingerprint: string }>(`/api/profiles/${id}/confirm-hostkey`, { fingerprint }),
 }

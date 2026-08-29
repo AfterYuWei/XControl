@@ -41,6 +41,7 @@ type SftpSession struct {
 	Password   string
 	PrivKey    string
 	Passphrase string
+	UsesProxy  bool
 
 	// cancel is the session-level context cancel function, used to cancel
 	// the background connection goroutine created in CreateSession.
@@ -147,33 +148,24 @@ func (h *SftpHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func() {
-		var password, privKey, passphrase string
-		cred, err := resolveProfileCredential(profile, h.vault, h.encryptor)
+		resolved, err := resolveProfileConnection(ctx, profile, h.profiles, h.vault, h.encryptor, nil, nil)
 		if err != nil {
-			slog.Warn("failed to resolve profile credential", "error", err)
-		} else {
-			password = cred.Password
-			privKey = cred.PrivKey
-			passphrase = cred.Passphrase
+			session.Status = "disconnected"
+			session.Error = "连接失败: " + err.Error()
+			slog.Error("sftp route resolution failed", "error", err)
+			h.broadcastSessionStatus(sessionID, "disconnected")
+			return
 		}
+		opts := resolved.Opts()
 
 		// Retain connection info for direct server-to-server transfer
 		session.Host = profile.Host
 		session.Port = profile.Port
 		session.Username = profile.Username
-		session.Password = password
-		session.PrivKey = privKey
-		session.Passphrase = passphrase
-
-		opts := protocol.DriverOpts{
-			Host:               profile.Host,
-			Port:               profile.Port,
-			Username:           profile.Username,
-			Password:           password,
-			PrivKey:            privKey,
-			Passphrase:         passphrase,
-			HostKeyFingerprint: profileHostKeyFingerprint(profile.Options),
-		}
+		session.Password = opts.Password
+		session.PrivKey = opts.PrivKey
+		session.Passphrase = opts.Passphrase
+		session.UsesProxy = profile.Proxy.Type != "" && profile.Proxy.Type != model.ProxyTypeDirect
 
 		// Use connection pool: acquire SFTP ref (SSH ref not needed for pure SFTP)
 		entry, err := h.pool.AcquireSFTP(ctx, opts)
@@ -188,6 +180,7 @@ func (h *SftpHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 		session.Entry = entry
 		session.Backend = entry.Backend
 		session.Status = "connected"
+		resolved.PersistHostKeys()
 		// Determine home directory based on username
 		if profile.Username == "root" {
 			session.HomeDir = "/root"

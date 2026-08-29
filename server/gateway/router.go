@@ -122,6 +122,9 @@ func NewRouter(db *sql.DB, encryptor *crypto.Encryptor, webFS fs.FS, syncMgr *xc
 	mux.HandleFunc("GET /api/profiles", profileH.List)
 	mux.HandleFunc("GET /api/profiles/{id}", profileH.Get)
 	mux.HandleFunc("POST /api/profiles", profileH.Create)
+	mux.HandleFunc("POST /api/profiles/test", profileH.TestNewConnection)
+	mux.HandleFunc("POST /api/profiles/{id}/test", profileH.TestExistingConnection)
+	mux.HandleFunc("POST /api/profiles/{id}/confirm-hostkey", profileH.ConfirmHostKey)
 	mux.HandleFunc("PUT /api/profiles/{id}", profileH.Update)
 	mux.HandleFunc("DELETE /api/profiles/{id}", profileH.Delete)
 

@@ -59,6 +59,7 @@ func migrate(db *sql.DB) error {
 		{version: 2, apply: migrateCredentialMetadata},
 		{version: 3, apply: migrateSyncSchema},
 		{version: 4, apply: migrateVaultUsernameOwnership},
+		{version: 5, apply: migrateProfileProxyCredentials},
 	}
 
 	for _, migration := range migrations {
@@ -67,6 +68,10 @@ func migrate(db *sql.DB) error {
 		}
 	}
 	return nil
+}
+
+func migrateProfileProxyCredentials(tx *sql.Tx) error {
+	return addColumnIfMissing(tx, "profiles", "proxy_credential", "TEXT DEFAULT ''")
 }
 
 func applyMigration(db *sql.DB, version int, apply func(*sql.Tx) error) error {

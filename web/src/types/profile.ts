@@ -1,3 +1,23 @@
+export type ProxyType = 'direct' | 'socks5' | 'http' | 'jump'
+
+export interface ProfileProxy {
+  type: ProxyType
+  host?: string
+  port?: number
+  username?: string
+  jump_profile_id?: string
+  has_password?: boolean
+}
+
+export interface ProfileProxyInput {
+  type: ProxyType
+  host?: string
+  port?: number
+  username?: string
+  password?: string
+  jump_profile_id?: string
+}
+
 export interface Profile {
   id: string
   name: string
@@ -7,6 +27,7 @@ export interface Profile {
   auth_type: 'password' | 'key' | 'agent' | 'vault'
   icon?: string
   vault_id?: string
+  proxy: ProfileProxy
   group_id?: string
   tags: string[]
   options: string // JSON string
@@ -28,6 +49,7 @@ export interface ProfileCreateRequest {
   password?: string
   private_key?: string
   passphrase?: string
+  proxy?: ProfileProxyInput
   group_id?: string
   tags?: string[]
   options?: string
@@ -45,6 +67,7 @@ export interface ProfileUpdateRequest {
   password?: string
   private_key?: string
   passphrase?: string
+  proxy?: ProfileProxyInput
   group_id?: string
   tags?: string[]
   options?: string
@@ -56,4 +79,16 @@ export interface ProfileTestResult {
   message: string
   latency_ms: number
   server_info?: string
+  stages: ProfileTestStage[]
+}
+
+export interface ProfileTestStage {
+  stage: 'resolve' | 'proxy' | 'host_key' | 'ssh_auth' | string
+  status: 'success' | 'error'
+  message: string
+  profile_id?: string
+  profile_name?: string
+  latency_ms?: number
+  known_fingerprint?: string
+  fingerprint?: string
 }

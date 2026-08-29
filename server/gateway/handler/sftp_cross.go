@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/pkg/sftp"
 	"github.com/yuweinfo/xcontrol/fileutil"
 	"github.com/yuweinfo/xcontrol/model"
 	"github.com/yuweinfo/xcontrol/protocol"
@@ -256,24 +258,44 @@ func (h *SftpHandler) tryDirectTransfer(
 		hasSshpass = true
 	}
 
-	// Build the auth prefix and remote target
-	var sshPrefix, remoteTarget string
-	if hasSshpass && tgt.Password != "" {
-		sshPrefix = fmt.Sprintf("sshpass -p %q ", tgt.Password)
-		remoteTarget = fmt.Sprintf("%s@%s", tgt.Username, tgt.Host)
-	} else if tgt.PrivKey != "" {
-		// Key-based: write temp key on source, use it
-		// This is complex and risky; skip and fall back to relay
-		slog.Info("direct transfer skipped: target uses key auth (not supported in direct mode)")
-		return directSkip
-	} else {
-		slog.Info("direct transfer skipped: no password and no sshpass")
+	// Build auth options. Two supported modes:
+	//   - password + sshpass available on the source host
+	//   - passphrase-less private key: staged to a temp file on the source
+	//     host, removed after the transfer
+	opts := directOpts{remote: fmt.Sprintf("%s@%s", tgt.Username, tgt.Host)}
+	switch {
+	case hasSshpass && tgt.Password != "":
+		opts.sshPrefix = "sshpass -p " + shSingleQuote(tgt.Password) + " "
+	case tgt.PrivKey != "" && tgt.Passphrase == "":
+		keyFile, err := stageRemoteKey(execDriver, tgt.PrivKey)
+		if err != nil {
+			slog.Info("direct transfer skipped: failed to stage key on source host", "error", err)
+			return directSkip
+		}
+		defer func() {
+			execDriver.Exec("rm -f " + shSingleQuote(keyFile))
+		}()
+		opts.keyFile = keyFile
+	default:
+		slog.Info("direct transfer skipped: no usable credentials (need password+sshpass or passphrase-less key)")
 		return directSkip
 	}
 
+	// Common connection options, including non-standard port support.
+	opts.sshOpts = "-o StrictHostKeyChecking=no -o ConnectTimeout=10"
+	opts.scpOpts = "-o StrictHostKeyChecking=no -o ConnectTimeout=10"
+	if opts.keyFile != "" {
+		opts.sshOpts += " -i " + shSingleQuote(opts.keyFile)
+		opts.scpOpts += " -i " + shSingleQuote(opts.keyFile)
+	}
+	if tgt.Port > 0 && tgt.Port != 22 {
+		opts.sshOpts += fmt.Sprintf(" -p %d", tgt.Port)
+		opts.scpOpts += fmt.Sprintf(" -P %d", tgt.Port)
+	}
+
 	// Ensure dest dir exists on target via ssh mkdir
-	mkdirCmd := fmt.Sprintf("%sssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 %s 'mkdir -p %q'",
-		sshPrefix, remoteTarget, destDir)
+	mkdirCmd := fmt.Sprintf("%sssh %s %s 'mkdir -p %q'",
+		opts.sshPrefix, opts.sshOpts, opts.remote, destDir)
 	if _, stderr, exitCode, err := execDriver.Exec(mkdirCmd); err != nil || exitCode != 0 {
 		slog.Warn("direct mkdir failed", "stderr", string(stderr), "error", err)
 		return directFail
@@ -296,7 +318,7 @@ func (h *SftpHandler) tryDirectTransfer(
 			h.transfers.sem <- struct{}{}
 			defer func() { <-h.transfers.sem }()
 
-			if err := h.directTransferOne(ctx, execDriver, src, sshPrefix, remoteTarget, p, destDir, resolution, &totalTransferred); err != nil {
+			if err := h.directTransferOne(ctx, execDriver, src, opts, p, destDir, resolution, &totalTransferred); err != nil {
 				failuresMu.Lock()
 				failures = append(failures, p+": "+err.Error())
 				failuresMu.Unlock()
@@ -338,12 +360,47 @@ func (h *SftpHandler) tryDirectTransfer(
 	return directOK
 }
 
+// directOpts carries the SSH/SCP invocation parameters for direct
+// server-to-server transfers.
+type directOpts struct {
+	sshPrefix string // e.g. `sshpass -p 'pw' `, empty for key auth
+	sshOpts   string // options for ssh (-i key, -p port, ...)
+	scpOpts   string // options for scp (-i key, -P port, ...)
+	remote    string // user@host
+	keyFile   string // temp key path staged on the source host ("" if unused)
+}
+
+// shSingleQuote single-quotes s for safe interpolation into a POSIX shell
+// command line.
+func shSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// stageRemoteKey writes a private key to a temp file on the source host and
+// returns its path. The key is transferred base64-encoded to avoid any shell
+// quoting pitfalls.
+func stageRemoteKey(exec protocol.CommandExecutor, key string) (string, error) {
+	b64 := base64.StdEncoding.EncodeToString([]byte(key))
+	cmd := fmt.Sprintf(
+		"kf=$(mktemp) && printf %%s %s | base64 -d > \"$kf\" && chmod 600 \"$kf\" && printf '%%s\\n' \"$kf\"",
+		shSingleQuote(b64))
+	out, _, _, err := exec.Exec(cmd)
+	if err != nil {
+		return "", fmt.Errorf("stage key: %w", err)
+	}
+	path := strings.TrimSpace(string(out))
+	if path == "" {
+		return "", fmt.Errorf("stage key: empty key path")
+	}
+	return path, nil
+}
+
 // directTransferOne transfers a single path via scp on the source host.
 // Directories use `scp -r`. Conflict resolution is applied per-path. On
 // success the path's size is added to the shared atomic counter.
 func (h *SftpHandler) directTransferOne(
 	ctx context.Context, execDriver protocol.CommandExecutor,
-	src *SftpSession, sshPrefix, remoteTarget, p, destDir string,
+	src *SftpSession, opts directOpts, p, destDir string,
 	resolution model.ConflictResolution,
 	totalTransferred *atomic.Int64,
 ) error {
@@ -361,12 +418,12 @@ func (h *SftpHandler) directTransferOne(
 
 	switch resolution {
 	case model.ConflictOverwrite:
-		rmCmd := fmt.Sprintf("%sssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 %s 'rm %s %q'",
-			sshPrefix, remoteTarget, "-rf", destPath)
+		rmCmd := fmt.Sprintf("%sssh %s %s 'rm -rf %q'",
+			opts.sshPrefix, opts.sshOpts, opts.remote, destPath)
 		execDriver.Exec(rmCmd) // ignore errors
 	case model.ConflictSkip:
-		testCmd := fmt.Sprintf("%sssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 %s 'test -e %q'",
-			sshPrefix, remoteTarget, destPath)
+		testCmd := fmt.Sprintf("%sssh %s %s 'test -e %q'",
+			opts.sshPrefix, opts.sshOpts, opts.remote, destPath)
 		if _, _, exitCode, _ := execDriver.Exec(testCmd); exitCode == 0 {
 			// Exists → skip; count size as "transferred".
 			totalTransferred.Add(pathSize(ctx, src.Backend, p, srcInfo))
@@ -377,8 +434,8 @@ func (h *SftpHandler) directTransferOne(
 		for i := 1; ; i++ {
 			candidate := fmt.Sprintf("%s (%d)%s", base, i, ext)
 			candPath := destDir + "/" + candidate
-			testCmd := fmt.Sprintf("%sssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 %s 'test -e %q'",
-				sshPrefix, remoteTarget, candPath)
+			testCmd := fmt.Sprintf("%sssh %s %s 'test -e %q'",
+				opts.sshPrefix, opts.sshOpts, opts.remote, candPath)
 			if _, _, exitCode, _ := execDriver.Exec(testCmd); exitCode != 0 {
 				destPath = candPath
 				break
@@ -389,8 +446,8 @@ func (h *SftpHandler) directTransferOne(
 		}
 	}
 
-	cmd := fmt.Sprintf("%sscp %s-o StrictHostKeyChecking=no -o ConnectTimeout=10 %q %s:%q",
-		sshPrefix, scpFlag, p, remoteTarget, destPath)
+	cmd := fmt.Sprintf("%sscp %s%s %q %s:%q",
+		opts.sshPrefix, scpFlag, opts.scpOpts, p, opts.remote, destPath)
 
 	_, stderr, exitCode, err := execDriver.Exec(cmd)
 	if err != nil || exitCode != 0 {
@@ -545,34 +602,61 @@ func (h *SftpHandler) transferOneStreamRelay(
 
 	// Stream copy with progress. Direct pipe (no temp file), so each byte
 	// read = byte transferred.
-	buf := make([]byte, 64*1024)
-	for {
-		select {
-		case <-ctx.Done():
-			rc.Close()
-			wc.Close()
-			return ctx.Err()
-		default:
-		}
-
-		n, rerr := rc.Read(buf)
-		if n > 0 {
-			if _, werr := wc.Write(buf[:n]); werr != nil {
-				rc.Close()
-				wc.Close()
-				return fmt.Errorf("write dest: %w", werr)
-			}
-			totalTransferred.Add(int64(n))
-		}
-		if rerr != nil {
-			rc.Close()
-			wc.Close()
-			if rerr == io.EOF {
-				return nil
-			}
-			return fmt.Errorf("read source: %w", rerr)
-		}
+	if err := relayCopy(ctx, rc, wc, func(n int64) { totalTransferred.Add(n) }); err != nil {
+		rc.Close()
+		wc.Close()
+		return fmt.Errorf("relay copy: %w", err)
 	}
+	rc.Close()
+	if err := wc.Close(); err != nil {
+		return fmt.Errorf("close dest: %w", err)
+	}
+	return nil
+}
+
+// relayCopy streams src to dst, invoking count with byte deltas. It prefers
+// the pipelined SFTP paths:
+//   - both ends are *sftp.File → bridged by an in-memory pipe so reads AND
+//     writes run concurrently (see relaySftpToSftp)
+//   - src is *sftp.File → WriteTo (concurrent reads)
+//   - dst is *sftp.File → ReadFromWithConcurrency (concurrent writes)
+func relayCopy(ctx context.Context, src io.Reader, dst io.Writer, count func(int64)) error {
+	if sf, ok := src.(*sftp.File); ok {
+		if df, ok := dst.(*sftp.File); ok {
+			return relaySftpToSftp(ctx, sf, df, count)
+		}
+		_, err := sf.WriteTo(&ctxCountingWriter{ctx: ctx, w: dst, fn: count})
+		return err
+	}
+	if df, ok := dst.(*sftp.File); ok {
+		_, err := df.ReadFromWithConcurrency(&ctxCountingReader{ctx: ctx, r: src, fn: count}, fileutil.SftpConcurrentRequests)
+		return err
+	}
+	// Count on the reader side only (bytes that left the source).
+	_, err := io.Copy(dst, &ctxCountingReader{ctx: ctx, r: src, fn: count})
+	return err
+}
+
+// relaySftpToSftp streams between two SFTP files with concurrent reads on the
+// source AND concurrent writes on the destination, bridged by an in-memory
+// pipe. This keeps both SSH links saturated instead of paying one round trip
+// per chunk on either side.
+func relaySftpToSftp(ctx context.Context, src, dst *sftp.File, count func(int64)) error {
+	pr, pw := io.Pipe()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, err := src.WriteTo(&ctxCountingWriter{ctx: ctx, w: pw, fn: count})
+		// nil → plain EOF close; non-nil → propagates to the reader side.
+		pw.CloseWithError(err)
+	}()
+	_, err := dst.ReadFromWithConcurrency(pr, fileutil.SftpConcurrentRequests)
+	if err != nil {
+		// Unblock the source goroutine if it is still writing to the pipe.
+		pw.CloseWithError(err)
+	}
+	<-done
+	return err
 }
 
 // transferDirPreserve recreates a source directory tree at the destination
@@ -630,33 +714,16 @@ func (h *SftpHandler) transferDirPreserve(
 			rc.Close()
 			return err
 		}
-		buf := make([]byte, 64*1024)
-		for {
-			select {
-			case <-ctx.Done():
-				rc.Close()
-				wc.Close()
-				return ctx.Err()
-			default:
-			}
-			n, readErr := rc.Read(buf)
-			if n > 0 {
-				if _, writeErr := wc.Write(buf[:n]); writeErr != nil {
-					rc.Close()
-					wc.Close()
-					return writeErr
-				}
-				totalTransferred.Add(int64(n))
-			}
-			if readErr != nil {
-				rc.Close()
-				wc.Close()
-				if readErr == io.EOF {
-					return nil
-				}
-				return readErr
-			}
+		if err := relayCopy(ctx, rc, wc, func(n int64) { totalTransferred.Add(n) }); err != nil {
+			rc.Close()
+			wc.Close()
+			return err
 		}
+		rc.Close()
+		if err := wc.Close(); err != nil {
+			return err
+		}
+		return nil
 	})
 }
 
@@ -799,28 +866,13 @@ func (h *SftpHandler) transferDirAsTarGz(
 		return fmt.Errorf("open dest %s: %w", destPath, err)
 	}
 
-	uploadBuf := make([]byte, 64*1024)
-	for {
-		select {
-		case <-ctx.Done():
-			wc.Close()
-			return ctx.Err()
-		default:
-		}
-		n, rerr := f.Read(uploadBuf)
-		if n > 0 {
-			if _, werr := wc.Write(uploadBuf[:n]); werr != nil {
-				wc.Close()
-				return fmt.Errorf("write dest: %w", werr)
-			}
-		}
-		if rerr != nil {
-			wc.Close()
-			if rerr == io.EOF {
-				break
-			}
-			return fmt.Errorf("read temp: %w", rerr)
-		}
+	// Phase-2 bytes were already accounted for in phase 1; no counting here.
+	if err := relayCopy(ctx, f, wc, func(int64) {}); err != nil {
+		wc.Close()
+		return fmt.Errorf("upload archive: %w", err)
+	}
+	if err := wc.Close(); err != nil {
+		return fmt.Errorf("close dest: %w", err)
 	}
 
 	slog.Info("directory transferred as tar.gz",

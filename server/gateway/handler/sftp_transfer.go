@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/pkg/sftp"
 	"github.com/yuweinfo/xcontrol/fileutil"
 	"github.com/yuweinfo/xcontrol/model"
 	"github.com/yuweinfo/xcontrol/ws"
@@ -644,49 +645,94 @@ func (tm *TransferManager) genTaskID(fileName string) string {
 	return fmt.Sprintf("tx-%d-%s-%s", time.Now().Unix(), uuid.New().String()[:6], fileName)
 }
 
+// copyWithProgress copies src to dst while updating task progress every
+// 500ms. It prefers the pipelined SFTP paths so multiple requests are in
+// flight per round trip:
+//   - dst is *sftp.File → ReadFromWithConcurrency (concurrent writes)
+//   - src is *sftp.File → WriteTo (concurrent reads)
+//
+// Both require the client to be created via fileutil.NewSftpClient.
 func (tm *TransferManager) copyWithProgress(ctx context.Context, entry *transferEntry, src io.Reader, dst io.Writer) error {
-	buf := make([]byte, 64*1024)
-	var transferred int64
+	var transferred, lastBytes int64
 	lastReport := time.Now()
-	var lastBytes int64
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
+	report := func(delta int64) {
+		transferred += delta
+		if time.Since(lastReport) < 500*time.Millisecond {
+			return
 		}
-
-		n, err := src.Read(buf)
-		if n > 0 {
-			if _, werr := dst.Write(buf[:n]); werr != nil {
-				return werr
-			}
-			transferred += int64(n)
-			entry.task.Transferred = transferred
-
-			// Report progress every 500ms
-			if time.Since(lastReport) >= 500*time.Millisecond {
-				elapsed := time.Since(lastReport).Seconds()
-				if elapsed > 0 {
-					entry.task.Speed = int64(float64(transferred-lastBytes) / elapsed)
-				}
-				lastBytes = transferred
-				lastReport = time.Now()
-				tm.broadcastProgressToSession(entry.task)
-			}
+		elapsed := time.Since(lastReport).Seconds()
+		task := entry.task
+		task.Transferred = transferred
+		if elapsed > 0 {
+			task.Speed = int64(float64(transferred-lastBytes) / elapsed)
 		}
-		if err != nil {
-			if err == io.EOF {
-				// Final progress report
-				entry.task.Transferred = entry.task.Size
-				entry.task.Speed = 0
-				tm.broadcastProgressToSession(entry.task)
-				return nil
-			}
-			return err
-		}
+		lastBytes = transferred
+		lastReport = time.Now()
+		tm.broadcastProgressToSession(task)
 	}
+
+	var err error
+	if sf, ok := dst.(*sftp.File); ok {
+		// Pipelined writes: multiple unacknowledged write requests in flight.
+		_, err = sf.ReadFromWithConcurrency(&ctxCountingReader{ctx: ctx, r: src, fn: report}, fileutil.SftpConcurrentRequests)
+	} else if sf, ok := src.(*sftp.File); ok {
+		// Concurrent reads: multiple outstanding read requests in flight.
+		_, err = sf.WriteTo(&ctxCountingWriter{ctx: ctx, w: dst, fn: report})
+	} else {
+		// Count on the reader side only (bytes that left the source).
+		_, err = io.Copy(dst, &ctxCountingReader{ctx: ctx, r: src, fn: report})
+	}
+	if err != nil {
+		return err
+	}
+
+	// Final progress report
+	entry.task.Transferred = entry.task.Size
+	entry.task.Speed = 0
+	tm.broadcastProgressToSession(entry.task)
+	return nil
+}
+
+// ctxCountingReader wraps an io.Reader, aborting when ctx is cancelled and
+// reporting byte deltas through fn.
+type ctxCountingReader struct {
+	ctx context.Context
+	r   io.Reader
+	fn  func(int64)
+}
+
+func (c *ctxCountingReader) Read(p []byte) (int, error) {
+	select {
+	case <-c.ctx.Done():
+		return 0, c.ctx.Err()
+	default:
+	}
+	n, err := c.r.Read(p)
+	if n > 0 {
+		c.fn(int64(n))
+	}
+	return n, err
+}
+
+// ctxCountingWriter wraps an io.Writer, aborting when ctx is cancelled and
+// reporting byte deltas through fn.
+type ctxCountingWriter struct {
+	ctx context.Context
+	w   io.Writer
+	fn  func(int64)
+}
+
+func (c *ctxCountingWriter) Write(p []byte) (int, error) {
+	select {
+	case <-c.ctx.Done():
+		return 0, c.ctx.Err()
+	default:
+	}
+	n, err := c.w.Write(p)
+	if n > 0 {
+		c.fn(int64(n))
+	}
+	return n, err
 }
 
 func (tm *TransferManager) completeTask(entry *transferEntry) {

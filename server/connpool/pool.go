@@ -18,7 +18,6 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/pkg/sftp"
 	gossh "golang.org/x/crypto/ssh"
 
 	"github.com/yuweinfo/xcontrol/fileutil"
@@ -193,7 +192,7 @@ func (p *Pool) finishCreate(ctx context.Context, opts protocol.DriverOpts, entry
 
 	// Open SFTP subsystem on the same SSH connection
 	if sshClient := getSSHClient(driver); sshClient != nil {
-		sftpClient, err := sftp.NewClient(sshClient)
+		sftpClient, err := fileutil.NewSftpClient(sshClient)
 		if err != nil {
 			slog.Warn("connpool: sftp subsystem failed, file operations disabled", "error", err)
 		} else {

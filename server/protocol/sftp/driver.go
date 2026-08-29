@@ -39,8 +39,8 @@ func (d *Driver) Connect(ctx context.Context) error {
 	}
 	d.client = client
 
-	// Open SFTP subsystem
-	sc, err := sftp.NewClient(client)
+	// Open SFTP subsystem (tuned for throughput, see fileutil.NewSftpClient)
+	sc, err := fileutil.NewSftpClient(client)
 	if err != nil {
 		client.Close()
 		return fmt.Errorf("new sftp client: %w", err)

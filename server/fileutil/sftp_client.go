@@ -9,7 +9,11 @@ import (
 // 吞吐被限制在约 32KB/RTT。以下参数启用流水线传输。
 const (
 	// sftpMaxPacket 是 OpenSSH 接受的最大单请求读写大小。
-	sftpMaxPacket = 256 * 1024
+	// OpenSSH 的 sftp-server 硬性限制单条消息 ≤ 256KB，而写消息除数据外
+	// 还有约 53 字节头部（类型/ID/句柄/偏移等），256KB 数据会超限导致
+	// 服务器 fatal 断开通道（表现为 "failed to send packet payload: EOF"）。
+	// 取 255KB 留足头部空间。
+	sftpMaxPacket = 255 * 1024
 
 	// SftpConcurrentRequests 是单个文件同时在途的请求数。
 	SftpConcurrentRequests = 64

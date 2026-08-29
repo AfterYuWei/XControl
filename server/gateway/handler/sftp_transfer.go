@@ -3,8 +3,10 @@ package handler
 import (
 	"archive/zip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"mime/multipart"
 	"net/http"
@@ -178,10 +180,12 @@ func (tm *TransferManager) doUpload(ctx context.Context, entry *transferEntry, s
 	// Stream with progress tracking
 	if err := tm.copyWithProgress(ctx, entry, src, wc); err != nil {
 		wc.Close()
+		tm.removePartialDest(session.Backend, destPath)
 		tm.failTask(entry, "upload copy: "+err.Error())
 		return
 	}
 	if err := wc.Close(); err != nil {
+		tm.removePartialDest(session.Backend, destPath)
 		tm.failTask(entry, "close dest file: "+err.Error())
 		return
 	}
@@ -735,6 +739,20 @@ func (c *ctxCountingWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
+// removePartialDest removes a partially written destination file after its
+// writer has been closed (task cancelled or failed). Runs on a fresh context
+// because the task context may already be cancelled at this point.
+func (tm *TransferManager) removePartialDest(backend fileutil.FileBackend, destPath string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := backend.Remove(ctx, destPath); err != nil &&
+		!errors.Is(err, fileutil.ErrNotFound) && !errors.Is(err, fs.ErrNotExist) {
+		slog.Warn("transfer: failed to remove partial destination file", "path", destPath, "error", err)
+		return
+	}
+	slog.Info("transfer: removed partial destination file", "path", destPath)
+}
+
 func (tm *TransferManager) completeTask(entry *transferEntry) {
 	task := entry.task
 	task.Status = "completed"
@@ -746,6 +764,11 @@ func (tm *TransferManager) completeTask(entry *transferEntry) {
 
 func (tm *TransferManager) failTask(entry *transferEntry, msg string) {
 	task := entry.task
+	// Keep the terminal state chosen by Cancel (e.g. "cancelled") instead of
+	// overwriting it when the worker goroutine notices the abort afterwards.
+	if task.Status == "completed" || task.Status == "cancelled" || task.Status == "failed" {
+		return
+	}
 	task.Status = "failed"
 	task.ErrorMessage = msg
 	nowPtr := time.Now().UnixMilli()

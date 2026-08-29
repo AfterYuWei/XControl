@@ -296,7 +296,7 @@ func (h *SftpHandler) tryDirectTransfer(
 	// Ensure dest dir exists on target via ssh mkdir
 	mkdirCmd := fmt.Sprintf("%sssh %s %s 'mkdir -p %q'",
 		opts.sshPrefix, opts.sshOpts, opts.remote, destDir)
-	if _, stderr, exitCode, err := execDriver.Exec(mkdirCmd); err != nil || exitCode != 0 {
+	if _, stderr, exitCode, err := execWithContext(ctx, execDriver, mkdirCmd); err != nil || exitCode != 0 {
 		slog.Warn("direct mkdir failed", "stderr", string(stderr), "error", err)
 		return directFail
 	}
@@ -340,6 +340,13 @@ func (h *SftpHandler) tryDirectTransfer(
 	h.transfers.mu.Unlock()
 
 	if successCount == 0 {
+		// Task was cancelled: the terminal state is already set by Cancel —
+		// do not fall back to the relay path.
+		select {
+		case <-ctx.Done():
+			return directOK
+		default:
+		}
 		// Every path failed — fall back to stream relay.
 		slog.Info("direct transfer failed for all paths, falling back to relay",
 			"task", task.ID, "failures", len(failures))
@@ -374,6 +381,16 @@ type directOpts struct {
 // command line.
 func shSingleQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// execWithContext runs a remote command, honouring ctx when the driver
+// supports cancellation so that cancelled transfers also kill the remote
+// scp/ssh process instead of leaving it running.
+func execWithContext(ctx context.Context, exec protocol.CommandExecutor, cmd string) (stdout []byte, stderr []byte, exitCode int, err error) {
+	if ce, ok := exec.(protocol.ContextCommandExecutor); ok {
+		return ce.ExecContext(ctx, cmd)
+	}
+	return exec.Exec(cmd)
 }
 
 // stageRemoteKey writes a private key to a temp file on the source host and
@@ -449,8 +466,16 @@ func (h *SftpHandler) directTransferOne(
 	cmd := fmt.Sprintf("%sscp %s%s %q %s:%q",
 		opts.sshPrefix, scpFlag, opts.scpOpts, p, opts.remote, destPath)
 
-	_, stderr, exitCode, err := execDriver.Exec(cmd)
+	_, stderr, exitCode, err := execWithContext(ctx, execDriver, cmd)
 	if err != nil || exitCode != 0 {
+		// Best-effort removal of the partial file scp may have left on the
+		// target. Runs on a fresh context: the task context may already be
+		// cancelled (that is often the reason we got here).
+		rmCmd := fmt.Sprintf("%sssh %s %s 'rm -rf %q'",
+			opts.sshPrefix, opts.sshOpts, opts.remote, destPath)
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 15*time.Second)
+		_, _, _, _ = execWithContext(cleanupCtx, execDriver, rmCmd)
+		cleanupCancel()
 		return fmt.Errorf("scp exit %d: %s", exitCode, string(stderr))
 	}
 
@@ -605,10 +630,12 @@ func (h *SftpHandler) transferOneStreamRelay(
 	if err := relayCopy(ctx, rc, wc, func(n int64) { totalTransferred.Add(n) }); err != nil {
 		rc.Close()
 		wc.Close()
+		h.transfers.removePartialDest(tgt.Backend, destPath)
 		return fmt.Errorf("relay copy: %w", err)
 	}
 	rc.Close()
 	if err := wc.Close(); err != nil {
+		h.transfers.removePartialDest(tgt.Backend, destPath)
 		return fmt.Errorf("close dest: %w", err)
 	}
 	return nil
@@ -717,10 +744,12 @@ func (h *SftpHandler) transferDirPreserve(
 		if err := relayCopy(ctx, rc, wc, func(n int64) { totalTransferred.Add(n) }); err != nil {
 			rc.Close()
 			wc.Close()
+			h.transfers.removePartialDest(tgt.Backend, destPath)
 			return err
 		}
 		rc.Close()
 		if err := wc.Close(); err != nil {
+			h.transfers.removePartialDest(tgt.Backend, destPath)
 			return err
 		}
 		return nil
@@ -869,9 +898,11 @@ func (h *SftpHandler) transferDirAsTarGz(
 	// Phase-2 bytes were already accounted for in phase 1; no counting here.
 	if err := relayCopy(ctx, f, wc, func(int64) {}); err != nil {
 		wc.Close()
+		h.transfers.removePartialDest(tgt.Backend, destPath)
 		return fmt.Errorf("upload archive: %w", err)
 	}
 	if err := wc.Close(); err != nil {
+		h.transfers.removePartialDest(tgt.Backend, destPath)
 		return fmt.Errorf("close dest: %w", err)
 	}
 

@@ -138,7 +138,7 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
   }
 
   const drop = async (e: React.DragEvent, target?: SftpDropTarget | null) => {
-    if (store.dragSession) {
+    if (store.dragSession && !carriesNativeFiles(e)) {
       e.preventDefault()
       e.stopPropagation()
       if (target) store.setDropTarget(target)
@@ -202,17 +202,6 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
     store.beginDrag({ sourcePane: pane, sourceTabId: activeTab.id, sourceSessionId: activeTab.sessionId, entries })
     e.dataTransfer.setData('application/x-xcontrol-sftp', activeTab.id)
     e.dataTransfer.effectAllowed = 'copyMove'
-    const desktopFileDrag = window.xcontrol?.fileDrag
-    if (desktopFileDrag && (server.id === 'local' || localSessionId)) {
-      e.preventDefault()
-      desktopFileDrag.start({
-        sourceSessionId: activeTab.sessionId,
-        localSessionId,
-        sourceIsLocal: server.id === 'local',
-        paths: entries.map((item) => item.path),
-      })
-      return
-    }
     const ghost = document.createElement('div')
     ghost.className = 'sftp-drag-ghost'
     ghost.textContent = entries.length === 1 ? entries[0].name : `${entries[0].name} 等 ${entries.length} 项`

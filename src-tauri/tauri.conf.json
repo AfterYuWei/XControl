@@ -1,0 +1,47 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "XControl",
+  "mainBinaryName": "XControl",
+  "version": "1.0.0",
+  "identifier": "com.yuweinfo.xcontrol",
+  "build": {
+    "beforeDevCommand": "npm --prefix web run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "node scripts/prepare-sidecar.mjs --build",
+    "frontendDist": "../server/web_dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "XControl",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "resizable": true,
+        "visible": false,
+        "backgroundColor": "#0A0A0A",
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "category": "DeveloperTool",
+    "shortDescription": "XControl - 跨平台 SSH 终端与 SFTP 管理器",
+    "copyright": "Copyright © yuweinfo",
+    "externalBin": ["binaries/xcontrol-server"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  },
+  "plugins": {}
+}

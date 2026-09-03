@@ -1,0 +1,6 @@
+# Tauri 构建产物
+target/
+gen/schemas/
+
+# externalBin sidecar 二进制（scripts/prepare-sidecar.mjs 生成）
+binaries/

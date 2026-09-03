@@ -1,0 +1,33 @@
+[package]
+name = "xcontrol"
+version = "1.0.0"
+description = "XControl 桌面壳（Tauri 2）：管理 xcontrol-server sidecar 与桌面能力"
+authors = ["yuweinfo"]
+license = "MIT"
+repository = "https://github.com/AfterYuWei/XControl"
+edition = "2021"
+rust-version = "1.77.2"
+
+# 移动端预留（docs/TAURI_MIGRATION.md §14）：桌面逻辑全部 #[cfg(desktop)] 门控，
+# 未来 tauri ios/android init 时以 staticlib/cdylib 形式复用。
+[lib]
+name = "xcontrol_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-single-instance = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "5"
+getrandom = "0.3"
+# 异步命令（get_backend_info）的阻塞等待轮询
+tokio = { version = "1", features = ["time"] }
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1

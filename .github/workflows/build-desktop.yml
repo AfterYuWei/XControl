@@ -1,14 +1,30 @@
 name: Build Desktop Apps
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Tauri 分支专用桌面构建 CI（本文件位于 tauri 分支）
+#
+# 双分支独立机制（见 docs/TAURI_MIGRATION.md §15）：
+#   GitHub Actions 的 push 事件只读取「被推送 ref 上」的工作流文件版本，
+#   因此 main 分支的 Electron 版 build-desktop.yml 与本文件天然互不干扰：
+#     - 推送 main  → 走 main 上的 Electron 版工作流
+#     - 推送 tauri → 走本文件（Tauri 构建）
+#     - 打 v*/tauri-v* tag → 按 tag 所指向分支上的文件版本执行
+#
 # 触发条件：
-# - 推送 main 分支:  自动构建 pre 版并发布 prerelease GitHub Release（版本号=短 commit）
-# - 推送 tag (v*):  自动构建 stable 版并发布正式 GitHub Release（版本号=tag名）
-# - 手动触发:       可选择 stable / pre 模式
+#   - 推送 tauri 分支: pre 版（版本 0.0.0-pre.<日期>.<短commit>，tag=tauri-<短commit>，prerelease）
+#   - 推送 tag (v* / tauri-v*): stable 版正式 Release
+#   - 手动触发: 可选 stable / pre
+#
+# 合并回 main 时无需修改本文件：branches 已含 main、tags 已含 v*，
+# 届时 main 上的旧 Electron 工作流被本文件替换，自动接管。
+# ═══════════════════════════════════════════════════════════════════════════
 on:
   push:
     branches:
+      - tauri
       - main
     tags:
+      - 'tauri-v*'
       - 'v*'
   workflow_dispatch:
     inputs:
@@ -21,9 +37,9 @@ on:
           - stable
           - pre
 
-# 同一分支/标签的新构建取消旧的，避免资源浪费
+# 同一 ref 的新构建取消旧的；group 与 main 分支的 Electron 工作流不同名，避免相互取消
 concurrency:
-  group: build-desktop-${{ github.ref }}
+  group: build-desktop-tauri-${{ github.ref }}
   cancel-in-progress: true
 
 # Release 上传需要写权限
@@ -31,7 +47,7 @@ permissions:
   contents: write
 
 jobs:
-  # 判断本次构建是 stable(tag) 还是 pre(main)
+  # 判断本次构建是 stable(tag) 还是 pre(分支推送)
   prepare:
     runs-on: ubuntu-latest
     outputs:
@@ -42,8 +58,7 @@ jobs:
     steps:
       - id: meta
         run: |
-          # tag 触发 或 手动选 stable => stable
-          # main 推送 或 手动选 pre => pre
+          # tag 触发 或 手动选 stable => stable；分支推送 或 手动选 pre => pre
           if [[ "${{ github.ref_type }}" == "tag" ]] || [[ "${{ inputs.release_type }}" == "stable" ]]; then
             echo "is_release=true" >> $GITHUB_OUTPUT
           else
@@ -54,22 +69,27 @@ jobs:
           echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
 
           # 版本号 & tag：
-          # - stable(tag): version=tag去v(如1.0.0), tag=原tag名
-          # - pre(main):   version=0.0.0-pre.<短commit>(semver预发布格式, 便于应用内展示短commit), tag=短commit
+          # - stable(tag): version=tag 去 v/tauri-v 前缀(如 1.0.0)，tag=原 tag 名
+          # - pre(分支推送): version=0.0.0-pre.<yyyymmdd>.<短commit>
+          #   （日期前缀保证 semver 预发布版本单调递增，供未来 updater 使用，
+          #     纯短 commit hash 字典序无序会导致 updater 漏更，见迁移方案 §8.1）
+          #   tag=tauri-<短commit>（加前缀避免与 main 分支 Electron pre 版的 <短commit> tag 冲突）
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             TAG="${GITHUB_REF_NAME}"
-            VERSION="${TAG#v}"
+            VERSION="${TAG#tauri-v}"
+            VERSION="${VERSION#v}"
             echo "version=$VERSION" >> $GITHUB_OUTPUT
             echo "tag=$TAG" >> $GITHUB_OUTPUT
-            echo "release_name=XControl $VERSION (stable)" >> $GITHUB_OUTPUT
+            echo "release_name=XControl $VERSION (Tauri stable)" >> $GITHUB_OUTPUT
           else
-            VERSION="0.0.0-pre.${SHORT_SHA}"
+            STAMP=$(date -u +%Y%m%d)
+            VERSION="0.0.0-pre.${STAMP}.${SHORT_SHA}"
             echo "version=$VERSION" >> $GITHUB_OUTPUT
-            echo "tag=$SHORT_SHA" >> $GITHUB_OUTPUT
-            echo "release_name=XControl Pre $SHORT_SHA" >> $GITHUB_OUTPUT
+            echo "tag=tauri-$SHORT_SHA" >> $GITHUB_OUTPUT
+            echo "release_name=XControl Tauri Pre $SHORT_SHA" >> $GITHUB_OUTPUT
           fi
 
-  # 三平台并行构建
+  # 三平台并行构建（macOS 仅 arm64，Linux deb+rpm+AppImage）
   build:
     needs: prepare
     strategy:
@@ -77,38 +97,25 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            platform: win
-            goos: windows
-            goarch: amd64
-            ext: .exe
-            dist_script: dist:win
-            artifact_glob: "XControl-Setup-*"
-          - os: macos-latest
+            platform: win-x64
+          - os: macos-latest      # Apple Silicon runner → arm64
             platform: mac-arm64
-            goos: darwin
-            goarch: arm64
-            ext: ""
-            dist_script: dist:mac
-            artifact_glob: "XControl-*.dmg"
           - os: ubuntu-latest
-            platform: linux
-            goos: linux
-            goarch: amd64
-            ext: ""
-            dist_script: dist:linux
-            artifact_glob: "XControl-*.deb,XControl-*.rpm"
+            platform: linux-x64
 
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Linux: deb 需要 binutils(ar), rpm 需要 rpm 工具。ubuntu-latest 默认无，需安装
-      - name: Install Linux packaging tools
-        if: matrix.platform == 'linux'
+      # Linux: Tauri 系统依赖（webkit2gtk 等）+ deb/rpm 打包工具
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends binutils rpm
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
+            binutils rpm
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -116,8 +123,8 @@ jobs:
           node-version: '22'
           cache: 'npm'
           cache-dependency-path: |
+            package-lock.json
             web/package-lock.json
-            electron/package.json
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -125,99 +132,69 @@ jobs:
           go-version: '1.26.x'
           cache-dependency-path: server/go.sum
 
-      - name: Build frontend
-        working-directory: web
-        run: |
-          npm ci
-          npm run build
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Build backend (embed frontend)
-        working-directory: server
-        env:
-          CGO_ENABLED: '0'
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-        run: go build -tags prod -o "xcontrol-server${{ matrix.ext }}" .
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
 
-      - name: Install electron dependencies
-        working-directory: electron
+      - name: Install Tauri CLI
         run: npm ci
 
-      - name: Set version in package.json
-        working-directory: electron
+      - name: Set version in tauri.conf.json
+        shell: bash
         env:
           APP_VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          # 直接用 node 改写 package.json 的 version 字段。
-          # 不用 npm version：它要求 semver 格式，pre 版的 short commit(如 393687e) 非法。
-          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version=process.env.APP_VERSION;fs.writeFileSync('package.json',JSON.stringify(p,null,2));console.log('version set to:',process.env.APP_VERSION);"
+          # 直接用 node 改写 tauri.conf.json 的 version 字段（替代旧 electron/package.json 注入）
+          node -e "const fs=require('fs');const p='src-tauri/tauri.conf.json';const c=JSON.parse(fs.readFileSync(p,'utf8'));c.version=process.env.APP_VERSION;fs.writeFileSync(p,JSON.stringify(c,null,2)+'\n');console.log('version set to:',process.env.APP_VERSION);"
 
-      # macOS：CI 按 job 的 goarch 动态设置 mac.target 架构，确保后端二进制与 dmg 架构一致
-      - name: Pin mac target arch to current job
-        if: startsWith(matrix.platform, 'mac')
-        working-directory: electron
-        env:
-          MAC_ARCH: ${{ matrix.goarch }}
-        run: |
-          node -e "
-            const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-            pkg.build.mac.target = [{ target: 'dmg', arch: process.env.MAC_ARCH }];
-            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
-            console.log('mac.target arch set to:', process.env.MAC_ARCH);
-          "
-
-      # macOS 签名公证：配置 secrets.MAC_CERT_BASE64 后自动启用，无则禁用签名。
-      # 用 $GITHUB_ENV 动态注入签名变量，避免空 CSC_LINK 被当路径报 "not a file"。
+      # macOS 签名公证：配置 secrets（Tauri 命名）后自动启用，无则跳过签名
       - name: Setup macOS signing env
-        if: startsWith(matrix.platform, 'mac')
+        if: runner.os == 'macOS'
+        shell: bash
         env:
-          MAC_CERT_BASE64: ${{ secrets.MAC_CERT_BASE64 }}
-          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          APPLE_CERTIFICATE_B64: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          if [ -z "$MAC_CERT_BASE64" ]; then
-            # 无证书：禁用代码签名
-            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> $GITHUB_ENV
+          if [ -z "$APPLE_CERTIFICATE_B64" ]; then
             echo "==> macOS 无签名证书，跳过代码签名"
           else
-            # 有证书：导入到 keychain 并启用签名公证
-            CERT_FILE=$RUNNER_TEMP/build.p12
-            echo -n "$MAC_CERT_BASE64" | base64 --decode > $CERT_FILE
-            security create-keychain -p "" build.keychain
-            security import $CERT_FILE -k build.keychain -P "$MAC_CERT_PASSWORD" -T /usr/bin/codesign
-            security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
-            echo "CSC_LINK=$MAC_CERT_BASE64" >> $GITHUB_ENV
-            echo "CSC_KEY_PASSWORD=$MAC_CERT_PASSWORD" >> $GITHUB_ENV
-            echo "==> macOS 已导入签名证书，启用代码签名"
+            echo "APPLE_CERTIFICATE=$APPLE_CERTIFICATE_B64" >> $GITHUB_ENV
+            echo "APPLE_CERTIFICATE_PASSWORD=$APPLE_CERTIFICATE_PASSWORD" >> $GITHUB_ENV
+            echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY" >> $GITHUB_ENV
+            echo "APPLE_ID=$APPLE_ID" >> $GITHUB_ENV
+            echo "APPLE_PASSWORD=$APPLE_PASSWORD" >> $GITHUB_ENV
+            echo "APPLE_TEAM_ID=$APPLE_TEAM_ID" >> $GITHUB_ENV
+            echo "==> macOS 已配置签名环境变量，启用签名公证"
           fi
 
-      - name: Build Electron app
-        working-directory: electron
-        env:
-          # GitHub Actions 专用：禁用 electron-builder 的自动更新检查，加速构建
-          ELECTRON_BUILDER_OFFLINE: 'true'
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # macOS 公证信息（仅配置了 secrets 时有效，否则 electron-builder 忽略）
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: npm run ${{ matrix.dist_script }}
+      # beforeBuildCommand（scripts/prepare-sidecar.mjs --build）自动完成：
+      # web 前端构建（输出 server/web_dist）→ Go sidecar 编译 → externalBin triple 重命名拷贝
+      - name: Build Tauri app
+        run: npx tauri build
 
-      # 统一产物上传：stable 版与 pre 版都先收集到 artifact，再由 release job 发到 Release
+      # 统一产物上传：stable 与 pre 都先收集 artifact，由 release job 发布
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: xcontrol-${{ matrix.platform }}-${{ needs.prepare.outputs.version }}
+          name: xcontrol-tauri-${{ matrix.platform }}-${{ needs.prepare.outputs.version }}
           path: |
-            electron/release/XControl-Setup-*
-            electron/release/XControl-*.dmg
-            electron/release/XControl-*.deb
-            electron/release/XControl-*.rpm
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/rpm/*.rpm
+            src-tauri/target/release/bundle/appimage/*.AppImage
           if-no-files-found: error
           retention-days: 30
 
-  # 发布：stable 版(tag)发正式 Release，pre 版(main)发 prerelease Release
-  # 都用 softprops/action-gh-release 创建 Release 并上传所有平台安装包
+  # 发布：stable 版(tag)发正式 Release，pre 版(分支推送)发 prerelease Release
   release:
     needs: [prepare, build]
     runs-on: ubuntu-latest
@@ -241,31 +218,32 @@ jobs:
           tag_name: ${{ needs.prepare.outputs.tag }}
           name: ${{ needs.prepare.outputs.release_name }}
           body: |
-            ## XControl ${{ needs.prepare.outputs.version }}
+            ## XControl ${{ needs.prepare.outputs.version }}（Tauri 版）
 
-            ${{ needs.prepare.outputs.is_release == 'true' && '### ✅ Stable 版' || '### 🔄 Pre 版（基于最新 main 分支构建）' }}
+            ${{ needs.prepare.outputs.is_release == 'true' && '### ✅ Stable 版' || '### 🔄 Pre 版（基于 tauri 分支最新构建）' }}
 
             ### 安装包
 
-            | 平台 | 文件 | 说明 |
+            | 平台 | 格式 | 说明 |
             |------|------|------|
-            | Windows | `XControl-Setup-*-x64.exe` | NSIS 安装程序 |
-            | macOS (Apple Silicon) | `XControl-*-arm64.dmg` | DMG 镜像 |
-            | Linux (Debian/Ubuntu) | `XControl-*-x64.deb` | deb 安装包 |
-            | Linux (Fedora/RHEL) | `XControl-*-x64.rpm` | rpm 安装包 |
+            | Windows (x64) | NSIS 安装程序 `.exe` | 双击安装（当前用户模式，无需管理员） |
+            | macOS (Apple Silicon) | DMG 镜像 | 打开后拖拽 XControl 到 Applications |
+            | Linux (Debian/Ubuntu) | `.deb` | `sudo dpkg -i XControl*.deb` |
+            | Linux (Fedora/RHEL) | `.rpm` | `sudo rpm -i XControl*.rpm` |
+            | Linux (通用) | `.AppImage` | 免安装，直接运行 |
 
-            ### 安装说明
+            ### 说明
 
-            - **Windows**: 双击 `.exe` 安装，支持自定义安装路径
-            - **macOS**: 打开 `.dmg`，拖拽 XControl 到 Applications 文件夹
-            - **Linux**: `sudo dpkg -i XControl-*.deb` 或 `sudo rpm -i XControl-*.rpm`
+            - 本 Release 由 **tauri 分支** 的 Tauri 2 构建管线产出；main 分支仍发布 Electron 版
+            - 从 Electron 版升级：连接配置、密钥、UI 偏好会被自动继承，无需手动迁移
+            - 升级安装前建议退出旧版本应用
           files: |
-            artifacts/XControl-Setup-*
-            artifacts/XControl-*.dmg
-            artifacts/XControl-*.deb
-            artifacts/XControl-*.rpm
+            artifacts/*.exe
+            artifacts/*.dmg
+            artifacts/*.deb
+            artifacts/*.rpm
+            artifacts/*.AppImage
           draft: false
           # pre 版标记为预发布，stable 版为正式发布
           prerelease: ${{ needs.prepare.outputs.is_release != 'true' }}
           generate_release_notes: true
-

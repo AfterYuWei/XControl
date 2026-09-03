@@ -1,0 +1,22 @@
+{
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "XControl",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "resizable": true,
+        "visible": false,
+        "backgroundColor": "#0A0A0A",
+        "dragDropEnabled": true,
+        "decorations": false
+      }
+    ]
+  },
+  "bundle": {
+    "targets": ["deb", "rpm", "appimage"]
+  }
+}

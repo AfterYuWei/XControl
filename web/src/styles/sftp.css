@@ -517,6 +517,9 @@
   position: fixed;
   top: -1000px;
   left: -1000px;
+  z-index: 9999;
+  /* 不挡 hitTest（elementFromPoint）与鼠标事件 */
+  pointer-events: none;
   max-width: 260px;
   overflow: hidden;
   padding: 6px 10px;
@@ -528,6 +531,16 @@
   font: 500 11px / 1.2 var(--sans);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 指针拖拽进行中（usePointerDrag 挂到 body）：禁文本选中 + 抓取光标 */
+body.ptr-dragging {
+  cursor: grabbing;
+  user-select: none;
+  -webkit-user-select: none;
+}
+body.ptr-dragging * {
+  cursor: grabbing !important;
 }
 
 .sftp-dir-mode {

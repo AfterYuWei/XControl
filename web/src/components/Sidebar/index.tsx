@@ -8,6 +8,8 @@ import { useSidebarDetailStore, GLOBAL_PAGE_KEY } from '@/store/sidebarDetail'
 import { toast } from 'sonner'
 import { resolveServerIcon } from '@/lib/serverIcons'
 import { resolveGroupIcon } from '@/lib/groupIcons'
+import { usePointerDrag } from '@/hooks/usePointerDrag'
+import { dropPayloadAttr } from '@/lib/dragRegistry'
 import type { Profile } from '@/types/profile'
 import type { Group } from '@/types/group'
 
@@ -49,6 +51,44 @@ export function Sidebar() {
 
   // Drag-and-drop
   const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null)
+
+  // ─── 指针拖拽（P3：替代 HTML5 DnD，服务器拖入分组，见 docs/TAURI_MIGRATION.md §6.6） ────
+  const profilesRef = useRef({ profiles, groups })
+  useEffect(() => {
+    profilesRef.current = { profiles, groups }
+  })
+
+  const moveProfileToGroup = async (profileId: string, targetGid: string) => {
+    const { profiles: currentProfiles, groups: currentGroups } = profilesRef.current
+    const targetGroupId = targetGid === UNGROUPED_ID ? '' : targetGid
+    const profile = currentProfiles.find((p) => p.id === profileId)
+    if (!profile) return
+    if ((profile.group_id || '') === targetGroupId) return // same group, no-op
+    try {
+      await updateProfile(profileId, { group_id: targetGroupId })
+      const label = targetGroupId
+        ? currentGroups.find((g) => g.id === targetGroupId)?.name || '分组'
+        : '服务器管理'
+      toast.success(`已移动到「${label}」`)
+    } catch (err) {
+      toast.error((err as Error).message || '移动失败')
+    }
+  }
+
+  const serverDrag = usePointerDrag<{ profileId: string; name: string }>({
+    ghostLabel: (session) => session.name,
+    onActivate: () => {},
+    onOver: (_session, payload) => {
+      const groupId = payload?.kind === 'group' ? payload.groupId : null
+      setDragOverGroupId((current) => (current === groupId ? current : groupId))
+    },
+    onDrop: (session, payload) => {
+      if (payload.kind !== 'group') return
+      setDragOverGroupId(null)
+      void moveProfileToGroup(session.profileId, payload.groupId)
+    },
+    onCancel: () => setDragOverGroupId(null),
+  })
 
   // Click-to-select on the server list (single click selects, double connects).
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null)
@@ -206,27 +246,7 @@ export function Sidebar() {
     setBlankMenu({ x: e.clientX, y: e.clientY })
   }
 
-  // Move a server (by id) into a target group via drag-and-drop.
-  const handleDropToGroup = async (e: React.DragEvent, targetGid: string) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setDragOverGroupId(null)
-    const profileId = e.dataTransfer.getData('text/profile-id')
-    if (!profileId) return
-    const targetGroupId = targetGid === UNGROUPED_ID ? '' : targetGid
-    const profile = profiles.find((p) => p.id === profileId)
-    if (!profile) return
-    if ((profile.group_id || '') === targetGroupId) return // same group, no-op
-    try {
-      await updateProfile(profileId, { group_id: targetGroupId })
-      const label = targetGroupId
-        ? groups.find((g) => g.id === targetGroupId)?.name || '分组'
-        : '服务器管理'
-      toast.success(`已移动到「${label}」`)
-    } catch (err) {
-      toast.error((err as Error).message || '移动失败')
-    }
-  }
+  // 旧 HTML5 分组拖放已被上方指针拖拽（serverDrag）取代
 
   // Group profiles by their group; ungrouped go to "服务器管理"
   // Split servers into those belonging to a real group vs. loose (no group).
@@ -257,22 +277,17 @@ export function Sidebar() {
         ? `${profile.username}@${profile.host}:${profile.port}`
         : `${profile.username}@${profile.host}`
 
-    return (
-      <div
-        key={profile.id}
-        className={`srv ${status === 'disconnected' ? 'offline' : ''} ${isSelected || isActive ? 'active' : ''}`}
-        role="button"
-        tabIndex={0}
-        draggable
-        onDragStart={(e) => {
-          e.dataTransfer.setData('text/profile-id', profile.id)
-          e.dataTransfer.effectAllowed = 'move'
-        }}
-        aria-label={`选择 ${profile.name} (${profile.host}:${profile.port})，双击连接`}
-        onClick={(e) => {
-          e.stopPropagation()
-          setSelectedProfileId(profile.id)
-        }}
+  return (
+    <div
+      key={profile.id}
+      className={`srv ${status === 'disconnected' ? 'offline' : ''} ${isSelected || isActive ? 'active' : ''}`}
+      role="button"
+      tabIndex={0}
+      onPointerDown={(e) => serverDrag.start(e, { profileId: profile.id, name: profile.name })}
+      onClick={(e) => {
+        e.stopPropagation()
+        setSelectedProfileId(profile.id)
+      }}
         onDoubleClick={() => handleConnect(profile)}
         onContextMenu={(e) => handleProfileContextMenu(e, profile)}
         onKeyDown={(e) => {
@@ -357,17 +372,7 @@ export function Sidebar() {
                     <div
                       className={`srv-group ${isDropTarget ? 'grp-drop-target' : ''}`}
                       key={grp.id}
-                      onDragOver={(e) => {
-                        e.preventDefault()
-                        e.dataTransfer.dropEffect = 'move'
-                        if (dragOverGroupId !== grp.id) setDragOverGroupId(grp.id)
-                      }}
-                      onDragLeave={(e) => {
-                        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                          setDragOverGroupId(null)
-                        }
-                      }}
-                      onDrop={(e) => handleDropToGroup(e, grp.id)}
+                      data-drag-payload={dropPayloadAttr({ kind: 'group', groupId: grp.id })}
                     >
                       <div
                         className="grp-label"
@@ -388,17 +393,7 @@ export function Sidebar() {
                 {looseServers.length > 0 && (
                   <div
                     className={`srv-group ${dragOverGroupId === UNGROUPED_ID ? 'grp-drop-target' : ''}`}
-                    onDragOver={(e) => {
-                      e.preventDefault()
-                      e.dataTransfer.dropEffect = 'move'
-                      if (dragOverGroupId !== UNGROUPED_ID) setDragOverGroupId(UNGROUPED_ID)
-                    }}
-                    onDragLeave={(e) => {
-                      if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                        setDragOverGroupId(null)
-                      }
-                    }}
-                    onDrop={(e) => handleDropToGroup(e, UNGROUPED_ID)}
+                    data-drag-payload={dropPayloadAttr({ kind: 'group', groupId: UNGROUPED_ID })}
                   >
                     {groups.length > 0 && (
                       <div className="grp-label">

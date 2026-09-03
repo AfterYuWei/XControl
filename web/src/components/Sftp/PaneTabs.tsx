@@ -1,8 +1,9 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { X, Plus } from 'lucide-react'
 import { resolveServerIcon } from '@/lib/serverIcons'
 import { useSftpStore } from './storeContext'
-import { dropAction, validateDrop, type PaneSide, type SftpDropTarget, type SftpTab } from '@/store/sftp'
+import { dropPayloadAttr } from '@/lib/dragRegistry'
+import { type PaneSide, type SftpDropTarget, type SftpTab } from '@/store/sftp'
 
 interface PaneTabsProps {
   pane: PaneSide
@@ -16,7 +17,35 @@ export function PaneTabs({ pane, onPickServer }: PaneTabsProps) {
   const store = useSftpStore()
   const tabs = pane === 'left' ? store.leftTabs : store.rightTabs
   const activeId = pane === 'left' ? store.activeLeftTabId : store.activeRightTabId
-  const hoverRef = useRef<{ id: string; timer: ReturnType<typeof setTimeout> } | null>(null)
+
+  const makeTarget = (tab: SftpTab): SftpDropTarget | null =>
+    tab.sessionId
+      ? {
+          pane,
+          tabId: tab.id,
+          sessionId: tab.sessionId,
+          destDir: tab.path,
+          serverName: tab.server.name,
+          kind: 'tab',
+        }
+      : null
+
+  // 悬停弹簧激活（P3）：拖拽期间 dropTarget 停留在未激活标签上 500ms
+  // 即自动切换（由 store 的 dropTarget 驱动，替代原 HTML5 onDragOver 定时器）
+  const springRef = useRef<string | null>(null)
+  useEffect(() => {
+    const target = store.dropTarget
+    const hoveredTabId = target?.pane === pane && target.kind === 'tab' ? target.tabId : null
+    if (!hoveredTabId) {
+      springRef.current = null
+      return
+    }
+    if (springRef.current === hoveredTabId) return
+    springRef.current = hoveredTabId
+    if (hoveredTabId === activeId) return
+    const timer = setTimeout(() => store.setActiveTab(pane, hoveredTabId), 500)
+    return () => clearTimeout(timer)
+  }, [store.dropTarget, pane, activeId, store])
 
   return (
     <div className="sftp-pane-hdr">
@@ -25,10 +54,7 @@ export function PaneTabs({ pane, onPickServer }: PaneTabsProps) {
           const active = tab.id === activeId
           const dropTarget = store.dropTarget?.tabId === tab.id && store.dropTarget.kind === 'tab'
           const Icon = resolveServerIcon('server')
-          const makeTarget = (): SftpDropTarget | null => tab.sessionId ? {
-            pane, tabId: tab.id, sessionId: tab.sessionId, destDir: tab.path,
-            serverName: tab.server.name, kind: 'tab',
-          } : null
+          const target = makeTarget(tab)
           return (
             <div
               key={tab.id}
@@ -37,41 +63,6 @@ export function PaneTabs({ pane, onPickServer }: PaneTabsProps) {
               aria-selected={active}
               tabIndex={0}
               onClick={() => store.setActiveTab(pane, tab.id)}
-              onDragOver={(e) => {
-                const target = makeTarget()
-                if (!store.dragSession || !target) return
-                e.preventDefault()
-                e.stopPropagation()
-                const copy = e.ctrlKey || e.altKey
-                const invalid = validateDrop(store.dragSession, target, copy)
-                e.dataTransfer.dropEffect = invalid ? 'none' : dropAction(store.dragSession, target, copy)
-                store.setDropTarget(invalid ? null : { ...target, copyModifier: copy })
-                if (!active && hoverRef.current?.id !== tab.id) {
-                  if (hoverRef.current) clearTimeout(hoverRef.current.timer)
-                  hoverRef.current = {
-                    id: tab.id,
-                    timer: setTimeout(() => store.setActiveTab(pane, tab.id), 500),
-                  }
-                }
-              }}
-              onDragLeave={(e) => {
-                if (e.target !== e.currentTarget) return
-                if (e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) return
-                if (hoverRef.current?.id === tab.id) clearTimeout(hoverRef.current.timer)
-                hoverRef.current = null
-                if (store.dropTarget?.tabId === tab.id && store.dropTarget.kind === 'tab') {
-                  store.setDropTarget(null)
-                }
-              }}
-              onDrop={async (e) => {
-                const target = makeTarget()
-                if (!store.dragSession || !target) return
-                e.preventDefault()
-                e.stopPropagation()
-                if (hoverRef.current) clearTimeout(hoverRef.current.timer)
-                store.setDropTarget(target)
-                await store.commitDrop(e.ctrlKey || e.altKey)
-              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault()
@@ -79,6 +70,7 @@ export function PaneTabs({ pane, onPickServer }: PaneTabsProps) {
                 }
               }}
               title={`${tab.server.name} — ${tab.server.username}@${tab.server.host}${tab.server.port ? ':' + tab.server.port : ''}`}
+              data-drag-payload={target ? dropPayloadAttr({ kind: 'sftp', target }) : undefined}
             >
               <Icon size={12} className="sftp-ptab-icon" />
               <span className="sftp-ptab-name">{tab.server.name}</span>

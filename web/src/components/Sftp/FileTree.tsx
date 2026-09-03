@@ -1,6 +1,7 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight, Folder, FileText, FileCode, FileArchive, FileImage } from 'lucide-react'
-import { ancestorsOf, type TreeNode, type PaneSide } from '@/store/sftp'
+import { ancestorsOf, type TreeNode, type SftpDropTarget } from '@/store/sftp'
+import { dropPayloadAttr } from '@/lib/dragRegistry'
 import type { SftpEntry } from '@/types/sftp'
 
 interface FileTreeProps {
@@ -10,14 +11,12 @@ interface FileTreeProps {
   onSelect: (entry: SftpEntry, additive: boolean) => void
   onActivate: (entry: SftpEntry) => void
   onContextMenu: (e: React.MouseEvent, entry: SftpEntry) => void
-  onDragStart: (e: React.DragEvent, entry: SftpEntry) => void
-  onDragEnd?: () => void
+  /** 指针拖拽启动（P3：替代 HTML5 draggable/onDragStart）。 */
+  onRowPointerDown: (e: React.PointerEvent, entry: SftpEntry) => void
   dropTargetPath?: string | null
   draggingPaths?: Set<string>
-  onDragOverEntry?: (e: React.DragEvent, entry: SftpEntry) => void
-  onDragLeaveEntry?: (e: React.DragEvent, entry: SftpEntry) => void
-  onDropEntry?: (e: React.DragEvent, entry: SftpEntry) => void
-  pane: PaneSide
+  /** 目录行作为拖放目标的构造器（仅文件夹行渲染 data-drag-payload）。 */
+  makeDropTarget: (entry: SftpEntry) => SftpDropTarget | null
 }
 
 function renderFileIcon(name: string, size: number) {
@@ -38,19 +37,15 @@ export function FileTree({
   onSelect,
   onActivate,
   onContextMenu,
-  onDragStart,
-  onDragEnd,
+  onRowPointerDown,
   dropTargetPath,
   draggingPaths,
-  onDragOverEntry,
-  onDragLeaveEntry,
-  onDropEntry,
+  makeDropTarget,
 }: FileTreeProps) {
   // Extra folders the user has explicitly expanded beyond the active path's
   // ancestors. Collapsing an ancestor of the active path is ignored (kept
   // open) so the current location never disappears.
   const [userExpanded, setUserExpanded] = useState<Set<string>>(() => new Set())
-  const springTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const expanded = useMemo(
     () => new Set<string>([...ancestorsOf(activePath), ...userExpanded]),
@@ -65,12 +60,29 @@ export function FileTree({
       return next
     })
 
+  // 悬停弹簧展开（P3）：拖拽期间 dropTarget 停留在未展开的目录行上 700ms
+  // 即自动展开（由 store 的 dropTarget 驱动，替代原 HTML5 onDragOver 定时器）
+  const springRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!dropTargetPath) {
+      springRef.current = null
+      return
+    }
+    if (springRef.current === dropTargetPath) return
+    springRef.current = dropTargetPath
+    const timer = setTimeout(() => {
+      setUserExpanded((prev) => new Set(prev).add(dropTargetPath))
+    }, 700)
+    return () => clearTimeout(timer)
+  }, [dropTargetPath])
+
   const renderNode = (node: TreeNode, depth: number): React.ReactNode => {
     const e = node.entry
     const isExpanded = expanded.has(e.path)
     const isActive = e.path === activePath
     const isSelected = selected.has(e.path)
     const indent = 8 + depth * 14
+    const rowDropTarget = e.is_dir ? makeDropTarget(e) : null
 
     const cls = [
       'sftp-trow',
@@ -90,7 +102,7 @@ export function FileTree({
           role="row"
           tabIndex={0}
           style={{ paddingLeft: indent }}
-          draggable
+          onPointerDown={(ev) => onRowPointerDown(ev, e)}
           onClick={(ev) => {
             ev.stopPropagation()
             onSelect(e, ev.metaKey || ev.ctrlKey)
@@ -100,31 +112,13 @@ export function FileTree({
             else onActivate(e)
           }}
           onContextMenu={(ev) => onContextMenu(ev, e)}
-          onDragStart={(ev) => onDragStart(ev, e)}
-          onDragEnd={onDragEnd}
-          onDragOver={e.is_dir ? (ev) => {
-            onDragOverEntry?.(ev, e)
-            if (!isExpanded && !springTimer.current) {
-              springTimer.current = setTimeout(() => {
-                setUserExpanded((prev) => new Set(prev).add(e.path))
-                springTimer.current = null
-              }, 700)
-            }
-          } : undefined}
-          onDragLeave={e.is_dir ? (ev) => {
-            if (ev.target !== ev.currentTarget) return
-            if (ev.relatedTarget instanceof Node && ev.currentTarget.contains(ev.relatedTarget)) return
-            if (springTimer.current) clearTimeout(springTimer.current)
-            springTimer.current = null
-            onDragLeaveEntry?.(ev, e)
-          } : undefined}
-          onDrop={e.is_dir ? (ev) => onDropEntry?.(ev, e) : undefined}
           onKeyDown={(ev) => {
             if (ev.key === 'Enter') {
               if (e.is_dir) toggle(e.path)
               else onActivate(e)
             }
           }}
+          data-drag-payload={rowDropTarget ? dropPayloadAttr({ kind: 'sftp', target: rowDropTarget }) : undefined}
         >
           <span className="sftp-trow-chevron">
             {e.is_dir ? (

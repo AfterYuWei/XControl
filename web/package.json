@@ -11,6 +11,7 @@
     "test:unit": "vitest run"
   },
   "dependencies": {
+    "@crabnebula/tauri-plugin-drag": "^2.1.0",
     "@monaco-editor/react": "^4.7.0",
     "@tailwindcss/vite": "^4.3.1",
     "@tauri-apps/api": "^2.11.1",

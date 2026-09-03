@@ -93,6 +93,9 @@ pub fn orchestrate(
     spawned: Result<SpawnedBackend, String>,
     smoke: bool,
 ) {
+    // 启动清扫 24h 以上的拖出临时目录（对应 Electron sweepNativeDragTemps）
+    crate::drag_out::sweep_stale_drag_temps();
+
     let sp = match spawned {
         Ok(sp) => sp,
         Err(err) => {

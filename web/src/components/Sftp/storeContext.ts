@@ -32,4 +32,12 @@ export function useSftpStore<T>(selector?: (s: SftpStore) => T): T | SftpStore {
   return useStore(api, sel)
 }
 
+/** 获取当前 SFTP 实例的 store API（非响应式；用于事件回调中读取最新状态，
+ *  替代渲染期写 ref 的模式，符合 React Compiler 规则）。 */
+export function useSftpStoreApi(): SftpStoreApi {
+  const api = useContext(SftpStoreContext)
+  if (!api) throw new Error('useSftpStoreApi 必须在 SftpStoreContext.Provider 内使用')
+  return api
+}
+
 const identity = (s: SftpStore): SftpStore => s

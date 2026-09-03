@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef, useContext } from 'react'
-import { toast } from 'sonner'
 import { FilePane } from './FilePane'
 import { TransferQueue } from './TransferQueue'
 import { ServerPicker } from './ServerPicker'
@@ -11,6 +10,7 @@ import { EditorDialog } from '@/components/Editor/EditorDialog'
 import { SftpStoreContext, useSftpStore } from './storeContext'
 import { createSftpStore, type SftpStoreApi, type PaneSide, parentPath } from '@/store/sftp'
 import { useSftpTransfer } from '@/hooks/useSftpTransfer'
+import { useExternalDrop } from '@/hooks/useExternalDrop'
 import { sftpApi } from '@/api/sftp'
 
 /** SFTP file manager — symmetric dual-pane layout. Both panes are identical
@@ -33,15 +33,8 @@ export function SftpView() {
     store.getState().loadServers()
   }, [store])
 
-  useEffect(() => window.xcontrol?.fileDrag.onStatus((status) => {
-    const toastId = 'sftp-native-file-drag'
-    if (status.state === 'preparing') toast.loading(status.message, { id: toastId })
-    else if (status.state === 'error') toast.error(status.message, { id: toastId })
-    else {
-      toast.dismiss(toastId)
-      if (status.state === 'ended') store.getState().cancelDrag()
-    }
-  }), [store])
+  // 桌面端外部文件拖入（Tauri onDragDropEvent → OS 真实路径导入；浏览器走 HTML5）
+  useExternalDrop(store)
 
   // Auto-connect the local server on mount (left pane default)
   useEffect(() => {

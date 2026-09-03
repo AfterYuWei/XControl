@@ -10,6 +10,8 @@ mod backend;
 #[cfg(desktop)]
 mod commands;
 #[cfg(desktop)]
+mod drag_out;
+#[cfg(desktop)]
 mod http;
 #[cfg(desktop)]
 mod settings_migrate;
@@ -51,13 +53,16 @@ fn desktop_run() {
         .plugin(tauri_plugin_opener::init())
         // 保存文件对话框（save_url_to_disk / save_blob_to_disk 命令的 Rust 侧 API）
         .plugin(tauri_plugin_dialog::init())
+        // 文件拖出到系统（sftp_drag_out 物化后由前端 startDrag 接管）
+        .plugin(tauri_plugin_drag::init())
         .invoke_handler(tauri::generate_handler![
             commands::get_backend_info,
             commands::frontend_ready,
             commands::get_platform,
             commands::migrate_electron_settings,
             commands::save_url_to_disk,
-            commands::save_blob_to_disk
+            commands::save_blob_to_disk,
+            drag_out::sftp_drag_out
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

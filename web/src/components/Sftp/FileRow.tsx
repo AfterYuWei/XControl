@@ -1,5 +1,7 @@
 import { Folder, FileText, FileCode, FileArchive, FileImage } from 'lucide-react'
 import type { SftpEntry } from '@/types/sftp'
+import { dropPayloadAttr } from '@/lib/dragRegistry'
+import type { SftpDropTarget } from '@/store/sftp'
 
 interface FileRowProps {
   entry: SftpEntry
@@ -9,11 +11,10 @@ interface FileRowProps {
   onSelect: (e: React.MouseEvent) => void
   onOpen: () => void
   onContextMenu: (e: React.MouseEvent) => void
-  onDragStart: (e: React.DragEvent) => void
-  onDragEnd: () => void
-  onDragOver?: (e: React.DragEvent, entry: SftpEntry) => void
-  onDragLeave?: (e: React.DragEvent) => void
-  onDrop?: (e: React.DragEvent, entry: SftpEntry) => void
+  /** 指针拖拽启动（P3：替代 HTML5 draggable/onDragStart）。 */
+  onRowPointerDown: (e: React.PointerEvent) => void
+  /** 仅文件夹行：作为拖放目标（渲染 data-drag-payload 供 hitTest 命中）。 */
+  dropTarget?: SftpDropTarget | null
 }
 
 /** Render the appropriate line icon for a file name as JSX (avoids creating
@@ -47,11 +48,8 @@ export function FileRow({
   onSelect,
   onOpen,
   onContextMenu,
-  onDragStart,
-  onDragEnd,
-  onDragOver,
-  onDragLeave,
-  onDrop,
+  onRowPointerDown,
+  dropTarget,
 }: FileRowProps) {
   const cls = [
     'sftp-row',
@@ -68,18 +66,14 @@ export function FileRow({
       className={cls}
       role="row"
       tabIndex={0}
-      draggable
+      onPointerDown={onRowPointerDown}
       onClick={onSelect}
       onDoubleClick={onOpen}
       onContextMenu={onContextMenu}
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      onDragOver={onDragOver ? (e) => onDragOver(e, entry) : undefined}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop ? (e) => onDrop(e, entry) : undefined}
       onKeyDown={(e) => {
         if (e.key === 'Enter') onOpen()
       }}
+      data-drag-payload={dropTarget ? dropPayloadAttr({ kind: 'sftp', target: dropTarget }) : undefined}
     >
       <span className="sftp-cell sftp-cell-icon">
         {entry.is_dir ? <Folder size={14} /> : renderFileIcon(entry.name, 14)}

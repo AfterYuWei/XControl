@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight, Home } from 'lucide-react'
+import { dropPayloadAttr } from '@/lib/dragRegistry'
+import type { SftpDropTarget } from '@/store/sftp'
 
 interface BreadcrumbProps {
   path: string
   onNavigate: (path: string) => void
   dropTargetPath?: string | null
-  onDragOverSegment?: (e: React.DragEvent, path: string) => void
-  onDropSegment?: (e: React.DragEvent, path: string) => void
+  /** 构造某段路径的拖放目标（P3 指针拖拽：段按钮渲染 data-drag-payload）。 */
+  makeDropTarget: (path: string) => SftpDropTarget | null
 }
 
 /** Split an absolute path into clickable segments. `/a/b/c` → [/, /a, /a/b, /a/b/c]. */
@@ -49,7 +51,7 @@ function fitSegments(
 
 /** Path navigation breadcrumb with inline path editor. Long paths collapse
  *  their middle segments into a "…" button (click to edit the full path). */
-export function Breadcrumb({ path, onNavigate, dropTargetPath, onDragOverSegment, onDropSegment }: BreadcrumbProps) {
+export function Breadcrumb({ path, onNavigate, dropTargetPath, makeDropTarget }: BreadcrumbProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(path)
   const crumbRef = useRef<HTMLDivElement>(null)
@@ -119,10 +121,11 @@ export function Breadcrumb({ path, onNavigate, dropTargetPath, onDragOverSegment
         <button
           className={`sftp-crumb-seg ${dropTargetPath === root.path ? 'drop-target' : ''}`}
           onClick={() => onNavigate(root.path)}
-          onDragOver={(e) => onDragOverSegment?.(e, root.path)}
-          onDragLeave={() => {}}
-          onDrop={(e) => onDropSegment?.(e, root.path)}
           title={root.path}
+          data-drag-payload={(() => {
+            const target = makeDropTarget(root.path)
+            return target ? dropPayloadAttr({ kind: 'sftp', target }) : undefined
+          })()}
         >
           {root.label}
         </button>
@@ -146,10 +149,11 @@ export function Breadcrumb({ path, onNavigate, dropTargetPath, onDragOverSegment
           <button
             className={`sftp-crumb-seg ${dropTargetPath === s.path ? 'drop-target' : ''}`}
             onClick={() => onNavigate(s.path)}
-            onDragOver={(e) => onDragOverSegment?.(e, s.path)}
-            onDragLeave={() => {}}
-            onDrop={(e) => onDropSegment?.(e, s.path)}
             title={s.path}
+            data-drag-payload={(() => {
+              const target = makeDropTarget(s.path)
+              return target ? dropPayloadAttr({ kind: 'sftp', target }) : undefined
+            })()}
           >
             {s.label}
           </button>

@@ -239,6 +239,8 @@ export interface SftpStore {
   dragSession: SftpDragSession | null
   dropTarget: SftpDropTarget | null
   pendingDirectoryDrop: PendingDirectoryDrop | null
+  /** 桌面端（Tauri）外部文件拖入悬停目标：onDragDropEvent 驱动（浏览器走 HTML5 由组件局部状态处理）。 */
+  externalHover: { target: SftpDropTarget; count: number } | null
 
   // Per-pane actions
   navigate: (pane: PaneSide, path: string) => Promise<void>
@@ -266,6 +268,8 @@ export interface SftpStore {
   commitDrop: (copyModifier: boolean) => Promise<boolean>
   importExternalPaths: (sourceSessionId: string, paths: string[], target: SftpDropTarget) => Promise<void>
   uploadExternalFiles: (files: File[], target: SftpDropTarget) => Promise<void>
+  /** 桌面端外部文件拖入悬停（Tauri onDragDropEvent 驱动）。 */
+  setExternalHover: (target: SftpDropTarget | null, count: number) => void
   resolveDirectoryDrop: (mode: DirectoryTransferMode | null) => Promise<void>
   cancelTransfer: (id: string) => Promise<void>
   clearCompleted: () => Promise<void>
@@ -346,6 +350,7 @@ export function createSftpStore(): SftpStoreApi {
     pendingConflict: null,
     dragSession: null,
     dropTarget: null,
+    externalHover: null,
     pendingDirectoryDrop: null,
 
     // Dialog states
@@ -515,6 +520,16 @@ export function createSftpStore(): SftpStoreApi {
     ),
 
     cancelDrag: () => set({ dragSession: null, dropTarget: null }),
+
+    setExternalHover: (target, count) => set((state) => {
+      const next = target ? { target, count } : null
+      const current = state.externalHover
+      if (!next && !current) return state
+      if (next && current
+        && sameDropTarget(current.target, next.target)
+        && current.count === next.count) return state
+      return { externalHover: next }
+    }),
 
     commitDrop: async (copyModifier) => {
       const { dragSession: drag, dropTarget: target } = get()

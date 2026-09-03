@@ -861,3 +861,20 @@
   gap: 6px;
 }
 
+
+/* ===== 关于面板（P4：版本与更新） ===== */
+.about-version-value {
+  min-width: 72px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font: 500 12px var(--sans);
+  text-align: center;
+}
+.about-release-notes {
+  max-width: 420px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

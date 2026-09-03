@@ -6,10 +6,11 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { Monitor, Terminal, Palette, Type, ChevronRight, DatabaseBackup, CloudSync } from 'lucide-react'
+import { Monitor, Terminal, Palette, Type, ChevronRight, DatabaseBackup, CloudSync, Info } from 'lucide-react'
 import { TerminalThemePicker } from './TerminalThemePicker'
 import { BackupPanel } from './BackupPanel'
 import { SyncPanel } from './SyncPanel'
+import { AboutPanel } from './AboutPanel'
 
 interface SettingsDialogProps {
   open: boolean
@@ -97,13 +98,14 @@ const terminalFontFamilyCNOptions = [
   { value: "sans-serif", label: '系统默认' },
 ]
 
-type SettingsTab = 'appearance' | 'terminal' | 'backup' | 'sync'
+type SettingsTab = 'appearance' | 'terminal' | 'backup' | 'sync' | 'about'
 
 const tabs: { key: SettingsTab; label: string; icon: typeof Monitor }[] = [
   { key: 'appearance', label: '外观', icon: Palette },
   { key: 'terminal', label: '终端', icon: Terminal },
   { key: 'backup', label: '数据备份', icon: DatabaseBackup },
   { key: 'sync', label: '云同步', icon: CloudSync },
+  { key: 'about', label: '关于', icon: Info },
 ]
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
@@ -317,6 +319,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             {activeTab === 'backup' && <BackupPanel />}
 
             {activeTab === 'sync' && <SyncPanel />}
+
+            {activeTab === 'about' && <AboutPanel />}
           </div>
         </div>
       </DialogContent>

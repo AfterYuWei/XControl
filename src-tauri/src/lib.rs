@@ -55,6 +55,9 @@ fn desktop_run() {
         .plugin(tauri_plugin_dialog::init())
         // 文件拖出到系统（sftp_drag_out 物化后由前端 startDrag 接管）
         .plugin(tauri_plugin_drag::init())
+        // 应用内更新（stable 通道）+ 更新后重启（方案 §8.2）
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             commands::get_backend_info,
             commands::frontend_ready,

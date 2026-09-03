@@ -1,16 +1,19 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "XControl 主窗口能力：窗口控制（useWindowControls）、标题栏拖拽（data-tauri-drag-region）、外部链接（opener）、文件拖出（drag）。应用自定义命令与 Rust 侧 dialog API 无需在此声明。",
+  "description": "XControl 主窗口能力：窗口控制（useWindowControls）、标题栏拖拽（data-tauri-drag-region）、外部链接（opener）、文件拖出（drag）、应用内更新（updater + relaunch）与应用信息。应用自定义命令与 Rust 侧 dialog API 无需在此声明。",
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "core:app:default",
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
     "core:window:allow-close",
     "core:window:allow-is-maximized",
     "core:window:allow-start-dragging",
     "opener:default",
-    "drag:default"
+    "drag:default",
+    "updater:default",
+    "process:allow-restart"
   ]
 }

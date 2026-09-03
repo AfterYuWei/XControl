@@ -1,69 +1,96 @@
-# Electron 桌面运行说明
+# Tauri 桌面运行说明
 
-Electron 是 XControl 的正式运行形态；Vite Web 模式仅用于开发调试。
+Tauri 2 是 XControl 桌面版的正式运行形态（tauri 分支起，替代 Electron）；Vite Web 模式仅用于开发调试。迁移设计见 `docs/TAURI_MIGRATION.md`。
+
+## 架构
+
+```
+Tauri 主进程 (Rust, src-tauri/)
+   1. 创建主窗口（visible:false）并推导 webview origin
+   2. 申请空闲回环端口 + 生成 256bit 随机访问令牌
+   3. spawn xcontrol-server sidecar（externalBin 打包，stdio → logs/backend.log）
+      env: XCONTROL_PORT/HOST/DB_PATH/KEY_PATH/ACCESS_TOKEN/ALLOWED_ORIGINS
+   4. 健康轮询 /api/health → 前端 invoke('get_backend_info') 取端口+令牌
+   5. 前端首帧渲染完成 → invoke('frontend_ready') → 显示并最大化窗口
+   6. 退出：POST /api/shutdown（Bearer）→ 等待 ≤5s → 强杀；
+      unix 下 PR_SET_PDEATHSIG 兜底（父进程被 SIGKILL 时内核发 SIGTERM）
+      ▼
+WebView（tauri://localhost 等稳定 origin）
+   REST: http://127.0.0.1:<port> + Authorization: Bearer <token>
+   WS:   ws://127.0.0.1:<port>/ws?...&access_token=<token>
+```
 
 ## 启动与安全边界
 
-1. Electron 主进程选择一个空闲回环端口。
-2. 主进程生成 256 位随机访问令牌，通过 `XCONTROL_ACCESS_TOKEN` 传给 Go 子进程。
-3. Go 服务只监听 `127.0.0.1`。
-4. Electron 为该回环地址写入 `HttpOnly`、`SameSite=Strict` 的会话 Cookie。
-5. REST 和 WebSocket 请求同时受访问令牌与 Origin 策略保护。
-6. OAuth 回调不要求桌面 Cookie，但必须通过服务端生成的一次性 OAuth state 校验。
+1. Go sidecar 只监听 `127.0.0.1`，配置完全由环境变量驱动（`-tags prod` 构建）。
+2. 访问令牌仅存在于：Rust 主进程、Go 子进程环境、WebView 内存中的 JS 变量
+   （`lib/desktop.ts` 模块级状态）。**不写 localStorage、不落磁盘**。
+3. REST 请求带 `Authorization: Bearer`；WebSocket 因浏览器 API 无法携带自定义
+   Header，走 `?access_token=` 查询参数（优先级 Header > Cookie > Query；
+   Logger 中间件只记录 path 不含 query，令牌不进日志）。
+4. CORS / WS Origin 放行名单由 Rust 运行时从 `window.url()` 推导后传入
+   `XCONTROL_ALLOWED_ORIGINS`（Windows `http://tauri.localhost`、macOS
+   `tauri://localhost`、Linux 由 webkitgtk 决定——无需硬编码平台差异）。
+5. OAuth 回调不要求桌面令牌（公开路径），在外部系统浏览器完成。
 
-令牌只存在于 Electron 主进程、Go 子进程环境和 HttpOnly Cookie 中，不暴露给渲染层 JavaScript。
+## 用户数据目录（沿用 Electron，无感迁移）
 
-## 退出流程
+| 平台 | 路径 |
+|---|---|
+| Windows | `%APPDATA%\XControl` |
+| macOS | `~/Library/Application Support/XControl` |
+| Linux | `~/.config/XControl` |
 
-关闭应用时，Electron 调用受令牌保护的 `POST /api/shutdown`。Go 服务依次：
+内容：`xcontrol.db`、`key`、`backups/`、`logs/backend.log`、Electron 时代的
+`settings.json`（首启由 Rust 一次性迁移到 localStorage 后标记 `.tauri-migrated`）。
 
-1. 停止接收新的 HTTP 请求；
-2. 完成退出备份；
-3. 关闭 WebSocket、终端和 SFTP 会话；
-4. 取消传输任务并停止清理调度器；
-5. 释放 SSH/SFTP 连接池；
-6. 关闭同步调度器和 SQLite。
+## 命令
 
-Electron 最多等待 5 秒；只有优雅退出失败时才强制终止子进程。
+```bash
+# 开发（tauri dev：起 vite + 调试构建 + 自动 spawn sidecar）
+npm run desktop:dev
+
+# 本地打包（当前平台）
+npm run desktop:build
+
+# 烟测（隐藏窗口 + Rust 侧 health/鉴权/CORS 断言，输出 XCONTROL_TAURI_SMOKE_OK）
+npm run desktop:smoke
+
+# 手动模拟生产行为（纯 cargo build --release 不启用 custom-protocol，
+# 会加载 devUrl —— 必须带 --features，见迁移方案「实施期关键发现」）
+cd src-tauri && cargo build --release --features custom-protocol
+```
+
+前置依赖：Node.js 22+、Go 1.26+、Rust stable（tauri 分支首次构建需安装
+webview 系统库，Linux：`libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev`）。
+
+## 应用内更新
+
+- 通道：GitHub Releases stable（`latest.json` 只随正式版发布）；
+  pre 版本（`0.0.0-pre.<日期>.<sha>`）在 stable 发布时经 semver 比较自动收到升级。
+- 支持：Windows NSIS / macOS（app.tar.gz）/ Linux AppImage；
+  **deb / rpm 不支持**（官方限制，需手动覆盖安装）。
+- 入口：设置 → 关于 → 检查更新；另在启动 10s 后静默检查。
+- 签名：`TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+  两个 GitHub secrets（未配置时 CI 跳过签名，安装包正常出包）。
+  本地生成密钥对：`npx tauri signer generate -w <path> --password ""`。
 
 ## Web 调试
 
-开发模式不设置 `XCONTROL_ACCESS_TOKEN`，因此仍可直接运行：
+开发模式不设置 `XCONTROL_ACCESS_TOKEN`，可直接运行：
 
 ```bash
-cd server
-go run .
-
-cd ../web
-npm ci
-npm run dev
+cd server && go run .
+cd web && npm ci && npm run dev   # http://localhost:5173，/api 与 /ws 代理到 :9090
 ```
 
-后端与 Vite 默认都只监听回环地址。如需从其他设备调试，应显式设置：
-
-```bash
-XCONTROL_HOST=0.0.0.0
-XCONTROL_ALLOWED_ORIGINS=http://debug-host:5173
-npm run dev -- --host 0.0.0.0
-```
-
-不要在不可信网络中使用无访问令牌的调试模式。
+后端与 Vite 默认只监听回环地址。不要在不可信网络中使用无令牌的调试模式。
 
 ## 验证
 
 ```bash
-cd web
-npm run lint
-npm run test:unit
-npm run build
-
-cd ../server
-go test ./...
-go vet ./...
-
-cd ../electron
-npm ci
-npm run smoke
+cd web     && npm run lint && npm run test:unit && npm run build
+cd server  && go test ./... && go vet ./...
+cd src-tauri && cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings && cargo test
+npm run desktop:smoke   # 或 CI 中的 xvfb-run cargo run -- --smoke-test
 ```
-
-`npm run smoke` 启动隐藏窗口，验证渲染进程能通过 HttpOnly Cookie 访问后端，且令牌不可从 `document.cookie` 读取，然后触发完整的优雅退出。

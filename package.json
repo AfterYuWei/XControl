@@ -7,6 +7,7 @@
     "tauri": "tauri",
     "desktop:dev": "node scripts/prepare-sidecar.mjs --go-only && tauri dev",
     "desktop:build": "tauri build",
+    "desktop:smoke": "cd src-tauri && cargo run -- --smoke-test",
     "desktop:icon": "tauri icon src-tauri/app-icon.png"
   },
   "devDependencies": {

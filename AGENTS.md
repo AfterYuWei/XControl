@@ -96,9 +96,11 @@ SQLite uses versioned transactional migrations for the core, credential metadata
 
 JSON messages with `type` field: `input`, `output`, `resize`, `exit`, `error`, `ping`, `pong`, `auth`, `metadata`. Binary frames are reserved for future protocol extensions.
 
-## Desktop Packaging (Electron) — `electron/`
+## Desktop Packaging (Tauri 2) — `src-tauri/`
 
-The `electron/` directory is the production runtime. Electron chooses a free loopback port, generates a per-process access token, starts the Go backend, installs an HttpOnly session cookie, and requests graceful backend shutdown on exit. The Go binary embeds the frontend via `//go:embed`. Web/Vite mode is for debugging only. Build scripts: `build.sh` (Linux/macOS/Windows), `build.ps1` (Windows). `npm run smoke` performs a hidden-window desktop smoke test.
+The `src-tauri/` directory is the production desktop runtime (Tauri branch; replaced the old `electron/`). The Rust shell picks a free loopback port, derives the webview origin, spawns the `xcontrol-server` sidecar (bundled via `externalBin`, env-driven config, stdio redirected to `<userData>/logs/backend.log`), polls health, and requests graceful shutdown on exit (plus `PR_SET_PDEATHSIG` backstop on unix). Data lives in the Electron-era user data dir (`%APPDATA%\XControl` / `~/Library/Application Support/XControl` / `~/.config/XControl`) for seamless migration. Auth: REST uses `Authorization: Bearer`; WebSocket uses `?access_token=` (browser WS API cannot set headers). In-app updates (stable channel via GitHub Releases `latest.json`) support Windows NSIS / macOS / AppImage; deb/rpm users update manually. Commands: `npm run desktop:dev` (vite + debug build + sidecar), `npm run desktop:build`, `npm run desktop:smoke` (hidden-window smoke test asserting health/auth/CORS, prints `XCONTROL_TAURI_SMOKE_OK`). Runtime doc: `docs/DESKTOP_RUNTIME.md`; migration design: `docs/TAURI_MIGRATION.md`.
+
+Internal drag-and-drop is pointer-event based (not HTML5 DnD) because Tauri's `dragDropEnabled` intercepts the webview drag handler: see `web/src/hooks/usePointerDrag.ts` + `web/src/lib/dragRegistry.ts` (`data-drag-payload` attributes + elementFromPoint hit-testing). External file drag-in uses Tauri `onDragDropEvent` (real OS paths); drag-out materializes remote files via the Rust `sftp_drag_out` command then the crabnebula `tauri-plugin-drag` plugin.
 
 ## UI 设计规范
 

@@ -80,9 +80,9 @@ SQLite with 5 auto-migrated tables on startup: `groups` (nested via `parent_id`,
 
 JSON messages with `type` field: `input`, `output`, `resize`, `exit`, `error`, `ping`, `pong`, `auth`, `metadata`. Binary frames are reserved for future protocol extensions.
 
-## Desktop Packaging (Electron) — `electron/`
+## Desktop Packaging (Tauri 2) — `src-tauri/`
 
-The `electron/` directory contains an Electron wrapper for building desktop applications. The Go backend binary embeds the frontend static files via `//go:embed` (production build). Build scripts: `build.sh` (Linux/macOS/Windows), `build.ps1` (Windows). See `electron/README.md` for details.
+The `src-tauri/` directory contains the Tauri 2 desktop runtime (tauri branch; replaced the old `electron/` wrapper). The Rust shell spawns the `xcontrol-server` Go sidecar (bundled via `externalBin`, env-driven config) on a free loopback port with a per-process access token, polls health, and requests graceful shutdown on exit. Frontend assets are embedded via `tauri.conf.json` `frontendDist: ../server/web_dist` (shared with the Go `//go:embed` standalone-server mode). In-app updates use the stable channel (GitHub Releases `latest.json`). Commands: `npm run desktop:dev` / `desktop:build` / `desktop:smoke`. See `docs/DESKTOP_RUNTIME.md` and `docs/TAURI_MIGRATION.md` for details.
 
 ## UI 设计规范
 

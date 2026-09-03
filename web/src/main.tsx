@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { invoke } from '@tauri-apps/api/core'
 import { initDesktop, isTauri } from '@/lib/desktop'
+import { scheduleSilentUpdateCheck } from '@/lib/updater'
 import './index.css'
 import '@xterm/xterm/css/xterm.css'
 
@@ -30,6 +31,8 @@ async function bootstrap() {
   // 注意窗口此时 visible:false，rAF 在隐藏窗口中可能被节流，故用 setTimeout。
   if (isTauri()) {
     setTimeout(() => void invoke('frontend_ready'), 0)
+    // 启动静默检查更新（延迟 10s，不抢启动带宽）
+    scheduleSilentUpdateCheck()
   }
 }
 

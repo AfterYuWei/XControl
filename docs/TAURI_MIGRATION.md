@@ -1,6 +1,6 @@
 # XControl 桌面端 Electron → Tauri 2 迁移设计方案
 
-> 状态：已评审（2026-09-03），作为实施依据；**P0（脚手架+CI）/ P1（通信桥）/ P2（窗口与系统能力）/ P3（拖拽重构）已实施并通过端到端验证**（tauri 分支）
+> 状态：已评审（2026-09-03），作为实施依据；**P0–P4 全部阶段已实施**（tauri 分支，含 updater / CI 收尾 / 文档重写 / electron 移除），待真机安装验证后合并回 main
 > 范围：桌面打包层从 Electron 切换到 Tauri 2；`web/` 与 `server/` 业务逻辑不变
 > 关联文档：`docs/DESKTOP_RUNTIME.md`（迁移完成后重写为 Tauri 版）、`docs/DEVELOPMENT.md`
 

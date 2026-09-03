@@ -8,6 +8,7 @@
 // 浏览器模式（dev 由 Vite 代理 / 独立服务器模式同源直连）下所有函数均为直通行为。
 
 import { invoke } from '@tauri-apps/api/core'
+import { openUrl } from '@tauri-apps/plugin-opener'
 
 interface BackendInfo {
   port: number
@@ -76,4 +77,42 @@ async function migrateElectronSettings(): Promise<void> {
   } catch {
     // 迁移失败不阻塞启动，保持默认设置
   }
+}
+
+// ─── P2：系统能力（外链 / 磁盘保存，方案 §6.4/§6.1） ────────────────────────
+
+/**
+ * 在系统默认浏览器打开外部链接（等价 Electron shell.openExternal）。
+ * 终端 OSC 8/WebLinks 超链接与 OAuth 授权弹窗均走此处；
+ * 浏览器模式退化为 window.open。
+ */
+export async function openExternal(url: string): Promise<void> {
+  if (isTauri()) {
+    await openUrl(url)
+  } else {
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+}
+
+/**
+ * 桌面端将后端文件保存到磁盘：Rust 侧流式拉取（Bearer）+ 系统保存对话框，
+ * 文件内容不经过 IPC。返回最终保存路径；用户取消返回 null。
+ * 用于备份导出等（WKWebView/WebKitGTK 下 blob + <a download> 不可靠）。
+ */
+export async function saveApiFileToDisk(
+  apiPath: string,
+  suggestedName: string,
+): Promise<string | null> {
+  return await invoke<string | null>('save_url_to_disk', { apiPath, suggestedName })
+}
+
+/**
+ * 桌面端将前端生成的文本内容（如私钥）保存到磁盘。返回保存路径；取消返回 null。
+ */
+export async function saveTextToDisk(
+  content: string,
+  suggestedName: string,
+): Promise<string | null> {
+  const bytes = Array.from(new TextEncoder().encode(content))
+  return await invoke<string | null>('save_blob_to_disk', { bytes, suggestedName })
 }

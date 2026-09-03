@@ -10,6 +10,7 @@ import { vaultApi } from '@/api/vault'
 import { toast } from 'sonner'
 import { useVaultStore } from '@/store/vault'
 import { buildPrivateKeyFilename, buildPublicKeyImportCommand } from '@/lib/vaultKeyActions'
+import { isTauri, saveTextToDisk } from '@/lib/desktop'
 import { normalizeVaultUsername } from '@/lib/vaultUsername'
 import { VAULT_TYPE_LABELS, type VaultCreateRequest, type VaultItem, type VaultType } from '@/types/vault'
 import { VaultPasswordGenerator } from './VaultPasswordGenerator'
@@ -257,10 +258,21 @@ function VaultFormDialogInner({ item, onOpenChange }: VaultFormDialogInnerProps)
 
   const canSubmit = !loading && (!isEditing || !isSameForm(form, initialForm))
 
-  const handleExportPrivateKey = () => {
+  const handleExportPrivateKey = async () => {
     const privateKey = form.private_key?.trim()
     if (!privateKey) {
       toast.warning('暂无可导出的私钥')
+      return
+    }
+
+    // 桌面端（Tauri）：Rust 侧系统保存对话框（blob 锚点在 WKWebView/WebKitGTK 下不可靠）
+    if (isTauri()) {
+      try {
+        const saved = await saveTextToDisk(`${privateKey}\n`, buildPrivateKeyFilename(form.name))
+        if (saved) toast.success('私钥文件已导出')
+      } catch (err) {
+        toast.error('导出失败', { description: err instanceof Error ? err.message : String(err) })
+      }
       return
     }
 

@@ -47,11 +47,17 @@ fn desktop_run() {
                 let _ = window.set_focus();
             }
         }))
+        // 外部链接走系统默认浏览器（等价 Electron shell.openExternal + setWindowOpenHandler）
+        .plugin(tauri_plugin_opener::init())
+        // 保存文件对话框（save_url_to_disk / save_blob_to_disk 命令的 Rust 侧 API）
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             commands::get_backend_info,
             commands::frontend_ready,
             commands::get_platform,
-            commands::migrate_electron_settings
+            commands::migrate_electron_settings,
+            commands::save_url_to_disk,
+            commands::save_blob_to_disk
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

@@ -159,15 +159,17 @@ export function Layout() {
 
   return (
     <div className="xcontrol-app" role="application" aria-label="Terminal">
-      {/* Header — 自定义标题栏：棕色底、可拖拽窗口、搜索框居中、右侧窗口控制按钮。
-          桌面环境(framework: false)下作为窗口标题栏；浏览器下仅作普通顶栏。 */}
+      {/* Header — 自定义标题栏：主题色底、可拖拽窗口、搜索框居中、右侧窗口控制按钮。
+          桌面环境(decorations:false)下作为窗口标题栏；浏览器下仅作普通顶栏。
+          Tauri 拖拽：header 与各容器加 data-tauri-drag-region（仅对该元素自身的
+          mousedown 生效），按钮/输入框等子元素不受影响。 */}
       <header
         className={`xcontrol-header titlebar ${desktop ? 'is-desktop' : ''} ${mac ? 'is-mac' : ''}`}
+        data-tauri-drag-region={desktop || undefined}
       >
         {/* 左：折叠侧边栏 + SFTP。
-            容器本身不加 no-drag，保留空白区域可拖拽窗口；
-            具体按钮在 CSS 中声明 no-drag 以恢复点击。 */}
-        <div className="header-left">
+            容器空白区域可拖拽窗口；具体按钮无 drag 属性保持可点击。 */}
+        <div className="header-left" data-tauri-drag-region={desktop || undefined}>
           <button
             className="hdr-icon-btn"
             title={sidebarCollapsed ? '展开侧边栏 (⌘B)' : '折叠侧边栏 (⌘B)'}
@@ -207,8 +209,8 @@ export function Layout() {
           </button>
         </div>
 
-        {/* 中：全局搜索服务器与 Vault 密钥。搜索框容器声明 no-drag，输入框可正常聚焦输入 */}
-        <div className="header-center">
+        {/* 中：全局搜索服务器与 Vault 密钥。容器空白区域可拖拽，搜索框本身正常交互 */}
+        <div className="header-center" data-tauri-drag-region={desktop || undefined}>
           <div ref={searchRef} className="header-search">
             <Search size={14} className="header-search-icon" />
             <input
@@ -295,8 +297,8 @@ export function Layout() {
           </div>
         </div>
 
-        {/* 右：设置 + 主题切换 */}
-        <div className="header-right">
+        {/* 右：设置 + 主题切换。容器空白区域可拖拽 */}
+        <div className="header-right" data-tauri-drag-region={desktop || undefined}>
           <ThemeToggle className="hdr-icon-btn" showLabel buttonLabel="主题" />
           <button
             className="hdr-icon-btn"

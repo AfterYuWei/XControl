@@ -239,6 +239,12 @@ fn wait_until_healthy(sp: &SpawnedBackend) -> Result<(), String> {
     }
 }
 
+/// 当前后端连接信息（端口 + 令牌）；后端未就绪时为 None。
+/// 供保存文件等命令直接访问 sidecar（方案 §5.5 save_url_to_disk）。
+pub fn current_info() -> Option<BackendInfo> {
+    RUNTIME.get().map(|runtime| runtime.info.clone())
+}
+
 /// 停止后端：POST /api/shutdown（Bearer）→ 等待 ≤5s → 强杀。幂等，可安全重复调用。
 pub fn shutdown_current() {
     let mut slot = child_slot().lock().unwrap();

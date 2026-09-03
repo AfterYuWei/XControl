@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { toast } from '@/components/ui/toast'
+import { openExternal } from '@/lib/desktop'
 import { syncApi } from '@/api/sync'
 import type { ProviderConfig, ProviderType, SyncProviderMeta } from '@/types/sync'
 import { PROVIDER_TYPE_LABELS } from '@/types/sync'
@@ -83,7 +84,8 @@ export function ProviderSection({ providers, onChanged }: Props) {
   const handleAuthorize = async (p: SyncProviderMeta) => {
     try {
       const { url } = await syncApi.oauthURL(p.type as 'gdrive' | 'onedrive', p.id)
-      window.open(url, '_blank', 'width=600,height=700')
+      // 桌面端走系统默认浏览器（等价 Electron 行为：OAuth 回调页在外部浏览器完成）
+      await openExternal(url)
       toast.info('请在打开的页面中完成授权，完成后回到此处刷新')
       const timer = setInterval(() => void (async () => {
         try {

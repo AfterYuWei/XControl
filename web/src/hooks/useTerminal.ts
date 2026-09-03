@@ -5,6 +5,7 @@ import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { getTerminalTheme } from '@/lib/terminalThemes'
+import { openExternal } from '@/lib/desktop'
 import { toast } from 'sonner'
 
 /**
@@ -28,11 +29,11 @@ interface UseTerminalOptions {
   onResize?: (cols: number, rows: number) => void // 终端尺寸变化时调用（字体变化、容器resize）
 }
 
-// 打开终端内链接：浏览器里开新标签；Electron 里由主进程
-// setWindowOpenHandler 收到真实 URL 后转给系统默认浏览器。
+// 打开终端内链接：桌面端由 opener 插件转系统默认浏览器（等价 Electron
+// setWindowOpenHandler + shell.openExternal），浏览器开新标签。
 const openLink = (uri: string) => {
   if (/^https?:\/\//i.test(uri)) {
-    window.open(uri, '_blank', 'noopener,noreferrer')
+    void openExternal(uri).catch(() => {})
   }
 }
 

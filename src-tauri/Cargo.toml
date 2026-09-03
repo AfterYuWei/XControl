@@ -14,6 +14,13 @@ rust-version = "1.77.2"
 name = "xcontrol_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# `tauri build` 编译时自动启用该 feature：webview 使用打包资产（frontendDist，
+# tauri://localhost 等自定义协议）；未启用时 tauri 视为 dev 模式并加载 devUrl。
+# 纯 cargo build --release 想要生产行为需显式 --features custom-protocol。
+# DO NOT REMOVE!!
+custom-protocol = ["tauri/custom-protocol"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -26,6 +33,10 @@ dirs = "5"
 getrandom = "0.3"
 # 异步命令（get_backend_info）的阻塞等待轮询
 tokio = { version = "1", features = ["time"] }
+
+[target.'cfg(unix)'.dependencies]
+# PR_SET_PDEATHSIG：父进程死亡时由内核向 sidecar 发 SIGTERM，杜绝孤儿进程
+libc = "0.2"
 
 [profile.release]
 strip = true

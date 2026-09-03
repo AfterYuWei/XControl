@@ -1,4 +1,4 @@
-import type { APIError } from './client'
+import { authedFetch, type APIError } from './client'
 
 export type CredentialMode = 'none' | 'encrypted' | 'plain'
 export type ImportStrategy = 'skip' | 'overwrite' | 'regenerate'
@@ -36,7 +36,7 @@ export async function exportBackup(
 ): Promise<void> {
   const params = new URLSearchParams({ credentials: mode })
   if (password) params.set('password', password)
-  const res = await fetch(`/api/backup/export?${params}`)
+  const res = await authedFetch(`/api/backup/export?${params}`)
   if (!res.ok) return parseError(res)
 
   const blob = await res.blob()
@@ -64,7 +64,7 @@ async function upload<T>(
   for (const [k, v] of Object.entries(fields)) {
     if (v) form.append(k, v)
   }
-  const res = await fetch(path, { method: 'POST', body: form })
+  const res = await authedFetch(path, { method: 'POST', body: form })
   if (!res.ok) return parseError(res)
   return res.json()
 }

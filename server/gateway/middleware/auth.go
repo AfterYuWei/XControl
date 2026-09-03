@@ -43,6 +43,10 @@ func tokenMatches(r *http.Request, expected string) bool {
 		token = strings.TrimPrefix(auth, "Bearer ")
 	} else if cookie, err := r.Cookie(accessTokenCookie); err == nil {
 		token = cookie.Value
+	} else if query := r.URL.Query().Get("access_token"); query != "" {
+		// 浏览器 WebSocket API 无法携带自定义 Header，桌面端（Tauri）WS 鉴权走 query 参数。
+		// 优先级：Header > Cookie > Query；Logger 中间件只记录 path 不含 query，令牌不落日志。
+		token = query
 	}
 	return subtle.ConstantTimeCompare([]byte(token), []byte(expected)) == 1
 }

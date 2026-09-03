@@ -4941,6 +4941,7 @@ version = "1.0.0"
 dependencies = [
  "dirs 5.0.1",
  "getrandom 0.3.4",
+ "libc",
  "serde",
  "serde_json",
  "tauri",

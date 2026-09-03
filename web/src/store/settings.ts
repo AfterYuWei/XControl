@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware'
+import { createJSONStorage, persist } from 'zustand/middleware'
 
 type Theme = 'light' | 'dark' | 'system'
 
@@ -61,26 +61,10 @@ function applyTheme(theme: Theme) {
   root.classList.add(resolved)
 }
 
-function createSettingsStorage(): StateStorage {
-  if (typeof window !== 'undefined' && window.xcontrol?.desktop) {
-    return {
-      getItem: (name) => window.xcontrol?.storage.getItem(name) ?? null,
-      setItem: (name, value) => {
-        window.xcontrol?.storage.setItem(name, value)
-      },
-      removeItem: (name) => {
-        window.xcontrol?.storage.removeItem(name)
-      },
-    }
-  }
-
-  return {
-    getItem: (name) => localStorage.getItem(name),
-    setItem: (name, value) => localStorage.setItem(name, value),
-    removeItem: (name) => localStorage.removeItem(name),
-  }
-}
-
+// Tauri 桌面端 origin 稳定（tauri://localhost 等），localStorage 可直接持久化。
+// Electron 时代因后端端口每次启动变化导致 origin 不稳，才走 IPC settings.json；
+// 旧 Electron 用户的设置由 lib/desktop.ts 的 initDesktop 一次性迁移到 localStorage。
+//
 // Watch OS-level theme changes so "system" mode reacts in real time.
 // 关键：系统主题变化时不仅要切换 DOM class，还要触发 store 状态更新，
 // 这样依赖 useSettingsStore 的组件（如 ThemeToggle 图标）才能重渲染。
@@ -151,7 +135,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: 'xcontrol-settings',
-      storage: createJSONStorage(createSettingsStorage),
+      storage: createJSONStorage(() => localStorage),
     }
   )
 )

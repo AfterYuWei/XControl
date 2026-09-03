@@ -1,4 +1,4 @@
-import { api } from './client'
+import { api, authedFetch } from './client'
 import type {
   SftpEntry,
   TransferTask,
@@ -112,7 +112,7 @@ export const sftpApi = {
     destDir: string,
     conflictResolution: ConflictResolution = 'ask',
   ): Promise<SftpMoveResponse> => {
-    const res = await fetch(`/api/sftp/sessions/${sessionId}/move`, {
+    const res = await authedFetch(`/api/sftp/sessions/${sessionId}/move`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ paths, dest_dir: destDir, conflict_resolution: conflictResolution }),
@@ -134,7 +134,7 @@ export const sftpApi = {
     }
     formData.append('dest_dir', destDir)
     formData.append('overwrite', String(overwrite))
-    return fetch(`/api/sftp/sessions/${sessionId}/upload`, {
+    return authedFetch(`/api/sftp/sessions/${sessionId}/upload`, {
       method: 'POST',
       body: formData,
     }).then(async (res) => {
@@ -154,7 +154,7 @@ export const sftpApi = {
 
   /** Fetch the downloaded file blob. Call after the task status is "completed". */
   fetchDownloadFile: (taskId: string) =>
-    fetch(`/api/sftp/transfers/${taskId}/file`).then((res) => {
+    authedFetch(`/api/sftp/transfers/${taskId}/file`).then((res) => {
       if (!res.ok) throw new Error(`download failed: ${res.statusText}`)
       return res.blob()
     }),

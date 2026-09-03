@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { wsUrl } from '@/lib/desktop'
 import { useServerDetailStore } from '@/store/serverDetail'
 import type { ServerInfo, ServerMetrics } from '@/api/serverDetail'
 
@@ -31,14 +32,14 @@ export function useServerMetrics(profileId: string, active: boolean) {
       return
     }
 
+    const activeSessionId = sessionId
     let disposed = false
 
     function connect() {
       if (disposed) return
 
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const wsUrl = `${protocol}//${window.location.host}/api/server/ws?session_id=${sessionId}`
-      const ws = new WebSocket(wsUrl)
+      const url = wsUrl('/api/server/ws', { session_id: activeSessionId })
+      const ws = new WebSocket(url)
       wsRef.current = ws
 
       ws.onopen = () => {

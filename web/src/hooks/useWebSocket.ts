@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
+import { wsUrl } from '@/lib/desktop'
 import type { WSMessage } from '@/types/ws'
 
 type WSStatus = 'connecting' | 'connected' | 'disconnected'
@@ -29,8 +30,8 @@ export function useWebSocket(options: UseWebSocketOptions) {
     if (!sessionId) return
 
     const connect = () => {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const url = `${protocol}//${window.location.host}/ws?session_id=${sessionId}`
+      // 浏览器：同源（Vite 代理）；Tauri：ws://127.0.0.1:<port> + access_token（见 lib/desktop.ts）
+      const url = wsUrl('/ws', { session_id: sessionId })
 
       const ws = new WebSocket(url)
       wsRef.current = ws

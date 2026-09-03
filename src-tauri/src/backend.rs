@@ -79,17 +79,42 @@ impl Drop for ExitGuard {
     }
 }
 
-/// 启动编排入口（在 setup 的独立线程中调用）。
-pub fn orchestrate(app: &AppHandle, state: BackendState, smoke: bool) {
-    match start_backend(app) {
-        Ok((info, origin)) => {
-            let _ = RUNTIME.set(Runtime {
-                info: info.clone(),
-                origin,
-            });
-            state.set(Ok(info.clone()));
+/// spawn 阶段的产物（跨线程传递给 orchestrate 做健康轮询）。
+pub struct SpawnedBackend {
+    info: BackendInfo,
+    origin: String,
+    log_path: PathBuf,
+}
+
+/// 启动编排入口（在工作线程中调用，接收主线程 spawn 的结果做健康轮询）。
+pub fn orchestrate(
+    app: &AppHandle,
+    state: BackendState,
+    spawned: Result<SpawnedBackend, String>,
+    smoke: bool,
+) {
+    let sp = match spawned {
+        Ok(sp) => sp,
+        Err(err) => {
+            eprintln!("[backend] 启动失败: {err}");
+            state.set(Err(err));
             if smoke {
-                match run_smoke_checks(&info) {
+                shutdown_current();
+                std::process::exit(1);
+            }
+            return;
+        }
+    };
+
+    match wait_until_healthy(&sp) {
+        Ok(()) => {
+            let _ = RUNTIME.set(Runtime {
+                info: sp.info.clone(),
+                origin: sp.origin,
+            });
+            state.set(Ok(sp.info.clone()));
+            if smoke {
+                match run_smoke_checks(&sp.info) {
                     Ok(()) => {
                         shutdown_current();
                         println!("{SMOKE_OK_MARKER}");
@@ -105,7 +130,7 @@ pub fn orchestrate(app: &AppHandle, state: BackendState, smoke: bool) {
         }
         Err(err) => {
             eprintln!("[backend] 启动失败: {err}");
-            state.set(Err(err.to_string()));
+            state.set(Err(err));
             if smoke {
                 shutdown_current();
                 std::process::exit(1);
@@ -114,7 +139,12 @@ pub fn orchestrate(app: &AppHandle, state: BackendState, smoke: bool) {
     }
 }
 
-fn start_backend(app: &AppHandle) -> Result<(BackendInfo, String), Box<dyn std::error::Error>> {
+/// spawn sidecar：必须在**主线程**（Tauri 事件循环线程）调用。
+///
+/// 原因：unix 下 PR_SET_PDEATHSIG 的语义是「父**线程**死亡时发信号」，
+/// 若在工作线程 spawn，该线程结束（健康检查完成后即返回）就会误杀 sidecar；
+/// 主线程存活于整个应用生命周期，正好匹配。
+pub fn spawn_backend(app: &AppHandle) -> Result<SpawnedBackend, Box<dyn std::error::Error>> {
     // 1. webview origin（决定后端 CORS / WS 放行名单，方案 §5.2）
     let origin = webview_origin(app)?;
 
@@ -152,29 +182,58 @@ fn start_backend(app: &AppHandle) -> Result<(BackendInfo, String), Box<dyn std::
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        // 父进程（无论以何种方式退出，含 SIGKILL）死亡时，内核向 sidecar 发送
+        // SIGTERM，Go 侧按正常信号路径优雅关闭 —— 兜底所有 Rust 侧清理逻辑
+        // 来不及执行的场景（如被 timeout/SIGKILL 强杀）。
+        // SAFETY: pre_exec 在 fork 与 exec 之间的子进程上下文执行，
+        // prctl 为原始 syscall，async-signal-safe。
+        unsafe {
+            cmd.pre_exec(|| {
+                if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
     let child = cmd.spawn()?;
     *child_slot().lock().unwrap() = Some(child);
 
-    // 5. 健康轮询（200ms × 15s；子进程提前退出则立即失败）
+    Ok(SpawnedBackend {
+        info: BackendInfo { port, token },
+        origin,
+        log_path,
+    })
+}
+
+/// 健康轮询（200ms × 15s；子进程提前退出则立即失败）。
+fn wait_until_healthy(sp: &SpawnedBackend) -> Result<(), String> {
     let deadline = Instant::now() + Duration::from_secs(15);
     loop {
-        if let Ok(response) = http::request(port, "GET", "/api/health", None, None, None) {
+        if let Ok(response) = http::request(sp.info.port, "GET", "/api/health", None, None, None) {
             if response.status == 204 {
-                return Ok((BackendInfo { port, token }, origin));
+                return Ok(());
             }
         }
         if let Ok(mut slot) = child_slot().try_lock() {
             if let Some(child) = slot.as_mut() {
                 if child.try_wait().ok().flatten().is_some() {
                     *slot = None;
-                    return Err(
-                        format!("后端进程提前退出，请查看日志：{}", log_path.display()).into(),
-                    );
+                    return Err(format!(
+                        "后端进程提前退出，请查看日志：{}",
+                        sp.log_path.display()
+                    ));
                 }
             }
         }
         if Instant::now() > deadline {
-            return Err(format!("后端启动超时（15s），请查看日志：{}", log_path.display()).into());
+            return Err(format!(
+                "后端启动超时（15s），请查看日志：{}",
+                sp.log_path.display()
+            ));
         }
         std::thread::sleep(Duration::from_millis(200));
     }

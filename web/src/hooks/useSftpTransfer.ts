@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { wsUrl } from '@/lib/desktop'
 
 /** WebSocket message from the SFTP transfer progress channel. */
 interface SftpWsMessage {
@@ -57,9 +58,9 @@ export function useSftpTransfer(sessionId: string | null, callbacks: SftpTransfe
     function connect() {
       if (disposed) return
 
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const wsUrl = `${protocol}//${window.location.host}/api/sftp/ws?session_id=${encodeURIComponent(activeSessionId)}`
-      const ws = new WebSocket(wsUrl)
+      // URLSearchParams 自动做 URL 编码（原 encodeURIComponent 逻辑已包含）
+      const url = wsUrl('/api/sftp/ws', { session_id: activeSessionId })
+      const ws = new WebSocket(url)
       wsRef.current = ws
 
       ws.onmessage = (event) => {

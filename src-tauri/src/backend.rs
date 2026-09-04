@@ -119,6 +119,11 @@ pub fn orchestrate(
             if smoke {
                 match run_smoke_checks(&sp.info) {
                     Ok(()) => {
+                        if let Err(err) = write_smoke_marker() {
+                            eprintln!("[smoke] 失败: {err}");
+                            shutdown_current();
+                            std::process::exit(1);
+                        }
                         shutdown_current();
                         println!("{SMOKE_OK_MARKER}");
                         app.exit(0);
@@ -315,6 +320,20 @@ fn run_smoke_checks(info: &BackendInfo) -> Result<(), String> {
         Some(allowed) if allowed == origin => Ok(()),
         other => Err(format!("CORS 响应异常: {other:?}")),
     }
+}
+
+/// GUI bundle 的 stdout 在部分 macOS runner 上不会稳定传回启动 shell。
+/// CI 可通过环境变量提供临时文件路径，以文件作为可靠的成功信号；普通启动不写文件。
+fn write_smoke_marker() -> Result<(), String> {
+    let Some(path) = std::env::var_os("XCONTROL_SMOKE_MARKER_PATH") else {
+        return Ok(());
+    };
+    std::fs::write(&path, format!("{SMOKE_OK_MARKER}\n")).map_err(|err| {
+        format!(
+            "无法写入 smoke 成功标记 {}: {err}",
+            PathBuf::from(path).display()
+        )
+    })
 }
 
 /// 从主窗口 URL 推导 origin（scheme://host[:port]）。

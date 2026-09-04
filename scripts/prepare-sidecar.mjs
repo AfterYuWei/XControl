@@ -10,7 +10,7 @@
 // - sidecar 用 -tags prod 构建：配置完全由环境变量驱动（dev 构建会强制 debug 日志，见方案 §1.9）
 // - externalBin 要求二进制带 target-triple 后缀，如 xcontrol-server-x86_64-pc-windows-msvc.exe
 import { execSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -62,4 +62,8 @@ mkdirSync(binariesDir, { recursive: true })
 const source = join(root, `server/xcontrol-server${exeSuffix}`)
 const target = join(binariesDir, `xcontrol-server-${triple}${exeSuffix}`)
 copyFileSync(source, target)
+if (process.platform !== 'win32') {
+  // copyFileSync 不保证复制全部元数据；externalBin 在 macOS/Linux 必须保留执行位。
+  chmodSync(target, 0o755)
+}
 console.log(`[prepare-sidecar] sidecar 就绪 → src-tauri/binaries/xcontrol-server-${triple}${exeSuffix}`)

@@ -228,11 +228,26 @@ jobs:
         shell: bash
         timeout-minutes: 2
         run: |
-          APP_BIN="src-tauri/target/release/bundle/macos/XControl.app/Contents/MacOS"
-          test -x "$APP_BIN/XControl"
-          test -x "$APP_BIN/xcontrol-server"
+          APP_ROOT="src-tauri/target/release/bundle/macos/XControl.app"
+          APP_BIN="$APP_ROOT/Contents/MacOS"
+          APP_EXECUTABLE="$APP_BIN/XControl"
+          SIDECAR="$APP_BIN/xcontrol-server"
+          MARKER="$RUNNER_TEMP/xcontrol-tauri-smoke-ok"
+
+          echo "==> macOS app bundle executables"
+          ls -la "$APP_BIN"
+          if [ ! -x "$APP_EXECUTABLE" ]; then
+            echo "macOS app executable is missing or not executable: $APP_EXECUTABLE" >&2
+            exit 1
+          fi
+          if [ ! -x "$SIDECAR" ]; then
+            echo "macOS bundled sidecar is missing or not executable: $SIDECAR" >&2
+            exit 1
+          fi
+
+          rm -f "$MARKER"
           set +e
-          OUTPUT="$("$APP_BIN/XControl" --smoke-test 2>&1)"
+          OUTPUT="$(XCONTROL_SMOKE_MARKER_PATH="$MARKER" "$APP_EXECUTABLE" --smoke-test 2>&1)"
           STATUS=$?
           set -e
           echo "$OUTPUT"
@@ -240,7 +255,10 @@ jobs:
             echo "macOS app bundle smoke test failed with exit code $STATUS" >&2
             exit "$STATUS"
           fi
-          grep -q "XCONTROL_TAURI_SMOKE_OK" <<< "$OUTPUT"
+          if ! grep -qx "XCONTROL_TAURI_SMOKE_OK" "$MARKER"; then
+            echo "macOS app exited successfully without completing smoke checks" >&2
+            exit 1
+          fi
 
       # 统一产物上传：安装包 + 更新产物（.sig / macOS app.tar.gz，签名启用时才有）
       - name: Upload build artifacts

@@ -17,6 +17,11 @@ async function bootstrap() {
     await initDesktop()
   } catch (err) {
     renderFatal(err instanceof Error ? err.message : String(err))
+    // 主窗口初始为 visible:false。后端启动失败时也必须主动显示窗口，
+    // 否则用户只能看到进程存在，却看不到上面的诊断信息。
+    if (isTauri()) {
+      await invoke('frontend_ready').catch(() => undefined)
+    }
     return
   }
 

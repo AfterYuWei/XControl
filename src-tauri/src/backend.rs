@@ -10,7 +10,7 @@
 
 use std::{
     net::TcpListener,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{Arc, Mutex, OnceLock},
     time::{Duration, Instant},
@@ -144,7 +144,7 @@ pub fn orchestrate(
 
 /// spawn sidecar：必须在**主线程**（Tauri 事件循环线程）调用。
 ///
-/// 原因：unix 下 PR_SET_PDEATHSIG 的语义是「父**线程**死亡时发信号」，
+/// 原因：Linux 下 PR_SET_PDEATHSIG 的语义是「父**线程**死亡时发信号」，
 /// 若在工作线程 spawn，该线程结束（健康检查完成后即返回）就会误杀 sidecar；
 /// 主线程存活于整个应用生命周期，正好匹配。
 pub fn spawn_backend(app: &AppHandle) -> Result<SpawnedBackend, Box<dyn std::error::Error>> {
@@ -163,7 +163,7 @@ pub fn spawn_backend(app: &AppHandle) -> Result<SpawnedBackend, Box<dyn std::err
     let log_path = logs_dir.join("backend.log");
 
     // 4. spawn（stdio 追加重定向到日志文件；Windows 隐藏控制台窗口）
-    let exe = backend_executable(app)?;
+    let exe = backend_executable()?;
     let log_file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -185,7 +185,7 @@ pub fn spawn_backend(app: &AppHandle) -> Result<SpawnedBackend, Box<dyn std::err
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     {
         use std::os::unix::process::CommandExt;
         // 父进程（无论以何种方式退出，含 SIGKILL）死亡时，内核向 sidecar 发送
@@ -352,10 +352,12 @@ pub fn user_data_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
 }
 
 /// sidecar 可执行文件路径：
-/// - 打包模式：externalBin 资源（保留 target-triple 后缀，方案 §1.8）
+/// - 打包模式：externalBin 的源文件带 target-triple 后缀，但 Tauri 在复制到
+///   主程序同目录时会移除该后缀，因此运行时文件名固定为 xcontrol-server[.exe]
+///   （Windows 安装目录、macOS Contents/MacOS、Linux /usr/bin / AppImage usr/bin）
 /// - 开发模式：XCONTROL_SERVER_PATH 环境变量，或仓库内 server/ 构建产物
 ///   （CARGO_MANIFEST_DIR 编译期确定，不依赖运行时 cwd）
-fn backend_executable(app: &AppHandle) -> Result<PathBuf, Box<dyn std::error::Error>> {
+fn backend_executable() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let exe_suffix = std::env::consts::EXE_SUFFIX;
     if cfg!(debug_assertions) {
         if let Some(path) = std::env::var_os("XCONTROL_SERVER_PATH") {
@@ -376,55 +378,22 @@ fn backend_executable(app: &AppHandle) -> Result<PathBuf, Box<dyn std::error::Er
         }
         return Ok(path);
     }
-    let path = app.path().resource_dir()?.join(format!(
-        "xcontrol-server-{}{}",
-        target_triple(),
-        exe_suffix
-    ));
+    let path = bundled_backend_path(&std::env::current_exe()?)?;
     if !path.exists() {
         return Err(format!("未找到打包的后端二进制: {}", path.display()).into());
     }
     Ok(path)
 }
 
-/// 编译期确定当前 target triple（externalBin 打包后保留该后缀）。
-/// 三平台均为本机构建，覆盖全部实际组合。
-fn target_triple() -> &'static str {
-    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-    {
-        "x86_64-pc-windows-msvc"
-    }
-    #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
-    {
-        "aarch64-pc-windows-msvc"
-    }
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    {
-        "aarch64-apple-darwin"
-    }
-    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-    {
-        "x86_64-apple-darwin"
-    }
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    {
-        "x86_64-unknown-linux-gnu"
-    }
-    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-    {
-        "aarch64-unknown-linux-gnu"
-    }
-    #[cfg(not(any(
-        all(target_os = "windows", target_arch = "x86_64"),
-        all(target_os = "windows", target_arch = "aarch64"),
-        all(target_os = "macos", target_arch = "aarch64"),
-        all(target_os = "macos", target_arch = "x86_64"),
-        all(target_os = "linux", target_arch = "x86_64"),
-        all(target_os = "linux", target_arch = "aarch64"),
-    )))]
-    {
-        "unsupported-target"
-    }
+fn bundled_backend_path(app_executable: &Path) -> Result<PathBuf, &'static str> {
+    let app_dir = app_executable
+        .parent()
+        .ok_or("无法确定桌面主程序目录")?;
+    Ok(app_dir.join(bundled_backend_filename()))
+}
+
+fn bundled_backend_filename() -> String {
+    format!("xcontrol-server{}", std::env::consts::EXE_SUFFIX)
 }
 
 /// 申请一个空闲回环端口（bind :0 后释放，与 Electron pickFreePort 一致）。
@@ -446,9 +415,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn target_triple_is_known() {
-        assert_ne!(target_triple(), "unsupported-target");
-        assert!(target_triple().contains('-'));
+    fn bundled_backend_filename_omits_target_triple() {
+        let filename = bundled_backend_filename();
+        assert_eq!(
+            filename,
+            format!("xcontrol-server{}", std::env::consts::EXE_SUFFIX)
+        );
+        assert!(!filename.contains(std::env::consts::ARCH));
+    }
+
+    #[test]
+    fn bundled_backend_is_next_to_main_executable() {
+        let app = Path::new("/Applications/XControl.app/Contents/MacOS/XControl");
+        let sidecar = bundled_backend_path(app).unwrap();
+        assert_eq!(
+            sidecar,
+            app.parent().unwrap().join(bundled_backend_filename())
+        );
     }
 
     #[test]

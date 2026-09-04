@@ -71,7 +71,7 @@ fn desktop_run() {
             let handle = app.handle().clone();
             let state = backend::BackendState::new();
             app.manage(state.clone());
-            // spawn 必须在主线程执行（PR_SET_PDEATHSIG 绑定父线程，见 backend.rs），
+            // Linux 下 spawn 必须在主线程执行（PR_SET_PDEATHSIG 绑定父线程，见 backend.rs），
             // 健康轮询/smoke 检查放独立线程不阻塞 setup；
             // 前端通过 get_backend_info 阻塞等待就绪（方案 §5.2）。
             let spawned = backend::spawn_backend(app.handle()).map_err(|err| err.to_string());

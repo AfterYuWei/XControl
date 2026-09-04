@@ -13,7 +13,7 @@ Tauri 主进程 (Rust, src-tauri/)
    4. 健康轮询 /api/health → 前端 invoke('get_backend_info') 取端口+令牌
    5. 前端首帧渲染完成 → invoke('frontend_ready') → 显示并最大化窗口
    6. 退出：POST /api/shutdown（Bearer）→ 等待 ≤5s → 强杀；
-      unix 下 PR_SET_PDEATHSIG 兜底（父进程被 SIGKILL 时内核发 SIGTERM）
+      Linux 下 PR_SET_PDEATHSIG 兜底（父进程被 SIGKILL 时内核发 SIGTERM）
       ▼
 WebView（tauri://localhost 等稳定 origin）
    REST: http://127.0.0.1:<port> + Authorization: Bearer <token>

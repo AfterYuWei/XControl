@@ -42,7 +42,7 @@ getrandom = "0.3"
 # 异步命令（get_backend_info）的阻塞等待轮询
 tokio = { version = "1", features = ["time"] }
 
-[target.'cfg(unix)'.dependencies]
+[target.'cfg(target_os = "linux")'.dependencies]
 # PR_SET_PDEATHSIG：父进程死亡时由内核向 sidecar 发 SIGTERM，杜绝孤儿进程
 libc = "0.2"
 

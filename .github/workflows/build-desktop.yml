@@ -198,6 +198,50 @@ jobs:
       - name: Build Tauri app
         run: npx tauri build
 
+      # 直接运行 release 二进制，覆盖 externalBin 从带 triple 的构建源文件
+      # 重命名为资源目录中 xcontrol-server.exe 后的真实启动路径。开发态
+      # cargo run 烟测不会经过这条路径，无法发现“能出包但双击无窗口”。
+      - name: Smoke test Windows release runtime
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 2
+        run: |
+          $sidecar = "src-tauri/target/release/xcontrol-server.exe"
+          if (-not (Test-Path $sidecar)) {
+            throw "Bundled sidecar was not copied to $sidecar"
+          }
+          # release 构建使用 windows GUI subsystem，不附加控制台，因此用退出码
+          # 而不是 stdout marker 判断烟测结果。
+          $process = Start-Process `
+            -FilePath "src-tauri/target/release/XControl.exe" `
+            -ArgumentList "--smoke-test" `
+            -Wait `
+            -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Windows release smoke test failed with exit code $($process.ExitCode)"
+          }
+
+      # 从最终 .app 内启动，验证 macOS externalBin 位于 Contents/MacOS，
+      # 同时覆盖 release cfg 与 sidecar 健康检查，而不只验证能否完成编译。
+      - name: Smoke test macOS app bundle
+        if: runner.os == 'macOS'
+        shell: bash
+        timeout-minutes: 2
+        run: |
+          APP_BIN="src-tauri/target/release/bundle/macos/XControl.app/Contents/MacOS"
+          test -x "$APP_BIN/XControl"
+          test -x "$APP_BIN/xcontrol-server"
+          set +e
+          OUTPUT="$("$APP_BIN/XControl" --smoke-test 2>&1)"
+          STATUS=$?
+          set -e
+          echo "$OUTPUT"
+          if [ "$STATUS" -ne 0 ]; then
+            echo "macOS app bundle smoke test failed with exit code $STATUS" >&2
+            exit "$STATUS"
+          fi
+          grep -q "XCONTROL_TAURI_SMOKE_OK" <<< "$OUTPUT"
+
       # 统一产物上传：安装包 + 更新产物（.sig / macOS app.tar.gz，签名启用时才有）
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

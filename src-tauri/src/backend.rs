@@ -386,9 +386,7 @@ fn backend_executable() -> Result<PathBuf, Box<dyn std::error::Error>> {
 }
 
 fn bundled_backend_path(app_executable: &Path) -> Result<PathBuf, &'static str> {
-    let app_dir = app_executable
-        .parent()
-        .ok_or("无法确定桌面主程序目录")?;
+    let app_dir = app_executable.parent().ok_or("无法确定桌面主程序目录")?;
     Ok(app_dir.join(bundled_backend_filename()))
 }
 

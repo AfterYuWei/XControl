@@ -42,7 +42,38 @@ pub fn request(
     origin: Option<&str>,
     body: Option<&[u8]>,
 ) -> io::Result<HttpResponse> {
-    request_ct(port, method, path, bearer, origin, body, "application/json")
+    request_timeout(
+        port,
+        method,
+        path,
+        bearer,
+        origin,
+        body,
+        Duration::from_secs(120),
+    )
+}
+
+/// 同 [`request`]，但允许调用方指定 socket 超时。退出/更新清理必须使用短超时，
+/// 防止异常 sidecar 阻塞 Windows 安装器启动。
+pub fn request_timeout(
+    port: u16,
+    method: &str,
+    path: &str,
+    bearer: Option<&str>,
+    origin: Option<&str>,
+    body: Option<&[u8]>,
+    timeout: Duration,
+) -> io::Result<HttpResponse> {
+    request_ct_timeout(
+        port,
+        method,
+        path,
+        bearer,
+        origin,
+        body,
+        "application/json",
+        timeout,
+    )
 }
 
 /// 同 [`request`]，但允许为请求体指定 Content-Type（multipart 上传等场景）。
@@ -55,12 +86,34 @@ pub fn request_ct(
     body: Option<&[u8]>,
     content_type: &str,
 ) -> io::Result<HttpResponse> {
+    request_ct_timeout(
+        port,
+        method,
+        path,
+        bearer,
+        origin,
+        body,
+        content_type,
+        Duration::from_secs(120),
+    )
+}
+
+fn request_ct_timeout(
+    port: u16,
+    method: &str,
+    path: &str,
+    bearer: Option<&str>,
+    origin: Option<&str>,
+    body: Option<&[u8]>,
+    content_type: &str,
+    timeout: Duration,
+) -> io::Result<HttpResponse> {
     let mut stream = TcpStream::connect(("127.0.0.1", port))?;
     // 创建 SSH/SFTP 会话可能需要等待网络连接超时，不能沿用健康检查级别的
     // 10 秒上限。桌面 REST 代理统一给足 120 秒，具体业务仍由 Go handler
     // 自身的 context/timeout 控制。
-    stream.set_read_timeout(Some(Duration::from_secs(120)))?;
-    stream.set_write_timeout(Some(Duration::from_secs(120)))?;
+    stream.set_read_timeout(Some(timeout))?;
+    stream.set_write_timeout(Some(timeout))?;
 
     let mut head =
         format!("{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n");

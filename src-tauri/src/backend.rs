@@ -90,6 +90,20 @@ impl Drop for ExitGuard {
     }
 }
 
+/// Tauri updater 在 Windows 上启动 NSIS 后直接 `process::exit`，不会触发
+/// RunEvent::ExitRequested，也不会运行栈上 ExitGuard；但退出前会调用
+/// AppHandle::cleanup_before_exit 清空 resource table。把清理守卫注册为 Resource，
+/// 可覆盖该路径并确保安装器启动前 xcontrol-server.exe 已释放。
+pub struct BackendCleanupResource;
+
+impl tauri::Resource for BackendCleanupResource {}
+
+impl Drop for BackendCleanupResource {
+    fn drop(&mut self) {
+        shutdown_current();
+    }
+}
+
 /// spawn 阶段的产物（跨线程传递给 orchestrate 做健康轮询）。
 pub struct SpawnedBackend {
     info: BackendInfo,
@@ -321,13 +335,14 @@ pub fn shutdown_current() {
     drop(slot);
 
     if let Some(runtime) = RUNTIME.get() {
-        let _ = http::request(
+        let _ = http::request_timeout(
             runtime.info.port,
             "POST",
             "/api/shutdown",
             Some(&runtime.info.token),
             None,
             None,
+            Duration::from_secs(2),
         );
     }
 

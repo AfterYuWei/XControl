@@ -9,6 +9,12 @@
 1. **dev/prod 由 `custom-protocol` feature 决定，而非 release profile**：tauri crate 的 build.rs 以 `custom-protocol` feature 是否启用判定 `dev` cfg（`dev = !custom_protocol`）。`tauri build` 会自动启用该 feature；**纯 `cargo build --release` 不会**，产出的二进制仍会加载 devUrl（已实测踩坑）。因此 `src-tauri/Cargo.toml` 必须声明 `[features] custom-protocol = ["tauri/custom-protocol"]`（标准模板的 DO NOT REMOVE 项），本地模拟生产行为需 `cargo build --release --features custom-protocol`。
 2. **`PR_SET_PDEATHSIG` 按「父线程」触发且仅 Linux 可用**：为杜绝孤儿 sidecar（父进程被 SIGKILL 时 Rust 侧清理逻辑不会执行），Linux 下 spawn 时设置 `PR_SET_PDEATHSIG=SIGTERM`；但其语义是父**线程**死亡即触发，因此 **spawn 必须在主线程（Tauri 事件循环）执行**，健康轮询留在工作线程（`backend.rs` 的 `spawn_backend`/`orchestrate` 拆分即为此）。macOS 不编译这段 Linux 专属代码，依靠正常退出与 `ExitGuard` 清理。已在 Linux 实测：SIGKILL 父进程 → 内核对 sidecar 发 SIGTERM → Go 完整优雅退出（含退出备份）。
 3. **P3 拖拽实现微调**（相对 §6.6 原设计）：`dragRegistry` 改用 **`data-drag-payload` 属性 + elementFromPoint/closest 向上回溯**方案（替代 Map<element,payload> 注册）——无生命周期管理、随渲染自动更新、深层元素（文件夹行）天然优先于外层容器（列表），对 FileRow/FileTree/Breadcrumb 零侵入；React Compiler 规则要求事件回调中经 `useSftpStoreApi().getState()` 读最新状态（不能渲染期写 ref）；Tauri `onDragDropEvent` 的 `over` 事件不带 `paths`（仅 enter/drop 带），拖入计数从 enter 携带。
+4. **Windows updater 退出不会触发应用 RunEvent**：updater 启动 NSIS 前调用
+   `AppHandle::cleanup_before_exit()` 后直接 `process::exit(0)`，原有
+   `RunEvent::ExitRequested`/栈上 `ExitGuard` 无法关闭 sidecar。实现中把
+   `BackendCleanupResource` 注册到 Tauri resource table，确保 updater cleanup
+   时先优雅关闭/超时强杀 sidecar；NSIS `PREINSTALL/PREUNINSTALL` hook 再以
+   `taskkill` + 删除旧文件兜底手动覆盖安装及旧版本升级。
 
 ## 0. 已确认决策
 

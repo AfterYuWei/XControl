@@ -319,7 +319,7 @@ jobs:
 
             - 本 Release 由 **tauri 分支** 的 Tauri 2 构建管线产出；main 分支仍发布 Electron 版
             - 从 Electron 版升级：连接配置、密钥、UI 偏好会被自动继承，无需手动迁移
-            - 升级安装前建议退出旧版本应用
+            - Windows 新版安装程序支持直接覆盖升级，无需先卸载；安装时会自动关闭旧版 sidecar
             - **应用内更新**（设置 → 关于 → 检查更新）：Windows / macOS / Linux AppImage 支持；
               deb / rpm 用户需手动下载新包覆盖安装（`.app.tar.gz` 为应用内更新用的增量资产，无需手动下载）
           files: |

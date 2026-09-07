@@ -76,6 +76,12 @@ webview 系统库，Linux：`libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev`）
   GitHub Actions run number 保证同通道 SemVer 单调递增，不再依赖 commit 字典序。
 - 两个通道的签名清单发布到固定 `tauri-update-channel` Release，安装包 URL
   指向各自不可变的版本 Release，因此 prerelease 也能被自动更新器发现。
+- Windows 更新安装前，Tauri resource cleanup 会先请求 Go sidecar 优雅退出，
+  5 秒内未退出则强杀；这条路径覆盖 updater 在 Windows 上直接结束主进程、
+  不触发 `RunEvent::ExitRequested` 的行为。
+- NSIS 还配置了 `windows/installer-hooks.nsh`：覆盖安装或卸载前兜底终止
+  `xcontrol-server.exe` 并删除旧 sidecar。因此“关于 → 安装更新”和直接运行
+  GitHub 下载的新安装程序都可覆盖升级，不需要先卸载旧版本。
 - 支持：Windows NSIS / macOS（app.tar.gz）/ Linux AppImage；
   **deb / rpm 不支持**（官方限制，需手动覆盖安装）。
 - 入口：设置 → 关于 → 检查更新；另在启动 10s 后静默检查。

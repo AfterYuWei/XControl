@@ -173,6 +173,8 @@ sidecar 路径解析：prod → `current_exe().parent()/xcontrol-server<exe后�
 | `sftp_drag_out` | `(source_session_id, local_session_id, paths) → Result<Vec<String>>`：物化远程文件到 temp（调后端 `/api/sftp/transfer` + 轮询 `/api/sftp/transfers`，移植 `materializeRemoteDrag`，含同名检测/超时/temp 登记清理），返回本机文件路径列表；前端接着调 drag 插件 `startDrag({ item: paths, icon })`。1h 后清理 temp 目录 |
 | `save_url_to_disk` | `(api_path, suggested_name) → Result<Option<String>>`：流式 GET 后端（Bearer）→ temp → 保存对话框 → 移动到用户选择路径。用于备份导出/SFTP 下载（大文件不进 IPC） |
 | `save_blob_to_disk` | `(bytes: Vec<u8>, suggested_name)`：用于前端生成的小文件（私钥导出） |
+| `pick_backup_file` | `() → Result<Option<String>>`：系统「打开文件」对话框（xcbackup/json 过滤），返回所选文件绝对路径；取消返回 None |
+| `upload_file_form` | `(endpoint, file_path, fields) → Result<{ status, body }>`：Rust 读盘构造 multipart/form-data 直传本机 sidecar（Bearer），绕开 WebView2/WebKit 虚拟源下 File/blob 经 fetch FormData 发送失败（"Failed to fetch"）的问题；用于备份导入，内容不经过 IPC |
 
 **事件**（Rust → 前端 emit）：`backend-exited`（后端意外退出时通知前端展示错误并阻止继续操作，Electron 没有此能力，顺带增强）。
 

@@ -65,6 +65,8 @@ fn desktop_run() {
             commands::migrate_electron_settings,
             commands::save_url_to_disk,
             commands::save_blob_to_disk,
+            commands::pick_backup_file,
+            commands::upload_file_form,
             drag_out::sftp_drag_out
         ])
         .setup(move |app| {

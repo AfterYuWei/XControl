@@ -52,6 +52,93 @@ pub fn migrate_electron_settings() -> Option<serde_json::Value> {
     settings_migrate::read_and_mark()
 }
 
+// ─── 文件上传（备份导入） ────────────────────────────────────────────────────
+// WebView2/WebKit 虚拟源（http://tauri.localhost / tauri://localhost）下，
+// <input type="file"> 的 File 经 fetch FormData 发送会以 "Failed to fetch"
+// 失败（webview 网络栈拿不到 file-backed blob）。桌面端备份导入因此切为：
+// Rust 系统对话框选文件 → Rust 读盘 → 直传本机 sidecar，内容不经过 IPC。
+
+/// 打开系统「打开文件」对话框选择备份文件。返回绝对路径；用户取消返回 None。
+#[tauri::command]
+pub async fn pick_backup_file(app: AppHandle) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let picked = app
+            .dialog()
+            .file()
+            .add_filter("XControl 备份文件", &["xcbackup", "json"])
+            .add_filter("所有文件", &["*"])
+            .blocking_pick_file();
+        match picked {
+            Some(path) => path
+                .into_path()
+                .map(|p| Some(p.display().to_string()))
+                .map_err(|err| err.to_string()),
+            None => Ok(None),
+        }
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
+/// multipart 上传结果：HTTP 状态码 + 响应体（JSON 文本，由前端解析）。
+#[derive(Clone, serde::Serialize)]
+pub struct UploadOutcome {
+    pub status: u16,
+    pub body: String,
+}
+
+/// Rust 侧 multipart 文件上传：`POST <endpoint>`，`file` 字段携带文件内容，
+/// `fields` 作为附加表单字段（如 strategy/password）。返回状态码与响应体，
+/// 非 2xx 不视为 Err（由前端按后端错误码处理，如 PASSWORD_REQUIRED）。
+#[tauri::command]
+pub async fn upload_file_form(
+    endpoint: String,
+    file_path: String,
+    fields: Option<std::collections::HashMap<String, String>>,
+) -> Result<UploadOutcome, String> {
+    if !endpoint.starts_with('/') {
+        return Err("endpoint 必须以 / 开头".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let info = crate::backend::current_info().ok_or_else(|| "后端尚未就绪".to_string())?;
+
+        // 与后端 maxBackupSize（gateway/handler/backup.go 50MB）保持一致，
+        // 避免误选超大文件被整包读入内存
+        const MAX_UPLOAD_BYTES: u64 = 50 << 20;
+        let metadata =
+            std::fs::metadata(&file_path).map_err(|err| format!("读取文件失败: {err}"))?;
+        if metadata.len() > MAX_UPLOAD_BYTES {
+            return Err("备份文件超过 50MB 限制".into());
+        }
+        let bytes = std::fs::read(&file_path).map_err(|err| format!("读取文件失败: {err}"))?;
+        let filename = Path::new(&file_path)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("upload.bin");
+
+        let fields = fields.unwrap_or_default();
+        let extra: Vec<(String, String)> = fields.into_iter().collect();
+        let form = crate::http::build_multipart("file", filename, &bytes, &extra);
+        let response = crate::http::request_ct(
+            info.port,
+            "POST",
+            &endpoint,
+            Some(&info.token),
+            None,
+            Some(&form.body),
+            &form.content_type,
+        )
+        .map_err(|err| format!("请求后端失败: {err}"))?;
+
+        Ok(UploadOutcome {
+            status: response.status,
+            body: String::from_utf8_lossy(&response.body).into_owned(),
+        })
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
 // ─── 磁盘保存（方案 §5.5 / §6） ─────────────────────────────────────────────
 // WKWebView/WebKitGTK 下 blob + <a download> 不可靠，桌面端统一切换为
 // Rust 侧「系统保存对话框 + 文件落盘」。文件内容不经过 IPC payload（大文件友好）。

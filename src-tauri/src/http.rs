@@ -64,15 +64,17 @@ pub fn request_timeout(
     body: Option<&[u8]>,
     timeout: Duration,
 ) -> io::Result<HttpResponse> {
-    request_ct_timeout(
+    request_with_options(
         port,
         method,
         path,
-        bearer,
-        origin,
-        body,
-        "application/json",
-        timeout,
+        RequestOptions {
+            bearer,
+            origin,
+            body,
+            content_type: "application/json",
+            timeout,
+        },
     )
 }
 
@@ -86,28 +88,41 @@ pub fn request_ct(
     body: Option<&[u8]>,
     content_type: &str,
 ) -> io::Result<HttpResponse> {
-    request_ct_timeout(
+    request_with_options(
         port,
         method,
         path,
+        RequestOptions {
+            bearer,
+            origin,
+            body,
+            content_type,
+            timeout: Duration::from_secs(120),
+        },
+    )
+}
+
+struct RequestOptions<'a> {
+    bearer: Option<&'a str>,
+    origin: Option<&'a str>,
+    body: Option<&'a [u8]>,
+    content_type: &'a str,
+    timeout: Duration,
+}
+
+fn request_with_options(
+    port: u16,
+    method: &str,
+    path: &str,
+    options: RequestOptions<'_>,
+) -> io::Result<HttpResponse> {
+    let RequestOptions {
         bearer,
         origin,
         body,
         content_type,
-        Duration::from_secs(120),
-    )
-}
-
-fn request_ct_timeout(
-    port: u16,
-    method: &str,
-    path: &str,
-    bearer: Option<&str>,
-    origin: Option<&str>,
-    body: Option<&[u8]>,
-    content_type: &str,
-    timeout: Duration,
-) -> io::Result<HttpResponse> {
+        timeout,
+    } = options;
     let mut stream = TcpStream::connect(("127.0.0.1", port))?;
     // 创建 SSH/SFTP 会话可能需要等待网络连接超时，不能沿用健康检查级别的
     // 10 秒上限。桌面 REST 代理统一给足 120 秒，具体业务仍由 Go handler

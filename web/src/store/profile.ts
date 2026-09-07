@@ -15,6 +15,8 @@ interface ProfileStore {
   // Actions
   fetchProfiles: () => Promise<void>
   fetchGroups: () => Promise<void>
+  /** 备份导入等批量变更后，清除筛选并原子刷新服务器与分组。 */
+  refreshAll: () => Promise<void>
   createProfile: (data: ProfileCreateRequest) => Promise<Profile>
   updateProfile: (id: string, data: ProfileUpdateRequest) => Promise<Profile>
   deleteProfile: (id: string) => Promise<void>
@@ -53,6 +55,22 @@ export const useProfileStore = create<ProfileStore>((set, get) => ({
       set({ groups: groups ?? [] })
     } catch (err) {
       console.error('Failed to fetch groups:', err)
+    }
+  },
+
+  refreshAll: async () => {
+    // 备份中可能包含当前筛选之外的分组和服务器。批量导入完成后回到
+    // 全量视图，并在两个请求都成功后一次性更新，避免侧栏短暂显示孤儿记录。
+    set({ selectedGroupId: null, searchQuery: '', loading: true, error: null })
+    try {
+      const [profiles, groups] = await Promise.all([
+        profileApi.list(),
+        groupApi.list(),
+      ])
+      set({ profiles: profiles ?? [], groups: groups ?? [], loading: false })
+    } catch (err) {
+      set({ error: errorMessage(err), loading: false })
+      throw err
     }
   },
 
@@ -101,3 +119,8 @@ export const useProfileStore = create<ProfileStore>((set, get) => ({
     get().fetchProfiles()
   },
 }))
+
+function errorMessage(err: unknown): string {
+  const apiMessage = (err as { error?: { message?: string } })?.error?.message
+  return apiMessage ?? (err instanceof Error ? err.message : String(err))
+}

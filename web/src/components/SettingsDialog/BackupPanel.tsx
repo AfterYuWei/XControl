@@ -17,6 +17,7 @@ import {
 import { isTauri } from '@/lib/desktop'
 import { invoke } from '@tauri-apps/api/core'
 import { useProfileStore } from '@/store/profile'
+import { useVaultStore } from '@/store/vault'
 
 const modeOptions = [
   { value: 'encrypted', label: '密码加密导出（推荐）' },
@@ -146,13 +147,25 @@ export function BackupPanel() {
     try {
       const result = await importBackup(file, strategy, importPwd || undefined)
       const { imported, skipped } = result
+      resetImport()
+
+      try {
+        await Promise.all([
+          useProfileStore.getState().refreshAll(),
+          useVaultStore.getState().fetchList(),
+        ])
+      } catch (refreshErr) {
+        // 导入事务已经提交，不能把刷新失败误报成“导入失败”，否则用户再次
+        // 导入只会看到全部冲突。明确告知数据已保存，并建议重启后重试加载。
+        toast.warning('数据已导入，但列表刷新失败', {
+          description: `${errMessage(refreshErr)}。请重新启动应用加载已导入的数据。`,
+        })
+        return
+      }
+
       toast.success('导入完成', {
         description: `新增/更新：分组 ${imported.groups}、凭据 ${imported.vault}、服务器 ${imported.profiles}、片段 ${imported.snippets}；跳过：${skipped.groups + skipped.vault + skipped.profiles + skipped.snippets} 条`,
       })
-      const store = useProfileStore.getState()
-      void store.fetchGroups()
-      void store.fetchProfiles()
-      resetImport()
     } catch (err) {
       toast.error('导入失败', { description: errMessage(err) })
     } finally {

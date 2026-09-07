@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/desktop', () => ({
+  isTauri: () => false,
   apiBase: () => 'http://127.0.0.1:19090',
   authHeaders: () => ({ Authorization: 'Bearer desktop-token' }),
 }))

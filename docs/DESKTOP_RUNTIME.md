@@ -16,16 +16,19 @@ Tauri 主进程 (Rust, src-tauri/)
       Linux 下 PR_SET_PDEATHSIG 兜底（父进程被 SIGKILL 时内核发 SIGTERM）
       ▼
 WebView（tauri://localhost 等稳定 origin）
-   REST: http://127.0.0.1:<port> + Authorization: Bearer <token>
+   REST: invoke('proxy_api_request') → Rust loopback HTTP + Bearer
    WS:   ws://127.0.0.1:<port>/ws?...&access_token=<token>
 ```
 
 ## 启动与安全边界
 
 1. Go sidecar 只监听 `127.0.0.1`，配置完全由环境变量驱动（`-tags prod` 构建）。
-2. 访问令牌仅存在于：Rust 主进程、Go 子进程环境、WebView 内存中的 JS 变量
-   （`lib/desktop.ts` 模块级状态）。**不写 localStorage、不落磁盘**。
-3. REST 请求带 `Authorization: Bearer`；WebSocket 因浏览器 API 无法携带自定义
+2. 访问令牌仅存在于 Rust 主进程、Go 子进程环境与 WebView 的桌面桥模块内存中
+   （WebSocket URL 需要）。**不写 localStorage、不落磁盘**；普通 REST 只通过
+   受限 IPC 调用相对 `/api/*` 路径，业务请求不能覆盖令牌。
+3. REST 由 Rust 直连 sidecar 并注入 `Authorization: Bearer`，避免 Windows
+   WebView2 对虚拟 origin → loopback 请求的网络策略在请求到达 Go 前报
+   `Failed to fetch`；WebSocket 因浏览器 API 无法携带自定义
    Header，走 `?access_token=` 查询参数（优先级 Header > Cookie > Query；
    Logger 中间件只记录 path 不含 query，令牌不进日志）。
 4. CORS / WS Origin 放行名单由 Rust 运行时从 `window.url()` 推导后传入

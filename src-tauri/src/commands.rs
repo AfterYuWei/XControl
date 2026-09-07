@@ -11,6 +11,64 @@ use tauri_plugin_dialog::DialogExt;
 use crate::backend::{BackendInfo, BackendState};
 use crate::settings_migrate;
 
+/// WebView 发起的 loopback fetch 在部分 WebView2 安全策略下会在到达 Go 前失败。
+/// 桌面端所有 REST 请求经此结构由 Rust 直连 sidecar，响应再还原为 Web Response。
+#[derive(Clone, serde::Serialize)]
+pub struct ApiProxyResponse {
+    pub status: u16,
+    pub status_text: String,
+    pub headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
+}
+
+/// 代理一个本机 `/api/*` 请求。仅允许固定 HTTP 方法和相对 API 路径，鉴权 token
+/// 始终由 Rust 内部注入，前端无法借此命令访问任意主机或伪造认证信息。
+#[tauri::command]
+pub async fn proxy_api_request(
+    method: String,
+    path: String,
+    content_type: Option<String>,
+    body: Option<Vec<u8>>,
+) -> Result<ApiProxyResponse, String> {
+    let method = method.to_ascii_uppercase();
+    if !matches!(method.as_str(), "GET" | "POST" | "PUT" | "DELETE" | "PATCH") {
+        return Err("不支持的 HTTP 方法".into());
+    }
+    if !(path == "/api" || path.starts_with("/api/"))
+        || path.contains('\r')
+        || path.contains('\n')
+        || path.starts_with("//")
+    {
+        return Err("仅允许访问本机 /api 路径".into());
+    }
+    let content_type = content_type.unwrap_or_else(|| "application/json".into());
+    if content_type.contains('\r') || content_type.contains('\n') {
+        return Err("Content-Type 非法".into());
+    }
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let info = crate::backend::current_info().ok_or_else(|| "后端尚未就绪".to_string())?;
+        let response = crate::http::request_ct(
+            info.port,
+            &method,
+            &path,
+            Some(&info.token),
+            None,
+            body.as_deref(),
+            &content_type,
+        )
+        .map_err(|err| format!("请求后端失败: {err}"))?;
+        Ok(ApiProxyResponse {
+            status: response.status,
+            status_text: response.status_text,
+            headers: response.headers,
+            body: response.body,
+        })
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
 /// 获取后端连接信息（端口 + 访问令牌）。阻塞直到后端就绪或超时（20s）。
 ///
 /// 前端在 `main.tsx` 的 `initDesktop()` 中最先调用它，完成后再渲染应用，

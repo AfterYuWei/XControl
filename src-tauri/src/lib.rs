@@ -60,6 +60,7 @@ fn desktop_run() {
         .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             commands::get_backend_info,
+            commands::proxy_api_request,
             commands::frontend_ready,
             commands::get_platform,
             commands::read_app_log,

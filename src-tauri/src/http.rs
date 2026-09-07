@@ -12,6 +12,7 @@ use std::{
 
 pub struct HttpResponse {
     pub status: u16,
+    pub status_text: String,
     pub headers: Vec<(String, String)>,
     /// 响应体（P2 下载保存 / P3 sftp_drag_out 轮询会读取；当前仅测试使用）
     #[allow(dead_code)]
@@ -55,8 +56,11 @@ pub fn request_ct(
     content_type: &str,
 ) -> io::Result<HttpResponse> {
     let mut stream = TcpStream::connect(("127.0.0.1", port))?;
-    stream.set_read_timeout(Some(Duration::from_secs(10)))?;
-    stream.set_write_timeout(Some(Duration::from_secs(10)))?;
+    // 创建 SSH/SFTP 会话可能需要等待网络连接超时，不能沿用健康检查级别的
+    // 10 秒上限。桌面 REST 代理统一给足 120 秒，具体业务仍由 Go handler
+    // 自身的 context/timeout 控制。
+    stream.set_read_timeout(Some(Duration::from_secs(120)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(120)))?;
 
     let mut head =
         format!("{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n");
@@ -155,11 +159,13 @@ fn parse_response(raw: &[u8]) -> io::Result<HttpResponse> {
 
     let mut lines = head.lines();
     let status_line = lines.next().ok_or_else(|| other("空响应"))?;
-    let status = status_line
-        .split_whitespace()
-        .nth(1)
+    let mut status_parts = status_line.split_whitespace();
+    let _http_version = status_parts.next();
+    let status = status_parts
+        .next()
         .and_then(|code| code.parse().ok())
         .ok_or_else(|| other("状态行解析失败"))?;
+    let status_text = status_parts.collect::<Vec<_>>().join(" ");
 
     let mut headers = Vec::new();
     for line in lines {
@@ -178,6 +184,7 @@ fn parse_response(raw: &[u8]) -> io::Result<HttpResponse> {
 
     Ok(HttpResponse {
         status,
+        status_text,
         headers,
         body,
     })
@@ -230,6 +237,7 @@ mod tests {
         let raw = b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n";
         let response = parse_response(raw).unwrap();
         assert_eq!(response.status, 204);
+        assert_eq!(response.status_text, "No Content");
         assert_eq!(response.header("content-length"), Some("0"));
         assert!(response.body.is_empty());
     }

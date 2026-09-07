@@ -15,7 +15,7 @@
 | 决策点 | 结论 |
 |---|---|
 | macOS 架构 | 仅 arm64 DMG（CI 单 runner，放弃 Intel Mac） |
-| 通信架构 | **方案 A**：Tauri 资产模式 + Go sidecar 纯 API + Bearer（REST）/ `?access_token=`（WS） |
+| 通信架构 | **方案 A**：Tauri 资产模式 + Go sidecar 纯 API + Rust REST 代理（Bearer）/ `?access_token=`（WS） |
 | SFTP 拖拽 | **策略 A**：`dragDropEnabled=true`，外部拖入走 Tauri 事件取 OS 路径，内部拖拽改 pointer 自实现 |
 | 自动更新 | 接入 `tauri-plugin-updater`（stable 通道） |
 | Linux 产物 | deb + rpm + AppImage |
@@ -50,7 +50,7 @@
 │                                                          │
 │  ┌─ WebView (tauri://localhost 等稳定 origin) ────────┐ │
 │  │  React SPA（Tauri 打包的静态资产，非 Go embed）      │ │
-│  │  REST: http://127.0.0.1:<port> + Authorization     │ │
+│  │  REST: invoke(proxy_api_request) → Rust + Bearer   │ │
 │  │  WS:   ws://127.0.0.1:<port>/ws?...&access_token=  │ │
 │  └────────────────────────────────────────────────────┘ │
 │        ↕ IPC(invoke/listen)：窗口控制、后端信息、        │
@@ -62,7 +62,7 @@
                       远程主机
 ```
 
-与 Electron 的本质差异只有两点：前端 origin 从"后端动态端口"变为"Tauri 固定 origin"（localStorage 因此稳定可用）；鉴权从 HttpOnly Cookie 变为 Bearer（REST）+ query token（WS）。安全边界不变：token 仅存于 Rust 主进程、Go 子进程环境与 WebView 内存中的 JS 变量，不落 localStorage。
+与 Electron 的本质差异只有两点：前端 origin 从"后端动态端口"变为"Tauri 固定 origin"（localStorage 因此稳定可用）；鉴权从 HttpOnly Cookie 变为 Rust 代理注入 Bearer（REST）+ query token（WS）。REST token 不再暴露给业务层 JS，也不落 localStorage。
 
 ## 3. 仓库布局
 
@@ -167,6 +167,7 @@ sidecar 路径解析：prod → `current_exe().parent()/xcontrol-server<exe后�
 | 命令 | 签名/说明 |
 |---|---|
 | `get_backend_info` | `() → { port: u16, token: String }`，阻塞至后端就绪（超时返回错误 → 前端展示含日志路径的错误提示，同 Electron dialog.showErrorBox） |
+| `proxy_api_request` | `(method, path, content_type, body) → { status, status_text, headers, body }`：只接受相对 `/api/*` 路径与固定 HTTP 方法，由 Rust 注入 Bearer 后直连 sidecar；用于全部桌面 REST，绕过 WebView loopback 网络策略 |
 | `frontend_ready` | 显示并最大化窗口 |
 | `get_platform` | `() → "macos" \| "windows" \| "linux"`（替代 `process.platform`，注意前端 `isMac()` 判断值从 `'darwin'` 改为 `'macos'`） |
 | `migrate_electron_settings` | `() → Option<{ "xcontrol-settings": String }>`；读取 `<数据目录>/settings.json`，marker 存在时返回 None |
@@ -208,8 +209,8 @@ CSP 保持 `null`（现状 Go 静态服务也未下发 CSP，保持一致；后�
 isTauri(): boolean                  // '__TAURI_INTERNALS__' in window
 await initDesktop(): Promise<void>  // Tauri: invoke(get_backend_info)→存模块级 {baseUrl, token}
                                     //       + 设置迁移(§9)；浏览器: 立即 resolve，baseUrl=''
-apiBase(): string                   // '' | 'http://127.0.0.1:<port>'
-authHeaders(): Record<string,string>// {} | { Authorization: Bearer ... }
+apiBase(): string                   // 浏览器请求的同源 base；桌面 REST 不直接使用
+authHeaders(): Record<string,string>// 浏览器兼容层；桌面鉴权由 Rust 代理注入
 wsUrl(path, params): string         // 浏览器: 相对路径同源；Tauri: ws://127.0.0.1:<port>/...&access_token=
 openExternal(url): void             // Tauri: opener.openUrl；浏览器: window.open
 saveToDisk(...)                     // Tauri: invoke(save_url_to_disk / save_blob_to_disk)；浏览器: 现有 blob+anchor
@@ -227,7 +228,8 @@ render(<App />) → 首帧后 invoke('frontend_ready')
 
 ### 6.3 API 层
 
-- `client.ts`：`BASE_URL` 改为 `apiBase()`，所有请求附加 `authHeaders()`。
+- `client.ts`：浏览器保持同源 `fetch`；Tauri 的 `authedFetch` 统一调用
+  `proxy_api_request`，覆盖 JSON、FormData 与二进制响应，不再由 WebView 直连 loopback。
 - 4 处裸 `fetch`（`backup.ts` 导出/上传、`sftp.ts` 上传/`fetchDownloadFile`）统一改走带鉴权封装。
 - 3 处 WS URL 构造（`useWebSocket.ts`、`useSftpTransfer.ts`、`useServerMetrics.ts` 的 `window.location.host` 拼接）统一改用 `wsUrl()`。
 

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { wsUrl } from '@/lib/desktop'
 import { useServerDetailStore } from '@/store/serverDetail'
 import type { ServerInfo, ServerMetrics } from '@/api/serverDetail'
+import { createAppWebSocket, SOCKET_OPEN, type AppWebSocket } from '@/lib/appWebSocket'
 
 /**
  * Manages the WebSocket connection for real-time server metrics.
@@ -16,7 +17,7 @@ export function useServerMetrics(profileId: string, active: boolean) {
   const markDisconnected = useServerDetailStore((s) => s.markDisconnected)
   const ensureConnected = useServerDetailStore((s) => s.ensureConnected)
 
-  const wsRef = useRef<WebSocket | null>(null)
+  const wsRef = useRef<AppWebSocket | null>(null)
 
   useEffect(() => {
     if (!active) {
@@ -39,7 +40,7 @@ export function useServerMetrics(profileId: string, active: boolean) {
       if (disposed) return
 
       const url = wsUrl('/api/server/ws', { session_id: activeSessionId })
-      const ws = new WebSocket(url)
+      const ws = createAppWebSocket(url)
       wsRef.current = ws
 
       ws.onopen = () => {
@@ -86,7 +87,7 @@ export function useServerMetrics(profileId: string, active: boolean) {
     connect()
 
     const pingInterval = setInterval(() => {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
+      if (wsRef.current?.readyState === SOCKET_OPEN) {
         wsRef.current.send(JSON.stringify({ type: 'ping' }))
       }
     }, 30000)

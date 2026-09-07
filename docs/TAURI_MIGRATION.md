@@ -15,7 +15,7 @@
 | 决策点 | 结论 |
 |---|---|
 | macOS 架构 | 仅 arm64 DMG（CI 单 runner，放弃 Intel Mac） |
-| 通信架构 | **方案 A**：Tauri 资产模式 + Go sidecar 纯 API + Rust REST 代理（Bearer）/ `?access_token=`（WS） |
+| 通信架构 | **方案 A**：Tauri 资产模式 + Go sidecar 纯 API + Rust REST 代理（Bearer）/ Rust WebSocket 插件（query token） |
 | SFTP 拖拽 | **策略 A**：`dragDropEnabled=true`，外部拖入走 Tauri 事件取 OS 路径，内部拖拽改 pointer 自实现 |
 | 自动更新 | 接入 `tauri-plugin-updater`（stable 通道） |
 | Linux 产物 | deb + rpm + AppImage |
@@ -51,7 +51,7 @@
 │  ┌─ WebView (tauri://localhost 等稳定 origin) ────────┐ │
 │  │  React SPA（Tauri 打包的静态资产，非 Go embed）      │ │
 │  │  REST: invoke(proxy_api_request) → Rust + Bearer   │ │
-│  │  WS:   ws://127.0.0.1:<port>/ws?...&access_token=  │ │
+│  │  WS:   Rust websocket plugin + access_token       │ │
 │  └────────────────────────────────────────────────────┘ │
 │        ↕ IPC(invoke/listen)：窗口控制、后端信息、        │
 │          文件拖出、磁盘保存、设置迁移、更新检查           │
@@ -231,7 +231,9 @@ render(<App />) → 首帧后 invoke('frontend_ready')
 - `client.ts`：浏览器保持同源 `fetch`；Tauri 的 `authedFetch` 统一调用
   `proxy_api_request`，覆盖 JSON、FormData 与二进制响应，不再由 WebView 直连 loopback。
 - 4 处裸 `fetch`（`backup.ts` 导出/上传、`sftp.ts` 上传/`fetchDownloadFile`）统一改走带鉴权封装。
-- 3 处 WS URL 构造（`useWebSocket.ts`、`useSftpTransfer.ts`、`useServerMetrics.ts` 的 `window.location.host` 拼接）统一改用 `wsUrl()`。
+- 3 处 WS URL 构造统一改用 `wsUrl()`；连接统一走 `createAppWebSocket()`：
+  浏览器使用原生 WebSocket，Tauri 使用官方 Rust WebSocket 插件，避免 WebView
+  自定义 origin 无法可靠直连 loopback。
 
 ### 6.4 窗口控制与标题栏
 

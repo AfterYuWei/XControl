@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { wsUrl } from '@/lib/desktop'
+import { createAppWebSocket, SOCKET_OPEN, type AppWebSocket } from '@/lib/appWebSocket'
 
 /** WebSocket message from the SFTP transfer progress channel. */
 interface SftpWsMessage {
@@ -33,7 +34,7 @@ export interface SftpTransferCallbacks {
  * @param callbacks Callbacks for progress, completion, failure, and session status.
  */
 export function useSftpTransfer(sessionId: string | null, callbacks: SftpTransferCallbacks) {
-  const wsRef = useRef<WebSocket | null>(null)
+  const wsRef = useRef<AppWebSocket | null>(null)
   const callbacksRef = useRef(callbacks)
 
   useEffect(() => {
@@ -60,7 +61,7 @@ export function useSftpTransfer(sessionId: string | null, callbacks: SftpTransfe
 
       // URLSearchParams 自动做 URL 编码（原 encodeURIComponent 逻辑已包含）
       const url = wsUrl('/api/sftp/ws', { session_id: activeSessionId })
-      const ws = new WebSocket(url)
+      const ws = createAppWebSocket(url)
       wsRef.current = ws
 
       ws.onmessage = (event) => {
@@ -120,7 +121,7 @@ export function useSftpTransfer(sessionId: string | null, callbacks: SftpTransfe
       }
 
       pingTimer = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
+        if (ws.readyState === SOCKET_OPEN) {
           ws.send(JSON.stringify({ type: 'ping' }))
         }
       }, 30000)

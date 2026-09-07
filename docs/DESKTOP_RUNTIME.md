@@ -17,7 +17,7 @@ Tauri 主进程 (Rust, src-tauri/)
       ▼
 WebView（tauri://localhost 等稳定 origin）
    REST: invoke('proxy_api_request') → Rust loopback HTTP + Bearer
-   WS:   ws://127.0.0.1:<port>/ws?...&access_token=<token>
+   WS:   @tauri-apps/plugin-websocket → Rust loopback WS + access_token
 ```
 
 ## 启动与安全边界
@@ -28,8 +28,8 @@ WebView（tauri://localhost 等稳定 origin）
    受限 IPC 调用相对 `/api/*` 路径，业务请求不能覆盖令牌。
 3. REST 由 Rust 直连 sidecar 并注入 `Authorization: Bearer`，避免 Windows
    WebView2 对虚拟 origin → loopback 请求的网络策略在请求到达 Go 前报
-   `Failed to fetch`；WebSocket 因浏览器 API 无法携带自定义
-   Header，走 `?access_token=` 查询参数（优先级 Header > Cookie > Query；
+   `Failed to fetch`；终端、SFTP 进度、服务器监控 WebSocket 同样由 Rust
+   官方插件建立，鉴权走 `?access_token=` 查询参数（优先级 Header > Cookie > Query；
    Logger 中间件只记录 path 不含 query，令牌不进日志）。
 4. CORS / WS Origin 放行名单由 Rust 运行时从 `window.url()` 推导后传入
    `XCONTROL_ALLOWED_ORIGINS`（Windows `http://tauri.localhost`、macOS

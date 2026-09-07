@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { wsUrl } from '@/lib/desktop'
+import { createAppWebSocket, SOCKET_OPEN, type AppWebSocket } from '@/lib/appWebSocket'
 import type { WSMessage } from '@/types/ws'
 
 type WSStatus = 'connecting' | 'connected' | 'disconnected'
@@ -14,7 +15,7 @@ interface UseWebSocketOptions {
 
 export function useWebSocket(options: UseWebSocketOptions) {
   const { sessionId, onMessage, onOpen, onClose, onError } = options
-  const wsRef = useRef<WebSocket | null>(null)
+  const wsRef = useRef<AppWebSocket | null>(null)
   const [status, setStatus] = useState<WSStatus>('connecting')
   const [latency, setLatency] = useState<number | null>(null)
   const pingTimeRef = useRef<number>(0)
@@ -30,10 +31,10 @@ export function useWebSocket(options: UseWebSocketOptions) {
     if (!sessionId) return
 
     const connect = () => {
-      // 浏览器：同源（Vite 代理）；Tauri：ws://127.0.0.1:<port> + access_token（见 lib/desktop.ts）
+      // 浏览器：同源（Vite 代理）；Tauri：Rust 插件连接 loopback + access_token。
       const url = wsUrl('/ws', { session_id: sessionId })
 
-      const ws = new WebSocket(url)
+      const ws = createAppWebSocket(url)
       wsRef.current = ws
 
       ws.onopen = (event) => {
@@ -72,7 +73,7 @@ export function useWebSocket(options: UseWebSocketOptions) {
 
     // Heartbeat with latency measurement (every 5 seconds)
     const heartbeat = setInterval(() => {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
+      if (wsRef.current?.readyState === SOCKET_OPEN) {
         pingTimeRef.current = Date.now()
         wsRef.current.send(JSON.stringify({ type: 'ping' }))
       }
@@ -88,7 +89,7 @@ export function useWebSocket(options: UseWebSocketOptions) {
   }, [sessionId])
 
   const send = useCallback((msg: WSMessage) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
+    if (wsRef.current?.readyState === SOCKET_OPEN) {
       wsRef.current.send(JSON.stringify(msg))
     }
   }, [])

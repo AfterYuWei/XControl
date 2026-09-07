@@ -58,6 +58,9 @@ fn desktop_run() {
         // 应用内更新（stable/test 双通道）+ 更新后重启（方案 §8.2）
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        // 终端 / SFTP 进度 / 服务器监控通过 Rust 原生 WebSocket 连接 sidecar，
+        // 避免 WebView2/WebKit 对自定义 origin → loopback WS 的限制。
+        .plugin(tauri_plugin_websocket::init())
         .invoke_handler(tauri::generate_handler![
             commands::get_backend_info,
             commands::proxy_api_request,

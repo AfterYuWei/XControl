@@ -228,16 +228,24 @@ jobs:
         shell: bash
         timeout-minutes: 2
         run: |
-          # macOS runner 可能通过 Cargo build.target 把产物放到
-          # target/<triple>/release；不要写死 target/release 或产品名。
-          APP_ROOT="$(find src-tauri/target -type d -path '*/release/bundle/macos/*.app' -print -quit)"
+          # macOS runner 可能通过 Cargo build.target 把产物放到额外目录；
+          # 产品名也可能由配置覆盖，因此不要写死 target/release 或 .app 名称。
+          APP_ROOT="$(find src-tauri/target -type d -name '*.app' -print -quit)"
           if [ -z "$APP_ROOT" ]; then
             echo "macOS app bundle was not found under src-tauri/target" >&2
-            find src-tauri/target -maxdepth 6 -print
+            find src-tauri/target -maxdepth 8 -print
             exit 1
           fi
           APP_BIN="$APP_ROOT/Contents/MacOS"
-          MAIN_BINARY="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_ROOT/Contents/Info.plist")"
+          if [ ! -d "$APP_BIN" ]; then
+            echo "macOS app bundle has no Contents/MacOS directory: $APP_ROOT" >&2
+            find "$APP_ROOT" -maxdepth 4 -print
+            exit 1
+          fi
+          if ! MAIN_BINARY="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_ROOT/Contents/Info.plist")"; then
+            echo "unable to read CFBundleExecutable from $APP_ROOT/Contents/Info.plist" >&2
+            exit 1
+          fi
           APP_EXECUTABLE="$APP_BIN/$MAIN_BINARY"
           SIDECAR="$APP_BIN/xcontrol-server"
           MARKER="$RUNNER_TEMP/xcontrol-tauri-smoke-ok"

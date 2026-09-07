@@ -87,7 +87,8 @@ pub fn read_app_log(kind: String) -> Result<AppLogSnapshot, String> {
     file.seek(SeekFrom::Start(start))
         .map_err(|err| err.to_string())?;
     let mut bytes = Vec::with_capacity((len - start) as usize);
-    file.read_to_end(&mut bytes).map_err(|err| err.to_string())?;
+    file.read_to_end(&mut bytes)
+        .map_err(|err| err.to_string())?;
     if start > 0 {
         if let Some(newline) = bytes.iter().position(|byte| *byte == b'\n') {
             bytes.drain(..=newline);

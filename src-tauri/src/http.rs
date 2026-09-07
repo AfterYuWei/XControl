@@ -342,7 +342,8 @@ mod tests {
                 }
                 raw.extend_from_slice(&buf[..n]);
             }
-            let _ = conn.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");
+            let _ = conn
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");
             String::from_utf8_lossy(&raw).to_string()
         });
 

@@ -49,7 +49,7 @@ async function parseError(res: Response): Promise<never> {
 
 /** 解析 Rust 侧上传的非 2xx 响应体并抛出与 parseError 同构的错误。 */
 function throwOutcomeError(outcome: UploadOutcome): never {
-  let parsed: APIError | null = null
+  let parsed: APIError | null
   try {
     parsed = JSON.parse(outcome.body) as APIError
   } catch {

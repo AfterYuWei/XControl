@@ -6,6 +6,7 @@ import { Info, RefreshCw, Download } from 'lucide-react'
 import { isTauri } from '@/lib/desktop'
 import { appVersion, buildChannel, checkForUpdates, downloadAndInstallUpdate, type UpdateCheckResult } from '@/lib/updater'
 import { useSettingsStore, type UpdateChannel } from '@/store/settings'
+import { runUpdateWithToast } from '@/components/UpdateProgressToast'
 
 const channelOptions = [
   { value: 'stable', label: '正式版本通道' },
@@ -50,17 +51,16 @@ export function AboutPanel() {
   const handleInstall = () => {
     setDownloading(true)
     setProgress(0)
-    void toast.promise(
-      downloadAndInstallUpdate(updateChannel, (percent) => setProgress(percent)).finally(() => {
-        // relaunch 成功则不会走到这里
-        setDownloading(false)
+    void runUpdateWithToast(
+      (onProgress) => downloadAndInstallUpdate(updateChannel, (downloadProgress) => {
+        setProgress(downloadProgress.percent)
+        onProgress(downloadProgress)
       }),
-      {
-        loading: '正在下载并安装更新…',
-        success: '更新完成，应用即将重启',
-        error: (err) => `更新失败: ${err instanceof Error ? err.message : String(err)}`,
-      },
-    )
+      { version: result?.newVersion },
+    ).finally(() => {
+      // relaunch 成功则不会走到这里
+      setDownloading(false)
+    })
   }
 
   const desktop = isTauri()

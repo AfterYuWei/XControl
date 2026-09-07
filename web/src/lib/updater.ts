@@ -13,6 +13,7 @@ import { isTauri } from './desktop'
 import { toast } from 'sonner'
 import { invoke } from '@tauri-apps/api/core'
 import type { UpdateChannel } from '@/store/settings'
+import { runUpdateWithToast } from '@/components/UpdateProgressToast'
 
 export type { UpdateChannel }
 
@@ -74,6 +75,15 @@ export interface UpdateCheckResult {
   notes: string
 }
 
+export interface UpdateDownloadProgress {
+  phase: 'downloading' | 'installing'
+  downloadedBytes: number
+  totalBytes: number | null
+  percent: number | null
+  /** 最近约两秒下载窗口计算出的实时速度。 */
+  bytesPerSecond: number
+}
+
 /** 检查更新（不下载）。 */
 export async function checkForUpdates(channel: UpdateChannel = preferredUpdateChannel()): Promise<UpdateCheckResult> {
   const version = await appVersion()
@@ -90,23 +100,58 @@ export async function checkForUpdates(channel: UpdateChannel = preferredUpdateCh
 /** 下载并安装更新，完成后重启应用。 */
 export async function downloadAndInstallUpdate(
   channel: UpdateChannel = preferredUpdateChannel(),
-  onProgress?: (percent: number) => void,
+  onProgress?: (progress: UpdateDownloadProgress) => void,
 ): Promise<void> {
   const update = await checkChannel(channel)
   if (!update?.available) throw new Error('没有可用更新')
   let total: number | null = null
   let received = 0
+  let samples: Array<{ at: number; bytes: number }> = []
+  let lastProgressAt = 0
   await update.downloadAndInstall((event) => {
     switch (event.event) {
-      case 'Started':
+      case 'Started': {
         total = event.data.contentLength ?? null
+        samples = [{ at: Date.now(), bytes: 0 }]
+        onProgress?.({
+          phase: 'downloading',
+          downloadedBytes: 0,
+          totalBytes: total,
+          percent: total ? 0 : null,
+          bytesPerSecond: 0,
+        })
         break
-      case 'Progress':
+      }
+      case 'Progress': {
         received += event.data.chunkLength
-        if (total) onProgress?.(Math.min(99, Math.round((received / total) * 100)))
+        const now = Date.now()
+        samples.push({ at: now, bytes: received })
+        while (samples.length > 2 && now - samples[0].at > 2_000) samples.shift()
+        const oldest = samples[0]
+        const elapsedSeconds = (now - oldest.at) / 1_000
+        const bytesPerSecond = elapsedSeconds > 0
+          ? Math.max(0, (received - oldest.bytes) / elapsedSeconds)
+          : 0
+        // 更新器可能高频推送小分片；限制 Toast/React 刷新到约 10 FPS。
+        if (now - lastProgressAt < 100) break
+        lastProgressAt = now
+        onProgress?.({
+          phase: 'downloading',
+          downloadedBytes: received,
+          totalBytes: total,
+          percent: total ? Math.min(99, Math.round((received / total) * 100)) : null,
+          bytesPerSecond,
+        })
         break
+      }
       case 'Finished':
-        onProgress?.(100)
+        onProgress?.({
+          phase: 'installing',
+          downloadedBytes: received,
+          totalBytes: total,
+          percent: 100,
+          bytesPerSecond: 0,
+        })
         break
     }
   })
@@ -127,11 +172,10 @@ export function scheduleSilentUpdateCheck(): void {
           action: {
             label: '立即更新',
             onClick: () => {
-              void toast.promise(downloadAndInstallUpdate(channel), {
-                loading: '正在下载更新…',
-                success: '更新完成，即将重启',
-                error: (err) => `更新失败: ${err instanceof Error ? err.message : String(err)}`,
-              })
+              void runUpdateWithToast(
+                (onProgress) => downloadAndInstallUpdate(channel, onProgress),
+                { version: result.newVersion },
+              )
             },
           },
         })

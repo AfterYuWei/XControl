@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { FileX } from 'lucide-react'
-import { Dialog } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useEditorStore, useActiveTab } from '@/store/editor'
 import { CodeEditor } from './CodeEditor'
@@ -63,7 +63,9 @@ export function EditorDialog() {
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
-      <div className="editor-dialog">
+      <DialogContent showCloseButton={false} className="w-auto max-w-none gap-0 border-0 bg-transparent p-0 shadow-none">
+        <DialogTitle className="sr-only">文件编辑器</DialogTitle>
+        <div className="editor-dialog">
         <EditorTabs tabs={tabItems} onSelect={setActiveTab} onClose={handleTabClose} />
 
         <EditorToolbar
@@ -144,7 +146,8 @@ export function EditorDialog() {
             </div>
           </div>
         )}
-      </div>
+        </div>
+      </DialogContent>
     </Dialog>
   )
 }

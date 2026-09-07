@@ -5,7 +5,7 @@ import { TerminalView } from '@/components/Terminal'
 import { StatusBar } from '@/components/StatusBar'
 import { CommandPalette } from '@/components/CommandPalette'
 import { ThemeToggle } from '@/components/ThemeToggle'
-import { Toaster } from '@/components/ui/toast'
+import { Toaster } from '@/components/ui/sonner'
 import { useProfileStore } from '@/store/profile'
 import { useSessionStore } from '@/store/session'
 import { useSettingsStore } from '@/store/settings'
@@ -22,7 +22,8 @@ const SettingsDialog = lazy(() =>
 
 export function Layout() {
   const { tabs, openSftpTab, openVaultTab, openTab, setActiveTab } = useSessionStore()
-  const { sidebarWidth, setSidebarWidth } = useSettingsStore()
+  const { sidebarWidth, setSidebarWidth, theme } = useSettingsStore()
+  useSettingsStore((state) => state.systemRevision)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -403,7 +404,11 @@ export function Layout() {
       )}
 
       {/* Toast — 右下角通知弹窗 */}
-      <Toaster />
+      <Toaster
+        theme={theme === 'system'
+          ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+          : theme}
+      />
     </div>
   )
 }

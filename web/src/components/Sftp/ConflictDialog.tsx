@@ -1,5 +1,5 @@
 import { AlertTriangle, FileWarning, X } from 'lucide-react'
-import { Dialog } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { useSftpStore } from './storeContext'
 import type { ConflictResolution } from '@/types/sftp'
 
@@ -24,7 +24,9 @@ export function ConflictDialog() {
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && dismiss()}>
-      <div className="sftp-conflict">
+      <DialogContent showCloseButton={false} className="w-auto max-w-none gap-0 border-0 bg-transparent p-0 shadow-none">
+        <DialogTitle className="sr-only">文件冲突</DialogTitle>
+        <div className="sftp-conflict">
         <div className="sftp-conflict-hdr">
           <AlertTriangle size={16} className="sftp-conflict-warn" />
           <span className="sftp-conflict-title">文件冲突</span>
@@ -81,7 +83,8 @@ export function ConflictDialog() {
             取消
           </button>
         </div>
-      </div>
+        </div>
+      </DialogContent>
     </Dialog>
   )
 }

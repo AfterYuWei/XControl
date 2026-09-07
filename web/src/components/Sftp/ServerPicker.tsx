@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { FolderUp, X } from 'lucide-react'
-import { Dialog } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { useSessionStore } from '@/store/session'
 import { useSftpStore } from './storeContext'
 import { type PaneSide } from '@/store/sftp'
@@ -115,7 +115,9 @@ export function ServerPicker({ open, pane, onClose }: ServerPickerProps) {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <div className="sftp-picker">
+      <DialogContent showCloseButton={false} className="w-auto max-w-none gap-0 border-0 bg-transparent p-0 shadow-none">
+        <DialogTitle className="sr-only">选择服务器</DialogTitle>
+        <div className="sftp-picker">
         <div className="sftp-picker-hdr">
           <span className="sftp-picker-title">选择服务器</span>
           <button className="sftp-picker-x" onClick={onClose} aria-label="关闭">
@@ -151,7 +153,8 @@ export function ServerPicker({ open, pane, onClose }: ServerPickerProps) {
             <div className="sftp-picker-empty">暂无可用服务器</div>
           )}
         </div>
-      </div>
+        </div>
+      </DialogContent>
     </Dialog>
   )
 }

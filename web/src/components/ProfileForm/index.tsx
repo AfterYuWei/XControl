@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select } from '@/components/ui/select'
+import { OptionSelect } from '@/components/OptionSelect'
 import { Textarea } from '@/components/ui/textarea'
 import { useProfileStore } from '@/store/profile'
 import { profileApi } from '@/api/profile'
@@ -284,7 +284,7 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent onClose={() => onOpenChange(false)} className="max-h-[90vh] max-w-lg overflow-y-auto">
+      <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
         <DialogHeader className="mb-6">
           <DialogTitle>{isEditing ? '编辑连接' : '新建连接'}</DialogTitle>
         </DialogHeader>
@@ -391,7 +391,7 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
 
           <div className="pf-field">
             <Label className="pf-label">认证方式</Label>
-            <Select
+            <OptionSelect
               options={authOptions}
               value={form.auth_type}
               onChange={handleAuthTypeChange}
@@ -483,7 +483,7 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
 
           <div className="pf-field">
             <Label className="pf-label">连接方式</Label>
-            <Select options={proxyOptions} value={proxy.type} onChange={handleProxyTypeChange} />
+            <OptionSelect options={proxyOptions} value={proxy.type} onChange={handleProxyTypeChange} />
           </div>
 
           {(proxy.type === 'socks5' || proxy.type === 'http') && (
@@ -557,7 +557,7 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
           {proxy.type === 'jump' && (
             <div className="pf-field">
               <Label className="pf-label">跳板服务器</Label>
-              <Select
+              <OptionSelect
                 options={jumpProfileOptions}
                 value={proxy.jump_profile_id || ''}
                 onChange={(value) => updateProxy({ jump_profile_id: value })}
@@ -601,7 +601,7 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
 
           <div className="pf-field">
             <Label className="pf-label">分组</Label>
-            <Select
+            <OptionSelect
               options={groupOptions}
               value={form.group_id || ''}
               onChange={(value) => setForm({ ...form, group_id: value })}

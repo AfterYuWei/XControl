@@ -149,6 +149,9 @@
   --r-lg: 12px;
   --r-xl: 16px;
   --r-pill: 100px;
+  --radius: var(--r);
+  --popover: var(--bg-panel);
+  --popover-foreground: var(--fg);
   --sidebar-w: 240px;
   --tabbar-h: 40px;
   --statusbar-h: 24px;
@@ -367,28 +370,6 @@
   .shadow-surface-hover { box-shadow: var(--shadow-surface-hover); }
   .shadow-floating { box-shadow: var(--shadow-floating); }
   .shadow-modal { box-shadow: var(--shadow-modal); }
-  .xctrl-dialog-surface {
-    border: 1px solid var(--dialog-border);
-    background: var(--dialog-bg);
-    box-shadow: var(--shadow-modal);
-  }
-  .xctrl-input-shell {
-    transition:
-      border-color 0.18s ease,
-      box-shadow 0.18s ease,
-      background-color 0.18s ease,
-      color 0.18s ease;
-  }
-  .xctrl-input-shell:hover:not(:disabled):not(:focus-visible) {
-    background: var(--input-hover-bg);
-    border-color: var(--input-hover-border);
-  }
-  .xctrl-input-shell:focus-visible {
-    background: var(--input-focus-bg);
-    border-color: var(--input-focus-border) !important;
-    box-shadow: var(--input-focus-shadow) !important;
-    outline: none;
-  }
 }
 
 /* ═══════════════════ COMPONENT STYLES ═══════════════════ */
@@ -411,6 +392,5 @@
 @import "./styles/sftp.css";
 @import "./styles/sftp-editor.css";
 @import "./styles/editor.css";
-@import "./styles/select.css";
 @import "./styles/settings.css";
 @import "./styles/vault.css";

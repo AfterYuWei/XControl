@@ -1,4 +1,4 @@
-import { toast } from '@/components/ui/toast'
+import { toast } from 'sonner'
 import type { UpdateDownloadProgress } from '@/lib/updater'
 import { UpdateProgressDetails } from '@/components/UpdateProgressDetails'
 

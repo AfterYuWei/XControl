@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { Clipboard, FileText, RefreshCw, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { toast } from '@/components/ui/toast'
+import { toast } from 'sonner'
 
 type LogKind = 'frontend' | 'backend'
 

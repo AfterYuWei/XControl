@@ -4,7 +4,7 @@ import { terminalThemes } from '@/lib/terminalThemes'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
+import { OptionSelect } from '@/components/OptionSelect'
 import { Switch } from '@/components/ui/switch'
 import { Monitor, Terminal, Palette, Type, ChevronRight, DatabaseBackup, CloudSync, Info, FileText } from 'lucide-react'
 import { TerminalThemePicker } from './TerminalThemePicker'
@@ -129,7 +129,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent onClose={() => onOpenChange(false)} className="w-[900px] h-[620px] max-w-[95vw] max-h-[90vh] p-0 overflow-hidden flex flex-col">
+      <DialogContent className="w-[900px] h-[620px] max-w-[95vw] max-h-[90vh] p-0 overflow-hidden flex flex-col">
         <DialogHeader className="px-6 pt-5 pb-0">
           <DialogTitle>设置</DialogTitle>
         </DialogHeader>
@@ -167,7 +167,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     <Label className="settings-field-label">主题</Label>
                     <span className="settings-field-desc">选择界面配色方案</span>
                   </div>
-                  <Select
+                  <OptionSelect
                     options={themeOptions}
                     value={theme}
                     onChange={(v) => setTheme(v as 'light' | 'dark' | 'system')}
@@ -184,7 +184,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     </Label>
                     <span className="settings-field-desc">软件界面使用的字体</span>
                   </div>
-                  <Select
+                  <OptionSelect
                     options={appFontFamilyOptions}
                     value={appFontFamily}
                     onChange={setAppFontFamily}
@@ -258,7 +258,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     </Label>
                     <span className="settings-field-desc">等宽字体，用于显示代码和英文字符</span>
                   </div>
-                  <Select
+                  <OptionSelect
                     options={terminalFontFamilyOptions}
                     value={fontFamily}
                     onChange={setFontFamily}
@@ -275,7 +275,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     </Label>
                     <span className="settings-field-desc">中文字体，用于显示中文字符</span>
                   </div>
-                  <Select
+                  <OptionSelect
                     options={terminalFontFamilyCNOptions}
                     value={fontFamilyCN}
                     onChange={setFontFamilyCN}

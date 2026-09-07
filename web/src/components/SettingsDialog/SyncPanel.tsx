@@ -7,9 +7,9 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select } from '@/components/ui/select'
+import { OptionSelect } from '@/components/OptionSelect'
 import { Switch } from '@/components/ui/switch'
-import { toast } from '@/components/ui/toast'
+import { toast } from 'sonner'
 import { syncApi } from '@/api/sync'
 import type {
   SyncSettings, SyncStatus, SyncVersion,
@@ -370,7 +370,7 @@ export function SyncPanel() {
               <Label className="settings-field-label">同步模式</Label>
               <span className="settings-field-desc">手动模式仅在点击按钮时同步；自动模式双向保持一致</span>
             </div>
-            <Select options={syncModeOptions} value={settings.sync_mode}
+            <OptionSelect options={syncModeOptions} value={settings.sync_mode}
               onChange={(v) => patch('sync_mode', v as SyncSettings['sync_mode'])} className="settings-select" />
           </div>
           <div className="settings-field">
@@ -378,7 +378,7 @@ export function SyncPanel() {
               <Label className="settings-field-label">版本冲突</Label>
               <span className="settings-field-desc">本地与云端分叉时的处理方式</span>
             </div>
-            <Select options={conflictOptions} value={settings.conflict_policy}
+            <OptionSelect options={conflictOptions} value={settings.conflict_policy}
               onChange={(v) => patch('conflict_policy', v as SyncSettings['conflict_policy'])} className="settings-select" />
           </div>
           <div className="settings-field">
@@ -386,7 +386,7 @@ export function SyncPanel() {
               <Label className="settings-field-label">云端清理</Label>
               <span className="settings-field-desc">本地清理旧版本时云端的行为（M2 生效）</span>
             </div>
-            <Select options={retentionOptions} value={settings.cloud_retention}
+            <OptionSelect options={retentionOptions} value={settings.cloud_retention}
               onChange={(v) => patch('cloud_retention', v as SyncSettings['cloud_retention'])} className="settings-select" />
           </div>
           <div className="settings-field">

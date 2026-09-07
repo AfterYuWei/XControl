@@ -54,7 +54,7 @@ export function VaultSelectDialog({ open, onOpenChange, selectedId, onSelect }: 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent onClose={() => onOpenChange(false)} className="vault-select-dialog-content">
+      <DialogContent className="vault-select-dialog-content">
         <DialogHeader className="mb-4">
           <DialogTitle>从 Vault 选择凭据</DialogTitle>
         </DialogHeader>

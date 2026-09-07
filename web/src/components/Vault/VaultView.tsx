@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, KeyRound, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Select } from '@/components/ui/select'
+import { OptionSelect } from '@/components/OptionSelect'
 import {
   Dialog,
   DialogContent,
@@ -75,7 +75,7 @@ export function VaultView() {
           Vaults
         </span>
         <div className="vault-toolbar-filter">
-          <Select
+          <OptionSelect
             options={FILTER_OPTIONS}
             value={filterType}
             onChange={(v) => setFilterType(v as typeof filterType)}
@@ -113,7 +113,7 @@ export function VaultView() {
 
       {/* 删除确认弹窗 */}
       <Dialog open={!!deleteTarget} onOpenChange={(v) => !v && setDeleteTarget(null)}>
-        <DialogContent onClose={() => setDeleteTarget(null)} className="max-w-md">
+        <DialogContent className="max-w-md">
           <DialogHeader className="mb-4">
             <DialogTitle>
               {deleteTarget && deleteTarget.refs.length > 0 ? '无法删除' : '确认删除'}

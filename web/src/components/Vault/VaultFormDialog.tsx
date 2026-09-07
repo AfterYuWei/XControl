@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select } from '@/components/ui/select'
+import { OptionSelect } from '@/components/OptionSelect'
 import { Textarea } from '@/components/ui/textarea'
 import { vaultApi } from '@/api/vault'
 import { toast } from 'sonner'
@@ -164,7 +164,7 @@ export function VaultFormDialog({ open, onOpenChange, item }: VaultFormDialogPro
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent onClose={() => onOpenChange(false)} className="vault-sheet-dialog-content vault-form-dialog-content">
+      <DialogContent className="vault-sheet-dialog-content vault-form-dialog-content">
         <DialogHeader className="vault-sheet-header">
           <div className="vault-sheet-header-top">
             <div className="vault-sheet-title-wrap">
@@ -360,7 +360,7 @@ function VaultFormDialogInner({ item, onOpenChange }: VaultFormDialogInnerProps)
 
           <div className="pf-field">
             <Label className="pf-label">类型</Label>
-            <Select
+            <OptionSelect
               options={TYPE_OPTIONS}
               value={form.type}
               onChange={(value) => updateField('type', value as VaultType)}

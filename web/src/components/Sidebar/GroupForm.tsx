@@ -9,7 +9,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select } from '@/components/ui/select'
+import { OptionSelect } from '@/components/OptionSelect'
 import { useProfileStore } from '@/store/profile'
 import { toast } from 'sonner'
 import { GROUP_ICONS } from '@/lib/groupIcons'
@@ -72,7 +72,7 @@ export function GroupForm({ open, onOpenChange, group, defaultParentId }: GroupF
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent onClose={() => onOpenChange(false)} className="max-w-md">
+      <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>{isEditing ? '编辑分组' : '新建分组'}</DialogTitle>
         </DialogHeader>
@@ -92,7 +92,7 @@ export function GroupForm({ open, onOpenChange, group, defaultParentId }: GroupF
 
           <div className="space-y-2">
             <Label htmlFor="group-parent">父分组</Label>
-            <Select
+            <OptionSelect
               options={parentOptions}
               value={parentId}
               onChange={setParentId}

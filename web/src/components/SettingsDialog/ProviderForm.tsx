@@ -3,9 +3,9 @@ import { Loader2, Plus, TestTube2, Trash2, ExternalLink, ShieldCheck, Cloud, Dat
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select } from '@/components/ui/select'
+import { OptionSelect } from '@/components/OptionSelect'
 import { Switch } from '@/components/ui/switch'
-import { toast } from '@/components/ui/toast'
+import { toast } from 'sonner'
 import { openExternal } from '@/lib/desktop'
 import { syncApi } from '@/api/sync'
 import type { ProviderConfig, ProviderType, SyncProviderMeta } from '@/types/sync'
@@ -184,7 +184,7 @@ export function ProviderSection({ providers, onChanged }: Props) {
         <div className="backup-card" style={{ marginTop: 8 }}>
           <div className="backup-row">
             <Label className="backup-row-label">类型</Label>
-            <Select options={typeOptions} value={form.type}
+            <OptionSelect options={typeOptions} value={form.type}
               onChange={(v) => setForm(emptyForm(v as ProviderType))} className="settings-select" />
           </div>
           <div className="backup-row">

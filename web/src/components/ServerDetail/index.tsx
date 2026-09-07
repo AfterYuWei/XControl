@@ -7,7 +7,7 @@ import {
 import { useSessionStore } from '@/store/session'
 import { useSidebarDetailStore } from '@/store/sidebarDetail'
 import { useServerDetailStore } from '@/store/serverDetail'
-import { Tooltip } from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useServerMetrics } from '@/hooks/useServerMetrics'
 import { EditorDialog } from '@/components/Editor/EditorDialog'
 import { SftpContextMenu, type MenuItem } from '@/components/Sftp/SftpContextMenu'
@@ -25,6 +25,28 @@ interface ServerDetailProps {
   username: string
   /** When false the pane is hidden (display:none) but stays mounted. */
   active: boolean
+}
+
+interface DetailTooltipProps {
+  children: React.ReactElement
+  content: React.ReactNode
+  side?: 'top' | 'bottom' | 'left' | 'right'
+  triggerClassName?: string
+}
+
+function DetailTooltip({ children, content, side = 'top', triggerClassName }: DetailTooltipProps) {
+  if (!content) return children
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild className={triggerClassName}>
+        {children}
+      </TooltipTrigger>
+      <TooltipContent side={side} sideOffset={8} className="max-w-80">
+        {content}
+      </TooltipContent>
+    </Tooltip>
+  )
 }
 
 export function ServerDetail({
@@ -467,7 +489,7 @@ export function ServerDetail({
           </button>
           {!detail.metricsCollapsed && (
             <div className="psec-body">
-              <Tooltip
+              <DetailTooltip
                 side="top"
                 content={metrics?.cpu_detail?.length ? (
                   <div style={{ display: 'grid', gridTemplateColumns: 'auto auto', gap: '2px 12px' }}>
@@ -495,8 +517,8 @@ export function ServerDetail({
                     })()}
                   </div>
                 </div>
-              </Tooltip>
-              <Tooltip
+              </DetailTooltip>
+              <DetailTooltip
                 side="top"
                 content={metrics.mem_detail?.length ? (
                   <div style={{ display: 'grid', gridTemplateColumns: '100px auto auto', gap: '2px 10px' }}>
@@ -522,7 +544,7 @@ export function ServerDetail({
                     <span>{`${formatBytes(metrics.mem_used)} / ${formatBytes(metrics.mem_total)}`}</span>
                   </div>
                 </div>
-              </Tooltip>
+              </DetailTooltip>
               <div className="metric" style={{ opacity: isOff || !metrics ? 0.4 : 1 }}>
                 <div className="m-head">
                   <span className="m-label">磁盘</span>
@@ -535,7 +557,7 @@ export function ServerDetail({
                   <span>{`${formatBytes(metrics.disk_used)} / ${formatBytes(metrics.disk_total)}`}</span>
                 </div>
               </div>
-              <Tooltip
+              <DetailTooltip
                 side="top"
                 content={metrics.net_detail?.length ? (
                   <div style={{ display: 'grid', gridTemplateColumns: '80px auto auto', gap: '1px 8px', fontSize: '10px' }}>
@@ -557,7 +579,7 @@ export function ServerDetail({
                     </span>
                   </div>
                 </div>
-              </Tooltip>
+              </DetailTooltip>
             </div>
           )}
         </div>
@@ -581,7 +603,7 @@ export function ServerDetail({
               </div>
               <div className="info-row">
                 <span className="info-label">连接</span>
-                <Tooltip
+                <DetailTooltip
                   triggerClassName="flex-1 min-w-0"
                   content={renderInfoTooltip([
                     { label: '用户', value: username },
@@ -591,11 +613,11 @@ export function ServerDetail({
                   ])}
                 >
                   <span className="info-val">{connectionDisplay}</span>
-                </Tooltip>
+                </DetailTooltip>
               </div>
               <div className="info-row">
                 <span className="info-label">平台</span>
-                <Tooltip
+                <DetailTooltip
                   triggerClassName="flex-1 min-w-0"
                   content={renderInfoTooltip([
                     { label: '系统', value: info.os || '—' },
@@ -604,11 +626,11 @@ export function ServerDetail({
                   ])}
                 >
                   <span className="info-val">{platformDisplay}</span>
-                </Tooltip>
+                </DetailTooltip>
               </div>
               <div className="info-row">
                 <span className="info-label">状态</span>
-                <Tooltip
+                <DetailTooltip
                   triggerClassName="flex-1 min-w-0"
                   content={renderInfoTooltip([
                     { label: '连接', value: statusText },
@@ -616,11 +638,11 @@ export function ServerDetail({
                   ])}
                 >
                   <span className="info-val">{runtimeDisplay}</span>
-                </Tooltip>
+                </DetailTooltip>
               </div>
               <div className="info-row">
                 <span className="info-label">负载</span>
-                <Tooltip
+                <DetailTooltip
                   triggerClassName="flex-1 min-w-0"
                   content={renderInfoTooltip([
                     { label: '平均', value: info.load_avg || '—' },
@@ -629,7 +651,7 @@ export function ServerDetail({
                   ])}
                 >
                   <span className="info-val">{loadDisplay}</span>
-                </Tooltip>
+                </DetailTooltip>
               </div>
             </div>
           )}

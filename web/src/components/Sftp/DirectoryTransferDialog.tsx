@@ -1,5 +1,5 @@
 import { Archive, FolderInput, X } from 'lucide-react'
-import { Dialog } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { useSftpStore } from './storeContext'
 
 export function DirectoryTransferDialog() {
@@ -11,7 +11,9 @@ export function DirectoryTransferDialog() {
   const destination = `${pending.target.serverName}:${pending.target.destDir}`
   return (
     <Dialog open onOpenChange={(open) => !open && resolve(null)}>
-      <div className="sftp-dir-mode">
+      <DialogContent showCloseButton={false} className="w-auto max-w-none gap-0 p-0">
+        <DialogTitle className="sr-only">选择文件夹传输方式</DialogTitle>
+        <div className="sftp-dir-mode">
         <div className="sftp-conflict-hdr">
           <FolderInput size={16} />
           <span className="sftp-conflict-title">选择文件夹传输方式</span>
@@ -33,7 +35,8 @@ export function DirectoryTransferDialog() {
           </button>
         </div>
         <button className="sftp-conflict-btn ghost" onClick={() => resolve(null)}>取消</button>
-      </div>
+        </div>
+      </DialogContent>
     </Dialog>
   )
 }

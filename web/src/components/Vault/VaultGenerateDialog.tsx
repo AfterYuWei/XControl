@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select } from '@/components/ui/select'
+import { OptionSelect } from '@/components/OptionSelect'
 import { Textarea } from '@/components/ui/textarea'
 import { vaultApi } from '@/api/vault'
 import { useVaultStore } from '@/store/vault'
@@ -137,7 +137,7 @@ export function VaultGenerateDialog({ open, onOpenChange }: VaultGenerateDialogP
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent onClose={() => handleClose(false)} className="vault-gen-dialog-content">
+      <DialogContent className="vault-gen-dialog-content">
         <DialogHeader className="vault-gen-header">
           <div className="vault-gen-header-top">
             <DialogTitle>{isResultStep ? '保存 SSH 密钥' : '生成 SSH 密钥对'}</DialogTitle>
@@ -162,7 +162,7 @@ export function VaultGenerateDialog({ open, onOpenChange }: VaultGenerateDialogP
 
                   <div className="pf-field">
                     <Label className="pf-label">密钥算法</Label>
-                    <Select options={ALGO_OPTIONS} value={algo} onChange={(value) => setAlgo(value)} />
+                    <OptionSelect options={ALGO_OPTIONS} value={algo} onChange={(value) => setAlgo(value)} />
                   </div>
 
                   <div className="pf-field">

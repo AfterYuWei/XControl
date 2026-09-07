@@ -3,8 +3,8 @@ import { DatabaseBackup, Download, Upload, AlertTriangle, FileJson, Loader2 } fr
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select } from '@/components/ui/select'
-import { toast } from '@/components/ui/toast'
+import { OptionSelect } from '@/components/OptionSelect'
+import { toast } from 'sonner'
 import {
   exportBackup,
   previewBackup,
@@ -220,7 +220,7 @@ export function BackupPanel() {
       <div className="backup-card">
         <div className="backup-row">
           <Label className="backup-row-label">凭据处理</Label>
-          <Select
+          <OptionSelect
             options={modeOptions}
             value={mode}
             onChange={(v) => setMode(v as CredentialMode)}
@@ -343,7 +343,7 @@ export function BackupPanel() {
                 )}
                 <div className="backup-row">
                   <Label className="backup-row-label">合并策略</Label>
-                  <Select
+                  <OptionSelect
                     options={strategyOptions}
                     value={strategy}
                     onChange={(v) => setStrategy(v as ImportStrategy)}

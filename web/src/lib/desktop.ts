@@ -70,10 +70,13 @@ export function wsUrl(path: string, params: Record<string, string> = {}): string
 async function migrateElectronSettings(): Promise<void> {
   try {
     const legacy = await invoke<Record<string, string> | null>('migrate_electron_settings')
+    if (!legacy) return
     const persisted = legacy?.['xcontrol-settings']
     if (persisted && !localStorage.getItem('xcontrol-settings')) {
       localStorage.setItem('xcontrol-settings', persisted)
     }
+    // 只有 localStorage 写入成功（或已经存在更新设置）后才确认，失败时下次启动重试。
+    await invoke('mark_electron_settings_migrated')
   } catch {
     // 迁移失败不阻塞启动，保持默认设置
   }

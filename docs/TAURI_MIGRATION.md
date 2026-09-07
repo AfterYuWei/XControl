@@ -169,7 +169,8 @@ sidecar 路径解析：prod → `current_exe().parent()/xcontrol-server<exe后�
 | `get_backend_info` | `() → { port: u16, token: String }`，阻塞至后端就绪（超时返回错误 → 前端展示含日志路径的错误提示，同 Electron dialog.showErrorBox） |
 | `frontend_ready` | 显示并最大化窗口 |
 | `get_platform` | `() → "macos" \| "windows" \| "linux"`（替代 `process.platform`，注意前端 `isMac()` 判断值从 `'darwin'` 改为 `'macos'`） |
-| `migrate_electron_settings` | `() → Option<{ "xcontrol-settings": String }>`；读 `<数据目录>/settings.json`，成功后写 marker 文件 `.tauri-migrated`，二次调用返回 None |
+| `migrate_electron_settings` | `() → Option<{ "xcontrol-settings": String }>`；读取 `<数据目录>/settings.json`，marker 存在时返回 None |
+| `mark_electron_settings_migrated` | 前端成功写入 localStorage（或确认已有更新设置）后写 marker 文件 `.tauri-migrated`；写入失败时下次启动继续重试 |
 | `sftp_drag_out` | `(source_session_id, local_session_id, paths) → Result<Vec<String>>`：物化远程文件到 temp（调后端 `/api/sftp/transfer` + 轮询 `/api/sftp/transfers`，移植 `materializeRemoteDrag`，含同名检测/超时/temp 登记清理），返回本机文件路径列表；前端接着调 drag 插件 `startDrag({ item: paths, icon })`。1h 后清理 temp 目录 |
 | `save_url_to_disk` | `(api_path, suggested_name) → Result<Option<String>>`：流式 GET 后端（Bearer）→ temp → 保存对话框 → 移动到用户选择路径。用于备份导出/SFTP 下载（大文件不进 IPC） |
 | `save_blob_to_disk` | `(bytes: Vec<u8>, suggested_name)`：用于前端生成的小文件（私钥导出） |
@@ -335,7 +336,7 @@ Rust 侧统一使用 `dirs::data_dir()/XControl`：
 
 ### 9.2 settings.json → localStorage 一次性迁移
 
-Electron 的 `settings.json` 结构为 `{"xcontrol-settings": "<zustand persist JSON>"}`（与 localStorage 键/值完全同构）。迁移即：`initDesktop()` 中 `invoke('migrate_electron_settings')` → 返回值存在且 localStorage 无 `xcontrol-settings` 时写入 → Rust 写 marker。因 `main.tsx` 先 `await initDesktop()` 再动态导入 App，zustand persist 水化时迁移已就绪。**老用户主题/字体/侧栏宽度全部保留**。
+Electron 的 `settings.json` 结构为 `{"xcontrol-settings": "<zustand persist JSON>"}`（与 localStorage 键/值完全同构）。迁移采用两阶段确认：`initDesktop()` 中 `invoke('migrate_electron_settings')` → 返回值存在且 localStorage 无 `xcontrol-settings` 时写入 → 写入成功或已有更新设置后调用 `mark_electron_settings_migrated` 创建 marker。若 localStorage 写入失败则不确认，下次启动继续重试。因 `main.tsx` 先 `await initDesktop()` 再动态导入 App，zustand persist 水化时迁移已就绪。**老用户主题/字体/侧栏宽度全部保留**。
 
 ## 10. 测试与验收
 

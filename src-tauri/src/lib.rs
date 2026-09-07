@@ -63,6 +63,7 @@ fn desktop_run() {
             commands::frontend_ready,
             commands::get_platform,
             commands::migrate_electron_settings,
+            commands::mark_electron_settings_migrated,
             commands::save_url_to_disk,
             commands::save_blob_to_disk,
             commands::pick_backup_file,

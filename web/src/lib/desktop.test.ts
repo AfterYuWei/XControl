@@ -87,6 +87,7 @@ describe('desktop bridge — Tauri 模式（mock invoke）', () => {
     mockedInvoke.mockImplementation(async (cmd: string) => {
       if (cmd === 'get_backend_info') return { port: 9099, token: 't' }
       if (cmd === 'migrate_electron_settings') return { 'xcontrol-settings': legacy }
+      if (cmd === 'mark_electron_settings_migrated') return undefined
       throw new Error(`unexpected command: ${cmd}`)
     })
 
@@ -101,6 +102,28 @@ describe('desktop bridge — Tauri 模式（mock invoke）', () => {
     desktop = await loadDesktop()
     await desktop.initDesktop()
     expect(localStorage.getItem('xcontrol-settings')).toBe(existing)
+    expect(mockedInvoke).toHaveBeenCalledWith('mark_electron_settings_migrated')
+  })
+
+  it('localStorage 写入失败时不确认迁移，以便下次启动重试', async () => {
+    setTauriMarker(true)
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'get_backend_info') return { port: 9099, token: 't' }
+      if (cmd === 'migrate_electron_settings') {
+        return { 'xcontrol-settings': '{"state":{"theme":"light"}}' }
+      }
+      if (cmd === 'mark_electron_settings_migrated') return undefined
+      throw new Error(`unexpected command: ${cmd}`)
+    })
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota exceeded', 'QuotaExceededError')
+    })
+
+    const desktop = await loadDesktop()
+    await desktop.initDesktop()
+
+    expect(mockedInvoke).not.toHaveBeenCalledWith('mark_electron_settings_migrated')
+    setItem.mockRestore()
   })
 
   it('initDesktop 失败时向上抛错（由 main.tsx 渲染错误屏）', async () => {

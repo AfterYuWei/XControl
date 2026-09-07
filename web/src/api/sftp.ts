@@ -86,7 +86,7 @@ export const sftpApi = {
     conflictResolution: ConflictResolution = 'ask',
     directoryMode: DirectoryTransferMode = 'archive',
   ): Promise<SftpTransferResponse> => {
-    const res = await fetch('/api/sftp/transfer', {
+    const res = await authedFetch('/api/sftp/transfer', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

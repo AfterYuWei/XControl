@@ -17,7 +17,7 @@ use std::{
 };
 
 use serde::Serialize;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::http;
 
@@ -29,6 +29,12 @@ pub const SMOKE_OK_MARKER: &str = "XCONTROL_TAURI_SMOKE_OK";
 pub struct BackendInfo {
     pub port: u16,
     pub token: String,
+}
+
+/// sidecar 在应用运行期间异常退出时发给前端的事件负载。
+#[derive(Clone, Serialize)]
+struct BackendExited {
+    message: String,
 }
 
 /// 运行期信息（供 smoke 检查与优雅退出复用）。
@@ -113,7 +119,7 @@ pub fn orchestrate(
         Ok(()) => {
             let _ = RUNTIME.set(Runtime {
                 info: sp.info.clone(),
-                origin: sp.origin,
+                origin: sp.origin.clone(),
             });
             state.set(Ok(sp.info.clone()));
             if smoke {
@@ -127,6 +133,7 @@ pub fn orchestrate(
                         shutdown_current();
                         println!("{SMOKE_OK_MARKER}");
                         app.exit(0);
+                        return;
                     }
                     Err(err) => {
                         eprintln!("[smoke] 失败: {err}");
@@ -135,6 +142,7 @@ pub fn orchestrate(
                     }
                 }
             }
+            monitor_unexpected_exit(app, &state, &sp.log_path);
         }
         Err(err) => {
             eprintln!("[backend] 启动失败: {err}");
@@ -144,6 +152,49 @@ pub fn orchestrate(
                 std::process::exit(1);
             }
         }
+    }
+}
+
+/// 后端就绪后的存活监控。
+///
+/// 正常退出时 `shutdown_current` 会先从 CHILD 取走子进程，监控线程看到空槽后
+/// 直接返回；只有 sidecar 自行退出时才更新状态并向 WebView 发送事件。
+fn monitor_unexpected_exit(app: &AppHandle, state: &BackendState, log_path: &Path) {
+    loop {
+        std::thread::sleep(Duration::from_millis(250));
+
+        let exit_status = {
+            let mut slot = match child_slot().lock() {
+                Ok(slot) => slot,
+                Err(_) => return,
+            };
+            let Some(child) = slot.as_mut() else {
+                return;
+            };
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    *slot = None;
+                    Some(status)
+                }
+                Ok(None) => None,
+                Err(err) => {
+                    eprintln!("[backend] 检查进程状态失败: {err}");
+                    None
+                }
+            }
+        };
+
+        let Some(status) = exit_status else {
+            continue;
+        };
+        let message = format!(
+            "后端进程意外退出（{status}），请查看日志：{}",
+            log_path.display()
+        );
+        eprintln!("[backend] {message}");
+        state.set(Err(message.clone()));
+        let _ = app.emit("backend-exited", BackendExited { message });
+        return;
     }
 }
 

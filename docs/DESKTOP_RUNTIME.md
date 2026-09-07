@@ -42,7 +42,7 @@ WebView（tauri://localhost 等稳定 origin）
 | Linux | `~/.config/XControl` |
 
 内容：`xcontrol.db`、`key`、`backups/`、`logs/backend.log`、Electron 时代的
-`settings.json`（首启由 Rust 一次性迁移到 localStorage 后标记 `.tauri-migrated`）。
+`settings.json`（首启迁移到 localStorage，前端确认写入成功后才标记 `.tauri-migrated`）。
 
 ## 命令
 

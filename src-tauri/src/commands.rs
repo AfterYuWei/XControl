@@ -49,7 +49,13 @@ pub fn get_platform() -> &'static str {
 /// 仅首次返回 Some，前端写入 localStorage 后 zustand persist 再水化。
 #[tauri::command]
 pub fn migrate_electron_settings() -> Option<serde_json::Value> {
-    settings_migrate::read_and_mark()
+    settings_migrate::read_unmigrated()
+}
+
+/// 前端成功保存迁移设置后确认完成；确认前不会创建 marker，失败可在下次启动重试。
+#[tauri::command]
+pub fn mark_electron_settings_migrated() -> Result<(), String> {
+    settings_migrate::mark_migrated()
 }
 
 // ─── 文件上传（备份导入） ────────────────────────────────────────────────────

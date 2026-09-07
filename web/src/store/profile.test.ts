@@ -29,6 +29,25 @@ beforeEach(() => {
 })
 
 describe('profile store refreshAll', () => {
+  it('直接应用导入响应中的已提交数据快照', () => {
+    const profiles = [{ id: 'profile-1', name: '导入服务器' }]
+    const groups = [{ id: 'group-1', name: '导入分组' }]
+    useProfileStore.setState({ selectedGroupId: 'old-group', searchQuery: 'old-filter', loading: true })
+
+    useProfileStore.getState().applySnapshot(profiles as never, groups as never)
+
+    expect(useProfileStore.getState()).toMatchObject({
+      profiles,
+      groups,
+      selectedGroupId: null,
+      searchQuery: '',
+      loading: false,
+      error: null,
+    })
+    expect(mocks.listProfiles).not.toHaveBeenCalled()
+    expect(mocks.listGroups).not.toHaveBeenCalled()
+  })
+
   it('备份导入后清除旧筛选并原子加载全部服务器和分组', async () => {
     const profiles = [{ id: 'profile-1', name: '生产服务器' }]
     const groups = [{ id: 'group-1', name: '生产环境' }]

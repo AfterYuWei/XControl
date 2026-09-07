@@ -1,6 +1,9 @@
 import { authedFetch, type APIError } from './client'
 import { isTauri, saveApiFileToDisk } from '@/lib/desktop'
 import { invoke } from '@tauri-apps/api/core'
+import type { Group } from '@/types/group'
+import type { Profile } from '@/types/profile'
+import type { VaultItem } from '@/types/vault'
 
 export type CredentialMode = 'none' | 'encrypted' | 'plain'
 export type ImportStrategy = 'skip' | 'overwrite' | 'regenerate'
@@ -22,6 +25,12 @@ export interface BackupPreview {
 export interface BackupImportResult {
   imported: BackupStats
   skipped: BackupStats
+  snapshot?: {
+    groups: Group[]
+    profiles: Profile[]
+    vault: VaultItem[]
+  }
+  snapshot_error?: string
 }
 
 /** 待导入的备份文件。
@@ -107,11 +116,13 @@ async function upload<T>(
   // "Failed to fetch" 失败，改走 Rust 侧上传（读盘直传本机 sidecar，不进 IPC）。
   if (src.path) {
     const extra = Object.fromEntries(Object.entries(fields).filter(([, v]) => v))
+    console.debug('desktop backup upload started', { endpoint: path, file: src.name })
     const outcome = await invoke<UploadOutcome>('upload_file_form', {
       endpoint: path,
       filePath: src.path,
       fields: extra,
     })
+    console.debug('desktop backup upload completed', { endpoint: path, status: outcome.status })
     if (outcome.status < 200 || outcome.status >= 300) throwOutcomeError(outcome)
     return JSON.parse(outcome.body) as T
   }

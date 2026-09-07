@@ -17,6 +17,8 @@ interface ProfileStore {
   fetchGroups: () => Promise<void>
   /** 备份导入等批量变更后，清除筛选并原子刷新服务器与分组。 */
   refreshAll: () => Promise<void>
+  /** 使用后端事务提交后返回的数据快照立即更新界面。 */
+  applySnapshot: (profiles: Profile[], groups: Group[]) => void
   createProfile: (data: ProfileCreateRequest) => Promise<Profile>
   updateProfile: (id: string, data: ProfileUpdateRequest) => Promise<Profile>
   deleteProfile: (id: string) => Promise<void>
@@ -45,7 +47,8 @@ export const useProfileStore = create<ProfileStore>((set, get) => ({
       })
       set({ profiles: profiles ?? [], loading: false })
     } catch (err) {
-      set({ error: (err as Error).message, loading: false })
+      console.error('Failed to fetch profiles:', err)
+      set({ error: errorMessage(err), loading: false })
     }
   },
 
@@ -72,6 +75,17 @@ export const useProfileStore = create<ProfileStore>((set, get) => ({
       set({ error: errorMessage(err), loading: false })
       throw err
     }
+  },
+
+  applySnapshot: (profiles, groups) => {
+    set({
+      profiles: profiles ?? [],
+      groups: groups ?? [],
+      selectedGroupId: null,
+      searchQuery: '',
+      loading: false,
+      error: null,
+    })
   },
 
   createProfile: async (data) => {

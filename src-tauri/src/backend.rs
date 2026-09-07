@@ -46,6 +46,11 @@ struct Runtime {
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 static CHILD: OnceLock<Mutex<Option<Child>>> = OnceLock::new();
 
+/// debug 构建及 CI 注入 channel=test 的安装包启用测试诊断能力。
+pub fn is_test_build() -> bool {
+    cfg!(debug_assertions) || option_env!("XCONTROL_BUILD_CHANNEL") == Some("test")
+}
+
 fn child_slot() -> &'static Mutex<Option<Child>> {
     CHILD.get_or_init(|| Mutex::new(None))
 }
@@ -230,7 +235,10 @@ pub fn spawn_backend(app: &AppHandle) -> Result<SpawnedBackend, Box<dyn std::err
         .env("XCONTROL_HOST", "127.0.0.1")
         .env("XCONTROL_DB_PATH", data_dir.join("xcontrol.db"))
         .env("XCONTROL_KEY_PATH", data_dir.join("key"))
-        .env("XCONTROL_LOG_LEVEL", "info")
+        .env(
+            "XCONTROL_LOG_LEVEL",
+            if is_test_build() { "debug" } else { "info" },
+        )
         .env("XCONTROL_ACCESS_TOKEN", &token)
         .env("XCONTROL_ALLOWED_ORIGINS", &origin)
         .stdout(Stdio::from(log_file))

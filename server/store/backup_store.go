@@ -286,6 +286,18 @@ func (s *BackupStore) Import(p *model.BackupPayload, strategy string) (*model.Ba
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
+	groups, groupsErr := NewGroupStore(s.db).List()
+	profiles, profilesErr := NewProfileStore(s.db).List("", "")
+	vault, vaultErr := NewVaultStore(s.db, s.encryptor).List(model.VaultListFilter{})
+	if groupsErr == nil && profilesErr == nil && vaultErr == nil {
+		result.Snapshot = &model.BackupDataSnapshot{
+			Groups:   groups,
+			Profiles: profiles,
+			Vault:    vault,
+		}
+	} else {
+		result.SnapshotError = fmt.Sprintf("groups: %v; profiles: %v; vault: %v", groupsErr, profilesErr, vaultErr)
+	}
 	return result, nil
 }
 

@@ -36,6 +36,22 @@ func TestCORSAllowsConfiguredDebugOrigin(t *testing.T) {
 	}
 }
 
+func TestCORSAllowsPrivateNetworkPreflightForConfiguredWebview(t *testing.T) {
+	req := httptest.NewRequest(http.MethodOptions, "http://127.0.0.1:9090/api/groups", nil)
+	req.Header.Set("Origin", "http://tauri.localhost")
+	req.Header.Set("Access-Control-Request-Private-Network", "true")
+	rec := httptest.NewRecorder()
+
+	CORS([]string{"http://tauri.localhost"}, http.NotFoundHandler()).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNoContent)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Private-Network"); got != "true" {
+		t.Fatalf("allow private network = %q, want true", got)
+	}
+}
+
 func TestCORSRejectsUnknownOrigin(t *testing.T) {
 	called := false
 	next := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {

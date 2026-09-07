@@ -1,0 +1,37 @@
+name: Build Desktop Test
+
+on:
+  push:
+    branches: [tauri]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      release_name: ${{ steps.meta.outputs.release_name }}
+    steps:
+      - id: meta
+        shell: bash
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          VERSION="0.0.0-test.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}.sha${SHORT_SHA}"
+          TAG="tauri-test-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "release_name=XControl Tauri Test #${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT} (${SHORT_SHA})" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: metadata
+    uses: ./.github/workflows/build-desktop.yml
+    with:
+      channel: test
+      version: ${{ needs.metadata.outputs.version }}
+      tag: ${{ needs.metadata.outputs.tag }}
+      release_name: ${{ needs.metadata.outputs.release_name }}
+    secrets: inherit

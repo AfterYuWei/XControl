@@ -1,45 +1,30 @@
-name: Build Desktop Apps
+name: Desktop Build Core
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Tauri 分支专用桌面构建 CI（本文件位于 tauri 分支）
-#
-# 双分支独立机制（见 docs/TAURI_MIGRATION.md §15）：
-#   GitHub Actions 的 push 事件只读取「被推送 ref 上」的工作流文件版本，
-#   因此 main 分支的 Electron 版 build-desktop.yml 与本文件天然互不干扰：
-#     - 推送 main  → 走 main 上的 Electron 版工作流
-#     - 推送 tauri → 走本文件（Tauri 构建）
-#     - 打 v*/tauri-v* tag → 按 tag 所指向分支上的文件版本执行
-#
-# 触发条件：
-#   - 推送 tauri 分支: pre 版（版本 0.0.0-pre.<日期>.<短commit>，tag=tauri-<短commit>，prerelease）
-#   - 推送 tag (v* / tauri-v*): stable 版正式 Release
-#   - 手动触发: 可选 stable / pre
-#
-# 合并回 main 时无需修改本文件：branches 已含 main、tags 已含 v*，
-# 届时 main 上的旧 Electron 工作流被本文件替换，自动接管。
-# ═══════════════════════════════════════════════════════════════════════════
+# stable/test 入口分别位于 build-desktop-stable.yml 与
+# build-desktop-test.yml。本文件只承载可复用的三平台构建和发布步骤。
 on:
-  push:
-    branches:
-      - tauri
-      - main
-    tags:
-      - 'tauri-v*'
-      - 'v*'
-  workflow_dispatch:
+  workflow_call:
     inputs:
-      release_type:
-        description: '构建类型'
+      channel:
+        description: '发布通道（stable/test）'
         required: true
-        default: 'pre'
-        type: choice
-        options:
-          - stable
-          - pre
+        type: string
+      version:
+        description: 'SemVer 版本号'
+        required: true
+        type: string
+      tag:
+        description: 'GitHub Release 标签'
+        required: true
+        type: string
+      release_name:
+        description: 'GitHub Release 名称'
+        required: true
+        type: string
 
 # 同一 ref 的新构建取消旧的；group 与 main 分支的 Electron 工作流不同名，避免相互取消
 concurrency:
-  group: build-desktop-tauri-${{ github.ref }}
+  group: build-desktop-tauri-${{ inputs.channel }}-${{ github.ref }}
   cancel-in-progress: true
 
 # Release 上传需要写权限
@@ -47,51 +32,11 @@ permissions:
   contents: write
 
 jobs:
-  # 判断本次构建是 stable(tag) 还是 pre(分支推送)
-  prepare:
-    runs-on: ubuntu-latest
-    outputs:
-      is_release: ${{ steps.meta.outputs.is_release }}
-      version: ${{ steps.meta.outputs.version }}
-      release_name: ${{ steps.meta.outputs.release_name }}
-      tag: ${{ steps.meta.outputs.tag }}
-    steps:
-      - id: meta
-        run: |
-          # tag 触发 或 手动选 stable => stable；分支推送 或 手动选 pre => pre
-          if [[ "${{ github.ref_type }}" == "tag" ]] || [[ "${{ inputs.release_type }}" == "stable" ]]; then
-            echo "is_release=true" >> $GITHUB_OUTPUT
-          else
-            echo "is_release=false" >> $GITHUB_OUTPUT
-          fi
-
-          SHORT_SHA="${GITHUB_SHA::7}"
-          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
-
-          # 版本号 & tag：
-          # - stable(tag): version=tag 去 v/tauri-v 前缀(如 1.0.0)，tag=原 tag 名
-          # - pre(分支推送): version=0.0.0-pre.<yyyymmdd>.<短commit>
-          #   （日期前缀保证 semver 预发布版本单调递增，供未来 updater 使用，
-          #     纯短 commit hash 字典序无序会导致 updater 漏更，见迁移方案 §8.1）
-          #   tag=tauri-<短commit>（加前缀避免与 main 分支 Electron pre 版的 <短commit> tag 冲突）
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            TAG="${GITHUB_REF_NAME}"
-            VERSION="${TAG#tauri-v}"
-            VERSION="${VERSION#v}"
-            echo "version=$VERSION" >> $GITHUB_OUTPUT
-            echo "tag=$TAG" >> $GITHUB_OUTPUT
-            echo "release_name=XControl $VERSION (Tauri stable)" >> $GITHUB_OUTPUT
-          else
-            STAMP=$(date -u +%Y%m%d)
-            VERSION="0.0.0-pre.${STAMP}.${SHORT_SHA}"
-            echo "version=$VERSION" >> $GITHUB_OUTPUT
-            echo "tag=tauri-$SHORT_SHA" >> $GITHUB_OUTPUT
-            echo "release_name=XControl Tauri Pre $SHORT_SHA" >> $GITHUB_OUTPUT
-          fi
-
   # 三平台并行构建（macOS 仅 arm64，Linux deb+rpm+AppImage）
   build:
-    needs: prepare
+    env:
+      VITE_XCONTROL_CHANNEL: ${{ inputs.channel }}
+      XCONTROL_BUILD_CHANNEL: ${{ inputs.channel }}
     strategy:
       fail-fast: false   # 单平台失败不取消其它平台，便于排查
       matrix:
@@ -146,7 +91,7 @@ jobs:
       - name: Set version in tauri.conf.json
         shell: bash
         env:
-          APP_VERSION: ${{ needs.prepare.outputs.version }}
+          APP_VERSION: ${{ inputs.version }}
         run: |
           # 直接用 node 改写 tauri.conf.json 的 version 字段（替代旧 electron/package.json 注入）
           node -e "const fs=require('fs');const p='src-tauri/tauri.conf.json';const c=JSON.parse(fs.readFileSync(p,'utf8'));c.version=process.env.APP_VERSION;fs.writeFileSync(p,JSON.stringify(c,null,2)+'\n');console.log('version set to:',process.env.APP_VERSION);"
@@ -280,7 +225,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: xcontrol-tauri-${{ matrix.platform }}-${{ needs.prepare.outputs.version }}
+          name: xcontrol-tauri-${{ inputs.channel }}-${{ matrix.platform }}-${{ inputs.version }}
           path: |
             src-tauri/target/**/bundle/nsis/*.exe
             src-tauri/target/**/bundle/nsis/*.sig
@@ -296,8 +241,11 @@ jobs:
 
   # 发布：stable 版(tag)发正式 Release，pre 版(分支推送)发 prerelease Release
   release:
-    needs: [prepare, build]
+    needs: build
     runs-on: ubuntu-latest
+    concurrency:
+      group: tauri-release-publish
+      cancel-in-progress: false
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -334,29 +282,28 @@ jobs:
           echo "=== 总大小 ==="
           du -sh release-assets
 
-      # stable 版且存在签名产物时生成 updater 清单（latest.json 只随 stable 发布，
-      # 构成 stable-only 更新通道；pre 版本经 semver 比较在 stable 发布时收到升级）
-      - name: Generate updater latest.json (stable + signed)
-        if: needs.prepare.outputs.is_release == 'true'
+      # 每个通道各生成三平台清单；固定 tauri-update-channel Release 只承担
+      # “当前版本指针”，清单里的下载 URL 仍指向本次不可变的版本 Release。
+      - name: Generate updater manifests (signed builds)
         run: |
           if ls release-assets/*.sig > /dev/null 2>&1; then
-            node scripts/make-latest-json.mjs "${{ needs.prepare.outputs.version }}" "${{ needs.prepare.outputs.tag }}" release-assets
+            node scripts/make-latest-json.mjs "${{ inputs.version }}" "${{ inputs.tag }}" release-assets "${{ inputs.channel }}"
           else
-            echo "==> 无签名产物，跳过 latest.json（未配置 TAURI_SIGNING_PRIVATE_KEY）"
+            echo "==> 无签名产物，跳过 updater 清单（未配置 TAURI_SIGNING_PRIVATE_KEY）"
           fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.prepare.outputs.tag }}
+          tag_name: ${{ inputs.tag }}
           # 分支推送创建的 tauri-* tag 必须落在本次 Tauri 提交；否则 action
           # 会使用仓库默认分支 main 作为新标签目标。
           target_commitish: ${{ github.sha }}
-          name: ${{ needs.prepare.outputs.release_name }}
+          name: ${{ inputs.release_name }}
           body: |
-            ## XControl ${{ needs.prepare.outputs.version }}（Tauri 版）
+            ## XControl ${{ inputs.version }}（Tauri 版）
 
-            ${{ needs.prepare.outputs.is_release == 'true' && '### ✅ Stable 版' || '### 🔄 Pre 版（基于 tauri 分支最新构建）' }}
+            ${{ inputs.channel == 'stable' && '### ✅ 正式版' || '### 🧪 测试版（基于 tauri 分支最新构建）' }}
 
             ### 安装包
 
@@ -379,6 +326,27 @@ jobs:
             release-assets/*
           fail_on_unmatched_files: true
           draft: false
-          # pre 版标记为预发布，stable 版为正式发布
-          prerelease: ${{ needs.prepare.outputs.is_release != 'true' }}
+          prerelease: ${{ inputs.channel == 'test' }}
           generate_release_notes: true
+
+      # GitHub 的 /releases/latest 不包含 prerelease，因此用固定 Release 保存
+      # stable/test 两套可覆盖的通道清单。安装包本身仍保留在版本 Release 中。
+      - name: Publish rolling update-channel manifests
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          MANIFESTS=(release-assets/latest-${{ inputs.channel }}-*.json)
+          if [ "${#MANIFESTS[@]}" -eq 0 ]; then
+            echo "==> 本次无 updater 清单，跳过通道发布"
+            exit 0
+          fi
+          if ! gh release view tauri-update-channel >/dev/null 2>&1; then
+            gh release create tauri-update-channel \
+              --prerelease \
+              --target "${GITHUB_SHA}" \
+              --title "XControl Tauri Update Channels" \
+              --notes "应用内更新通道索引；请勿手动安装此 Release 的 JSON 文件。"
+          fi
+          gh release upload tauri-update-channel "${MANIFESTS[@]}" --clobber

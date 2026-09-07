@@ -19,6 +19,7 @@ interface VaultStore {
 
   // Actions
   fetchList: () => Promise<void>
+  applySnapshot: (items: VaultItem[]) => void
   setFilterType: (t: VaultFilterType) => void
   setSearchQuery: (q: string) => void
   create: (data: VaultCreateRequest) => Promise<VaultItem>
@@ -48,6 +49,14 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
       toast.error('加载凭据列表失败')
     }
   },
+
+  applySnapshot: (items) => set({
+    items: items ?? [],
+    loading: false,
+    error: null,
+    filterType: 'all',
+    searchQuery: '',
+  }),
 
   setFilterType: (t) => {
     set({ filterType: t })

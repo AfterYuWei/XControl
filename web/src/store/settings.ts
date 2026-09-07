@@ -2,6 +2,10 @@ import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 
 type Theme = 'light' | 'dark' | 'system'
+export type UpdateChannel = 'stable' | 'test'
+
+const configuredBuildChannel = import.meta.env.VITE_XCONTROL_CHANNEL
+const DEFAULT_UPDATE_CHANNEL: UpdateChannel = configuredBuildChannel === 'test' ? 'test' : 'stable'
 
 interface SettingsStore {
   theme: Theme
@@ -16,6 +20,7 @@ interface SettingsStore {
   terminalAutocomplete: boolean
   terminalInlineSuggestion: boolean
   terminalPopupMenu: boolean
+  updateChannel: UpdateChannel
   // system 模式下系统主题变化时自增，用于触发组件重渲染（theme 仍为 'system'）
   systemRevision: number
 
@@ -31,6 +36,7 @@ interface SettingsStore {
   setTerminalAutocomplete: (enabled: boolean) => void
   setTerminalInlineSuggestion: (enabled: boolean) => void
   setTerminalPopupMenu: (enabled: boolean) => void
+  setUpdateChannel: (channel: UpdateChannel) => void
 }
 
 function resolveTheme(theme: Theme): 'light' | 'dark' {
@@ -101,6 +107,7 @@ export const useSettingsStore = create<SettingsStore>()(
       terminalAutocomplete: true,
       terminalInlineSuggestion: false,
       terminalPopupMenu: true,
+      updateChannel: DEFAULT_UPDATE_CHANNEL,
       systemRevision: 0,
 
       setTheme: (theme) => {
@@ -132,6 +139,7 @@ export const useSettingsStore = create<SettingsStore>()(
       setTerminalAutocomplete: (terminalAutocomplete) => set({ terminalAutocomplete }),
       setTerminalInlineSuggestion: (terminalInlineSuggestion) => set({ terminalInlineSuggestion }),
       setTerminalPopupMenu: (terminalPopupMenu) => set({ terminalPopupMenu }),
+      setUpdateChannel: (updateChannel) => set({ updateChannel }),
     }),
     {
       name: 'xcontrol-settings',

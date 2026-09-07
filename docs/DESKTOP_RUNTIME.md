@@ -66,14 +66,27 @@ webview 系统库，Linux：`libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev`）
 
 ## 应用内更新
 
-- 通道：GitHub Releases stable（`latest.json` 只随正式版发布）；
-  pre 版本（`0.0.0-pre.<日期>.<sha>`）在 stable 发布时经 semver 比较自动收到升级。
+- 通道：设置 → 关于可选择“正式版本通道”或“测试版本通道”，选择会持久化。
+- CI 入口完全分离：`build-desktop-stable.yml` 只构建正式版，
+  `build-desktop-test.yml` 只构建测试版，共用 `build-desktop.yml` 构建核心。
+- 测试版版本格式为 `0.0.0-test.<run_number>.<run_attempt>.sha<commit>`；
+  GitHub Actions run number 保证同通道 SemVer 单调递增，不再依赖 commit 字典序。
+- 两个通道的签名清单发布到固定 `tauri-update-channel` Release，安装包 URL
+  指向各自不可变的版本 Release，因此 prerelease 也能被自动更新器发现。
 - 支持：Windows NSIS / macOS（app.tar.gz）/ Linux AppImage；
   **deb / rpm 不支持**（官方限制，需手动覆盖安装）。
 - 入口：设置 → 关于 → 检查更新；另在启动 10s 后静默检查。
 - 签名：`TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
   两个 GitHub secrets（未配置时 CI 跳过签名，安装包正常出包）。
   本地生成密钥对：`npx tauri signer generate -w <path> --password ""`。
+
+## 测试版日志
+
+- 测试安装包及本地 debug 构建默认让 Go sidecar 使用 `debug` 日志级别。
+- 设置 → 日志可分别查看 `frontend.log` 与 `backend.log`，每 2 秒刷新，界面最多
+  加载文件末尾 2 MiB；支持复制、手动刷新和清空。
+- 前端日志包含 console、未处理异常和 API 请求状态/耗时；请求查询参数和常见
+  凭据字段会被脱敏。正式安装包不显示日志菜单，也不开放日志读取命令。
 
 ## Web 调试
 

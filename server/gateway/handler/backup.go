@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -135,6 +136,17 @@ func (h *BackupHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "PREVIEW_FAILED", err.Error())
 		return
 	}
+	slog.Debug("backup preview parsed",
+		"mode", parsed.mode,
+		"groups", len(parsed.payload.Groups),
+		"vault", len(parsed.payload.Vault),
+		"profiles", len(parsed.payload.Profiles),
+		"snippets", len(parsed.payload.Snippets),
+		"conflict_groups", conflicts.Groups,
+		"conflict_vault", conflicts.Vault,
+		"conflict_profiles", conflicts.Profiles,
+		"conflict_snippets", conflicts.Snippets,
+	)
 
 	writeJSON(w, http.StatusOK, model.BackupPreviewResponse{
 		CredentialMode: parsed.mode,
@@ -156,7 +168,6 @@ func (h *BackupHandler) Import(w http.ResponseWriter, r *http.Request) {
 		writeBackupParseError(w, err)
 		return
 	}
-
 	strategy := r.FormValue("strategy")
 	if strategy == "" {
 		strategy = model.BackupStrategySkip
@@ -167,6 +178,19 @@ func (h *BackupHandler) Import(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "IMPORT_FAILED", err.Error())
 		return
 	}
+	slog.Debug("backup import committed",
+		"mode", parsed.mode,
+		"strategy", strategy,
+		"imported_groups", result.Imported.Groups,
+		"imported_vault", result.Imported.Vault,
+		"imported_profiles", result.Imported.Profiles,
+		"imported_snippets", result.Imported.Snippets,
+		"skipped_groups", result.Skipped.Groups,
+		"skipped_vault", result.Skipped.Vault,
+		"skipped_profiles", result.Skipped.Profiles,
+		"skipped_snippets", result.Skipped.Snippets,
+		"snapshot_error", result.SnapshotError,
+	)
 
 	_ = h.audit.Log(&model.AuditLog{
 		ID:     uuid.NewString(),

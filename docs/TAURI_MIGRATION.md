@@ -306,7 +306,8 @@ render(<App />) → 首帧后 invoke('frontend_ready')
 
 ### 8.1 `build-desktop.yml` 重写要点
 
-- **prepare job 不变**（stable/pre 判定、版本号计算），但 pre 版本格式改为 `0.0.0-pre.<yyyymmdd>.<sha7>` —— semver pre-release 按标识符字典序比较，纯 sha 不单调会导致 updater 漏更，加日期前缀保证单调。
+- 正式版和测试版入口拆为 `build-desktop-stable.yml` / `build-desktop-test.yml`，共用可复用的 `build-desktop.yml` 三平台构建核心。
+- 测试版版本格式为 `0.0.0-test.<run_number>.<run_attempt>.sha<sha7>`；run number 为数值 SemVer 标识符，保证同通道单调递增，commit 只用于定位源码。
 - **matrix 收窄为 3 个**：`windows-latest` / `macos-latest`（天然 arm64）/ `ubuntu-latest`（deb+rpm+AppImage；保留 `binutils rpm` 安装步骤，另加 Tauri Linux 依赖 `libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev` 等）。
 - **新增 Rust 工具链**：`dtolnay/rust-toolchain@stable` + `swatinem/rust-cache@v2`（缓存 `src-tauri` target）。
 - 版本注入：node 脚本改写 `src-tauri/tauri.conf.json` 的 `version`（替代原来改 `electron/package.json`）。
@@ -315,10 +316,11 @@ render(<App />) → 首帧后 invoke('frontend_ready')
 
 ### 8.2 更新通道策略
 
-- endpoint：`https://github.com/AfterYuWei/XControl/releases/latest/download/latest.json`。
-- `latest.json` 只随 **stable** Release 生成 → stable 用户只收到 stable；pre 用户（版本 `0.0.0-pre.*` 语义上低于任何正式版）会在 stable 发布时收到升级。
+- endpoint：`https://github.com/AfterYuWei/XControl/releases/download/tauri-update-channel/latest-{{target}}.json`。
+- 自定义 target 由 `stable|test` 与平台组成，关于页面可切换并持久化通道；跨通道时允许版本转换，同一通道严格按 SemVer 更新。
+- 固定 `tauri-update-channel` Release 保存滚动清单，清单下载 URL 指向正式/测试各自的不可变版本 Release，解决 GitHub `/releases/latest` 不返回 prerelease 的问题。
 - **平台限制（写进发布说明）**：Windows NSIS、macOS app、Linux **AppImage** 支持应用内更新；deb/rpm 不支持（官方限制，用户手动升级）。
-- 前端 UI：设置对话框加"检查更新"（`check() → downloadAndInstall() → relaunch()`）+ 启动时静默检查（延迟 10s，避免抢启动带宽）。
+- 前端 UI：设置对话框选择更新通道并“检查更新”（`check() → downloadAndInstall() → relaunch()`）+ 启动时按已选通道静默检查（延迟 10s，避免抢启动带宽）。
 
 ## 9. 数据与设置迁移
 
@@ -432,9 +434,9 @@ GitHub Actions 的 `push` 事件只读取**被推送 ref 上**的工作流文件
 
 ### 15.2 触发与命名（tauri 分支上的工作流文件）
 
-- `build-desktop.yml`：`branches: [tauri, main]` + `tags: [tauri-v*, v*]`。包含 `main`/`v*` 是为了**合并回 main 时零修改**（合并后本文件替换 Electron 版自动接管 main 的构建）。
-- pre 版（tauri 分支推送）：版本 `0.0.0-pre.<yyyymmdd>.<sha7>`，Release tag `tauri-<sha7>`（加 `tauri-` 前缀避免与 main 分支 Electron pre 版的 `<sha>` tag 命名冲突）。
-- stable 版（`tauri-v*` tag）：版本 = tag 去前缀，Release 名 "XControl x.y.z (Tauri stable)"。
+- `build-desktop-test.yml`：推送 `tauri` 或手动触发；测试版 tag 为 `tauri-test-<run_number>-<run_attempt>`。
+- `build-desktop-stable.yml`：推送 `tauri-v*` / `v*` tag 或手动输入正式 SemVer。
+- `build-desktop.yml`：仅作为两条管线的共享构建/发布核心，不直接响应 push。
 - 并发组 `build-desktop-tauri-<ref>`，与 main 的 `build-desktop-<ref>` 不同名，互不取消。
 
 ### 15.3 quality.yml 差异

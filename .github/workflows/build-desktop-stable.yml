@@ -1,0 +1,55 @@
+name: Build Desktop Stable
+
+on:
+  push:
+    tags:
+      - 'tauri-v*'
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '正式版 SemVer（例如 1.2.0）'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      release_name: ${{ steps.meta.outputs.release_name }}
+    steps:
+      - id: meta
+        shell: bash
+        env:
+          MANUAL_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAG="${GITHUB_REF_NAME}"
+            VERSION="${TAG#tauri-v}"
+            VERSION="${VERSION#v}"
+          else
+            VERSION="$MANUAL_VERSION"
+            TAG="tauri-v${VERSION}"
+          fi
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "invalid SemVer: $VERSION" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "release_name=XControl $VERSION (Tauri Stable)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: metadata
+    uses: ./.github/workflows/build-desktop.yml
+    with:
+      channel: stable
+      version: ${{ needs.metadata.outputs.version }}
+      tag: ${{ needs.metadata.outputs.tag }}
+      release_name: ${{ needs.metadata.outputs.release_name }}
+    secrets: inherit

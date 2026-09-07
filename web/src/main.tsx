@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { initDesktop, isTauri } from '@/lib/desktop'
 import { scheduleSilentUpdateCheck } from '@/lib/updater'
+import { installFrontendLogging } from '@/lib/appLog'
 import './index.css'
 import '@xterm/xterm/css/xterm.css'
 
@@ -31,6 +32,7 @@ async function bootstrap() {
 
   try {
     await initDesktop()
+    installFrontendLogging()
   } catch (err) {
     renderFatal(err instanceof Error ? err.message : String(err))
     // 主窗口初始为 visible:false。后端启动失败时也必须主动显示窗口，

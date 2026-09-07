@@ -1,14 +1,20 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Select } from '@/components/ui/select'
 import { Info, RefreshCw, Download } from 'lucide-react'
 import { isTauri } from '@/lib/desktop'
-import { appVersion, checkForUpdates, downloadAndInstallUpdate, type UpdateCheckResult } from '@/lib/updater'
+import { appVersion, buildChannel, checkForUpdates, downloadAndInstallUpdate, type UpdateCheckResult } from '@/lib/updater'
+import { useSettingsStore, type UpdateChannel } from '@/store/settings'
+
+const channelOptions = [
+  { value: 'stable', label: '正式版本通道' },
+  { value: 'test', label: '测试版本通道' },
+]
 
 /**
  * 「关于」面板：版本信息与应用内更新（P4，见 docs/TAURI_MIGRATION.md §8.2）。
- * 更新通道为 GitHub Releases stable（latest.json）；pre 版本在 stable 发布时
- * 会自动收到升级。deb/rpm 安装包不支持应用内更新（官方限制）。
+ * 正式/测试更新通道独立，选择会持久化；deb/rpm 安装包不支持应用内更新。
  */
 export function AboutPanel() {
   const [version, setVersion] = useState('')
@@ -16,6 +22,8 @@ export function AboutPanel() {
   const [downloading, setDownloading] = useState(false)
   const [progress, setProgress] = useState<number | null>(null)
   const [result, setResult] = useState<UpdateCheckResult | null>(null)
+  const updateChannel = useSettingsStore((state) => state.updateChannel)
+  const setUpdateChannel = useSettingsStore((state) => state.setUpdateChannel)
 
   useEffect(() => {
     void appVersion().then(setVersion)
@@ -25,7 +33,7 @@ export function AboutPanel() {
     setChecking(true)
     setResult(null)
     try {
-      const checkResult = await checkForUpdates()
+      const checkResult = await checkForUpdates(updateChannel)
       setResult(checkResult)
       if (!checkResult.available) {
         toast.success('已是最新版本')
@@ -43,7 +51,7 @@ export function AboutPanel() {
     setDownloading(true)
     setProgress(0)
     void toast.promise(
-      downloadAndInstallUpdate((percent) => setProgress(percent)).finally(() => {
+      downloadAndInstallUpdate(updateChannel, (percent) => setProgress(percent)).finally(() => {
         // relaunch 成功则不会走到这里
         setDownloading(false)
       }),
@@ -73,8 +81,29 @@ export function AboutPanel() {
               : '浏览器模式（网页版）'}
           </span>
         </div>
-        <span className="about-version-value">{version || '—'}</span>
+        <span className="about-version-value">
+          {version ? `${version} · ${buildChannel === 'test' ? '测试版' : '正式版'}` : '—'}
+        </span>
       </div>
+
+      {desktop && (
+        <div className="settings-field">
+          <div className="settings-field-info">
+            <span className="settings-field-label">更新通道</span>
+            <span className="settings-field-desc">正式版优先稳定性；测试版可提前获取最新修复</span>
+          </div>
+          <Select
+            options={channelOptions}
+            value={updateChannel}
+            onChange={(value) => {
+              setUpdateChannel(value as UpdateChannel)
+              setResult(null)
+            }}
+            disabled={checking || downloading}
+            className="settings-select"
+          />
+        </div>
+      )}
 
       {desktop && (
         <div className="settings-field">
@@ -87,7 +116,7 @@ export function AboutPanel() {
                   : '正在下载更新…'
                 : result?.available
                   ? `发现新版本 ${result.newVersion}，建议尽快更新`
-                  : '检查并安装来自 GitHub Releases 的稳定版更新'}
+                  : `检查并安装${updateChannel === 'stable' ? '正式版' : '测试版'}更新`}
             </span>
           </div>
           {result?.available && !downloading ? (

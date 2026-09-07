@@ -6,11 +6,14 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { Monitor, Terminal, Palette, Type, ChevronRight, DatabaseBackup, CloudSync, Info } from 'lucide-react'
+import { Monitor, Terminal, Palette, Type, ChevronRight, DatabaseBackup, CloudSync, Info, FileText } from 'lucide-react'
 import { TerminalThemePicker } from './TerminalThemePicker'
 import { BackupPanel } from './BackupPanel'
 import { SyncPanel } from './SyncPanel'
 import { AboutPanel } from './AboutPanel'
+import { LogPanel } from './LogPanel'
+import { isTauri } from '@/lib/desktop'
+import { isTestBuild } from '@/lib/updater'
 
 interface SettingsDialogProps {
   open: boolean
@@ -98,9 +101,9 @@ const terminalFontFamilyCNOptions = [
   { value: "sans-serif", label: '系统默认' },
 ]
 
-type SettingsTab = 'appearance' | 'terminal' | 'backup' | 'sync' | 'about'
+type SettingsTab = 'appearance' | 'terminal' | 'backup' | 'sync' | 'logs' | 'about'
 
-const tabs: { key: SettingsTab; label: string; icon: typeof Monitor }[] = [
+const baseTabs: { key: SettingsTab; label: string; icon: typeof Monitor }[] = [
   { key: 'appearance', label: '外观', icon: Palette },
   { key: 'terminal', label: '终端', icon: Terminal },
   { key: 'backup', label: '数据备份', icon: DatabaseBackup },
@@ -120,6 +123,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   } = useSettingsStore()
 
   const currentThemeLabel = terminalThemes.find((t) => t.id === terminalTheme)?.label ?? '默认深色'
+  const tabs = isTauri() && isTestBuild()
+    ? [...baseTabs.slice(0, -1), { key: 'logs' as const, label: '日志', icon: FileText }, baseTabs.at(-1)!]
+    : baseTabs
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -319,6 +325,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             {activeTab === 'backup' && <BackupPanel />}
 
             {activeTab === 'sync' && <SyncPanel />}
+
+            {activeTab === 'logs' && <LogPanel />}
 
             {activeTab === 'about' && <AboutPanel />}
           </div>

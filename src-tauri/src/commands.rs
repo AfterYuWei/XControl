@@ -1,6 +1,9 @@
 //! 前端 invoke 命令（桌面桥，见迁移方案 §5.5）。
 
-use std::path::{Path, PathBuf};
+use std::{
+    io::{Read, Seek, SeekFrom, Write},
+    path::{Path, PathBuf},
+};
 
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
@@ -43,6 +46,86 @@ pub fn frontend_ready(app: AppHandle) {
 #[tauri::command]
 pub fn get_platform() -> &'static str {
     std::env::consts::OS
+}
+
+// ─── 测试版日志 ───────────────────────────────────────────────────────────
+
+#[derive(Clone, serde::Serialize)]
+pub struct AppLogSnapshot {
+    pub kind: String,
+    pub path: String,
+    pub content: String,
+}
+
+fn app_log_path(kind: &str) -> Result<PathBuf, String> {
+    if !crate::backend::is_test_build() {
+        return Err("日志查看器仅在测试版本中启用".into());
+    }
+    let filename = match kind {
+        "frontend" => "frontend.log",
+        "backend" => "backend.log",
+        _ => return Err("未知日志类型".into()),
+    };
+    let dir = crate::backend::user_data_dir()
+        .map_err(|err| err.to_string())?
+        .join("logs");
+    std::fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
+    Ok(dir.join(filename))
+}
+
+/// 读取日志尾部，限制 2 MiB，避免长时间运行后一次 IPC 占用过多内存。
+#[tauri::command]
+pub fn read_app_log(kind: String) -> Result<AppLogSnapshot, String> {
+    const MAX_BYTES: u64 = 2 * 1024 * 1024;
+    let path = app_log_path(&kind)?;
+    if !path.exists() {
+        std::fs::write(&path, b"").map_err(|err| err.to_string())?;
+    }
+    let mut file = std::fs::File::open(&path).map_err(|err| err.to_string())?;
+    let len = file.metadata().map_err(|err| err.to_string())?.len();
+    let start = len.saturating_sub(MAX_BYTES);
+    file.seek(SeekFrom::Start(start))
+        .map_err(|err| err.to_string())?;
+    let mut bytes = Vec::with_capacity((len - start) as usize);
+    file.read_to_end(&mut bytes).map_err(|err| err.to_string())?;
+    if start > 0 {
+        if let Some(newline) = bytes.iter().position(|byte| *byte == b'\n') {
+            bytes.drain(..=newline);
+        }
+    }
+    Ok(AppLogSnapshot {
+        kind,
+        path: path.display().to_string(),
+        content: String::from_utf8_lossy(&bytes).into_owned(),
+    })
+}
+
+/// 前端批量落盘。限制单批数量和单行大小，防止错误对象造成日志洪泛。
+#[tauri::command]
+pub fn append_frontend_log(lines: Vec<String>) -> Result<(), String> {
+    let path = app_log_path("frontend")?;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|err| err.to_string())?;
+    for line in lines.into_iter().take(512) {
+        let safe_line = line.chars().take(16 * 1024).collect::<String>();
+        writeln!(file, "{safe_line}").map_err(|err| err.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn clear_app_log(kind: String) -> Result<(), String> {
+    let path = app_log_path(&kind)?;
+    std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(path)
+        .map_err(|err| err.to_string())?;
+    Ok(())
 }
 
 /// 一次性读取 Electron 时代的 settings.json（UI 偏好迁移到 localStorage，方案 §9.2）。

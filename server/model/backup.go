@@ -105,6 +105,17 @@ type BackupPreviewResponse struct {
 
 // BackupImportResult reports per-resource import outcome.
 type BackupImportResult struct {
-	Imported BackupStats `json:"imported"`
-	Skipped  BackupStats `json:"skipped"`
+	Imported      BackupStats         `json:"imported"`
+	Skipped       BackupStats         `json:"skipped"`
+	Snapshot      *BackupDataSnapshot `json:"snapshot,omitempty"`
+	SnapshotError string              `json:"snapshot_error,omitempty"`
+}
+
+// BackupDataSnapshot contains the immediately visible records after an import.
+// Returning it with the committed result lets desktop clients update their UI
+// even when a follow-up request through the webview transport is unavailable.
+type BackupDataSnapshot struct {
+	Groups   []*Group     `json:"groups"`
+	Profiles []*Profile   `json:"profiles"`
+	Vault    []*VaultItem `json:"vault"`
 }

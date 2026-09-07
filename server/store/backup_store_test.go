@@ -110,6 +110,9 @@ func TestBackupExportImportRoundTrip(t *testing.T) {
 	if result.Imported.Groups != 2 || result.Imported.Profiles != 2 || result.Imported.Vault != 1 || result.Imported.Snippets != 1 {
 		t.Fatalf("unexpected import result: %+v", result.Imported)
 	}
+	if result.Snapshot == nil || len(result.Snapshot.Groups) != 2 || len(result.Snapshot.Profiles) != 2 || len(result.Snapshot.Vault) != 1 {
+		t.Fatalf("import result must contain committed data snapshot: %+v", result.Snapshot)
+	}
 
 	// Verify references intact.
 	got, err := NewProfileStore(dst.db).Get(profile.ID)
@@ -142,6 +145,9 @@ func TestBackupExportImportRoundTrip(t *testing.T) {
 	}
 	if result2.Skipped.Profiles != 2 || result2.Imported.Profiles != 0 {
 		t.Fatalf("skip strategy failed: %+v", result2)
+	}
+	if result2.Snapshot == nil || len(result2.Snapshot.Profiles) != 2 {
+		t.Fatalf("skip import must still return current data snapshot: %+v", result2.Snapshot)
 	}
 
 	// Regenerate strategy: everything duplicated with new IDs, refs remapped.

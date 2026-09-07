@@ -1,4 +1,5 @@
 import { apiBase, authHeaders } from '@/lib/desktop'
+import { recordFrontendLog } from '@/lib/appLog'
 
 export interface APIError {
   error: {
@@ -22,13 +23,34 @@ function toPlainHeaders(headers: HeadersInit | undefined): Record<string, string
  * 绕过 client.request 的裸 fetch（文件上传 multipart、文件下载 blob 等）也应统一走这里。
  */
 export async function authedFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  return fetch(`${apiBase()}${path}`, {
-    ...init,
-    headers: {
-      ...authHeaders(),
-      ...toPlainHeaders(init.headers),
-    },
-  })
+  const method = init.method ?? 'GET'
+  const safePath = path.split('?')[0]
+  const started = performance.now()
+  recordFrontendLog('DEBUG', 'api request', { method, path: safePath })
+  try {
+    const response = await fetch(`${apiBase()}${path}`, {
+      ...init,
+      headers: {
+        ...authHeaders(),
+        ...toPlainHeaders(init.headers),
+      },
+    })
+    recordFrontendLog(response.ok ? 'DEBUG' : 'WARN', 'api response', {
+      method,
+      path: safePath,
+      status: response.status,
+      duration_ms: Math.round(performance.now() - started),
+    })
+    return response
+  } catch (error) {
+    recordFrontendLog('ERROR', 'api failed', {
+      method,
+      path: safePath,
+      duration_ms: Math.round(performance.now() - started),
+      error: error instanceof Error ? error.message : String(error),
+    })
+    throw error
+  }
 }
 
 async function request<T>(

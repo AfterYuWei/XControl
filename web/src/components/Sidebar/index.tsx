@@ -52,7 +52,7 @@ export function Sidebar() {
   // Drag-and-drop
   const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null)
 
-  // ─── 指针拖拽（P3：替代 HTML5 DnD，服务器拖入分组，见 docs/TAURI_MIGRATION.md §6.6） ────
+  // ─── 指针拖拽（替代 HTML5 DnD，服务器拖入分组） ──────────────────────────
   const profilesRef = useRef({ profiles, groups })
   useEffect(() => {
     profilesRef.current = { profiles, groups }

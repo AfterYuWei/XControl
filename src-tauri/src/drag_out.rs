@@ -1,8 +1,6 @@
-//! SFTP 拖出到系统：远程文件物化到临时目录（移植自 Electron materializeRemoteDrag，
-//! 见迁移方案 §6.6 拖出部分）。
+//! SFTP 拖出到系统：远程文件物化到临时目录（移植自 Electron materializeRemoteDrag）。
 //!
-//! 流程：同名检测 → 创建 xcontrol-drag-* 临时目录 → POST /api/sftp/transfer
-//! （远程会话 → 本机会话，overwrite + preserve）→ 轮询任务完成 → 校验文件落盘
+//! 流程：同名检测 → 创建 xcontrol-drag-* 临时目录 → Rust 进程内物化远程内容 → 校验文件落盘
 //! → 返回本机路径列表 + 拖拽预览图标路径。临时目录 1 小时后清理；
 //! 启动时清扫 24 小时以上的残留目录（对应 Electron 的 sweepNativeDragTemps）。
 
@@ -12,8 +10,9 @@ use std::{
 };
 
 use serde::Serialize;
+use tauri::State;
 
-use crate::{backend, http};
+use crate::sftp::SftpState;
 
 /// 拖出临时目录前缀（与 Electron 保持一致，便于清扫历史残留）。
 const DRAG_TEMP_PREFIX: &str = "xcontrol-drag-";
@@ -31,22 +30,14 @@ pub struct DragOutFiles {
 /// 前端命令入口：物化远程文件，返回本机路径 + 图标路径。
 #[tauri::command]
 pub async fn sftp_drag_out(
+    state: State<'_, SftpState>,
     source_session_id: String,
-    local_session_id: String,
+    _local_session_id: String,
     paths: Vec<String>,
 ) -> Result<DragOutFiles, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        drag_out_blocking(&source_session_id, &local_session_id, &paths)
-    })
-    .await
-    .map_err(|err| err.to_string())?
-}
-
-fn drag_out_blocking(source: &str, local: &str, paths: &[String]) -> Result<DragOutFiles, String> {
     if paths.is_empty() {
         return Err("未选择要拖出的文件".into());
     }
-    let info = backend::current_info().ok_or_else(|| "后端尚未就绪".to_string())?;
 
     // 1. 同名检测（Windows 大小写不敏感），对齐 Electron 行为
     let names: Vec<String> = paths.iter().map(|p| api_basename(p).to_string()).collect();
@@ -63,80 +54,24 @@ fn drag_out_blocking(source: &str, local: &str, paths: &[String]) -> Result<Drag
 
     // 2. 临时目录 + 拖拽预览图标
     let temp_dir = std::env::temp_dir().join(format!("{DRAG_TEMP_PREFIX}{}", unique_suffix()));
-    std::fs::create_dir_all(&temp_dir).map_err(|err| format!("创建临时目录失败: {err}"))?;
+    tokio::fs::create_dir_all(&temp_dir)
+        .await
+        .map_err(|err| format!("创建临时目录失败: {err}"))?;
     let icon_path = temp_dir.join(".drag-icon.png");
-    std::fs::write(&icon_path, DRAG_ICON_PNG).map_err(|err| format!("写入图标失败: {err}"))?;
+    tokio::fs::write(&icon_path, DRAG_ICON_PNG)
+        .await
+        .map_err(|err| format!("写入图标失败: {err}"))?;
 
-    // 3. 发起跨会话传输（远程 → 本机临时目录）
-    let body = serde_json::json!({
-        "source_session_id": source,
-        "target_session_id": local,
-        "paths": paths,
-        "dest_dir": native_to_api(&temp_dir),
-        "conflict_resolution": "overwrite",
-        "directory_mode": "preserve",
-    });
-    let response = http::request(
-        info.port,
-        "POST",
-        "/api/sftp/transfer",
-        Some(&info.token),
-        None,
-        Some(body.to_string().as_bytes()),
-    )
-    .map_err(|err| format!("无法准备拖出文件: {err}"))?;
-    if response.status != 202 {
-        return Err(extract_error_message(&response, "无法准备拖出文件"));
-    }
-    let task_id: String = serde_json::from_slice::<serde_json::Value>(&response.body)
-        .ok()
-        .and_then(|value| {
-            value
-                .get("task_id")
-                .and_then(|task_id| task_id.as_str())
-                .map(String::from)
-        })
-        .ok_or_else(|| "后端未返回任务 ID".to_string())?;
-
-    // 4. 轮询任务状态（250ms × 10 分钟，对齐 Electron）
-    let deadline = std::time::Instant::now() + Duration::from_secs(600);
-    loop {
-        if let Ok(list) = http::request(
-            info.port,
-            "GET",
-            "/api/sftp/transfers",
-            Some(&info.token),
-            None,
-            None,
-        ) {
-            if let Some(task) = find_task(&list.body, &task_id) {
-                let status = task.get("status").and_then(|s| s.as_str()).unwrap_or("");
-                match status {
-                    "completed" => break,
-                    "failed" | "cancelled" => {
-                        let message = task
-                            .get("error_message")
-                            .and_then(|m| m.as_str())
-                            .unwrap_or(if status == "failed" {
-                                "传输失败"
-                            } else {
-                                "已取消"
-                            });
-                        schedule_cleanup(&temp_dir);
-                        return Err(format!("准备拖出文件失败: {message}"));
-                    }
-                    _ => {}
-                }
-            }
-        }
-        if std::time::Instant::now() > deadline {
-            schedule_cleanup(&temp_dir);
-            return Err("准备拖出文件超时".into());
-        }
-        std::thread::sleep(Duration::from_millis(250));
+    // 3. Rust 进程内直接把 SFTP 内容物化到临时目录。
+    if let Err(error) = state
+        .materialize_paths(&source_session_id, &paths, &native_to_api(&temp_dir))
+        .await
+    {
+        schedule_cleanup(&temp_dir);
+        return Err(format!("无法准备拖出文件: {}", error.message));
     }
 
-    // 5. 校验物化结果
+    // 4. 校验物化结果
     let mut files = Vec::with_capacity(names.len());
     for name in &names {
         let path = temp_dir.join(name);
@@ -147,7 +82,7 @@ fn drag_out_blocking(source: &str, local: &str, paths: &[String]) -> Result<Drag
         files.push(path.to_string_lossy().into_owned());
     }
 
-    // 6. 1 小时后清理临时目录（对齐 Electron removeNativeDragTemp 延迟）
+    // 5. 1 小时后清理临时目录（对齐 Electron removeNativeDragTemp 延迟）
     schedule_cleanup(&temp_dir);
 
     Ok(DragOutFiles {
@@ -181,27 +116,6 @@ pub fn sweep_stale_drag_temps() {
     }
 }
 
-/// 在传输任务数组中查找指定任务（/api/sftp/transfers 返回裸数组）。
-fn find_task(body: &[u8], task_id: &str) -> Option<serde_json::Value> {
-    let tasks: Vec<serde_json::Value> = serde_json::from_slice(body).ok()?;
-    tasks
-        .into_iter()
-        .find(|task| task.get("id").and_then(|id| id.as_str()) == Some(task_id))
-}
-
-/// 从后端错误响应中提取 error.message（兼容非 JSON 响应）。
-fn extract_error_message(response: &http::HttpResponse, fallback: &str) -> String {
-    serde_json::from_slice::<serde_json::Value>(&response.body)
-        .ok()
-        .and_then(|value| {
-            value
-                .pointer("/error/message")
-                .and_then(|message| message.as_str())
-                .map(String::from)
-        })
-        .unwrap_or_else(|| fallback.to_string())
-}
-
 /// API 路径（POSIX 风格）取最后一段作为文件名。
 fn api_basename(path: &str) -> &str {
     path.rsplit('/')
@@ -231,12 +145,12 @@ fn unique_suffix() -> String {
     )
 }
 
-/// 1 小时后删除临时目录（后台线程，进程退出则放弃——启动清扫兜底）。
+/// 1 小时后删除临时目录（Tokio 定时任务，进程退出则放弃——启动清扫兜底）。
 fn schedule_cleanup(temp_dir: &Path) {
     let temp_dir = temp_dir.to_path_buf();
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_secs(60 * 60));
-        let _ = std::fs::remove_dir_all(temp_dir);
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(60 * 60)).await;
+        let _ = tokio::fs::remove_dir_all(temp_dir).await;
     });
 }
 
@@ -267,13 +181,5 @@ mod tests {
             "/tmp/f"
         }))
         .starts_with('/'));
-    }
-
-    #[test]
-    fn find_task_parses_transfer_list() {
-        let body = br#"[{"id":"t1","status":"transferring"},{"id":"t2","status":"completed"}]"#;
-        let task = find_task(body, "t2").unwrap();
-        assert_eq!(task.get("status").unwrap().as_str(), Some("completed"));
-        assert!(find_task(body, "t3").is_none());
     }
 }

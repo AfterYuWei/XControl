@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 // P3 指针拖拽核心设施单测：hitTest 命中语义（深层优先/向上回溯）与 payload 序列化。
-// 见 docs/TAURI_MIGRATION.md §6.6。
 import { describe, it, expect, beforeEach } from 'vitest'
 import { dropPayloadAttr, hitTestDropTarget, parseDropPayloadAttr } from './dragRegistry'
 

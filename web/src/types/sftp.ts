@@ -47,37 +47,41 @@ export interface SftpServer {
   icon?: string
 }
 
-/** Response type for POST /api/sftp/sessions */
+/** Response from the SFTP session creation command. */
 export interface SftpCreateSessionResponse {
   session_id: string
   status: string
   home_dir?: string // User's home directory
 }
 
-/** Response type for GET /api/sftp/sessions/{id}/list */
+/** Response from the SFTP list command. */
 export interface SftpListResponse {
   path: string
   entries: SftpEntry[]
 }
 
-/** Response type for GET /api/sftp/sessions/{id}/tree */
+/** Response from the SFTP tree command. */
 export interface SftpTreeResponse {
   path: string
   entries: SftpTreeNode[]
 }
 
-/** Response type for POST /api/sftp/sessions/{id}/upload */
+/** Response from the SFTP upload command. */
 export interface SftpUploadResponse {
   tasks: TransferTask[]
 }
 
-/** Response type for POST /api/sftp/sessions/{id}/download */
+export interface SftpUploadBeginResponse extends SftpUploadResponse {
+  upload_id: string
+}
+
+/** Response from the SFTP download command. */
 export interface SftpDownloadResponse {
   tasks: TransferTask[]
   download_url: string
 }
 
-/** Response type for POST /api/sftp/sessions/{id}/delete */
+/** Response from the SFTP delete command. */
 export interface SftpDeleteResponse {
   deleted: number
   failed: number
@@ -110,9 +114,7 @@ export interface SftpMoveResponse {
   conflicts?: SftpConflictInfo[]
 }
 
-/** Response type for POST /api/sftp/transfer.
- *  On success: task_id/method/tasks are populated.
- *  On conflict (HTTP 409): conflicts is populated, task_id is empty. */
+/** Cross-session transfer response. On a conflict, task_id is empty. */
 export interface SftpTransferResponse {
   task_id?: string
   method?: string
@@ -124,8 +126,7 @@ export interface SftpTransferResponse {
 
 export type LineEnding = 'lf' | 'crlf'
 
-/** Response type for GET /api/sftp/sessions/{id}/file?path=...
- *  Guards: backend rejects files >10MB (413), binary (415), non-UTF-8 (415). */
+/** Editor read response; Rust rejects files over 10 MiB, binary and non-UTF-8 content. */
 export interface SftpFileReadResponse {
   path: string
   content: string
@@ -139,7 +140,7 @@ export interface SftpFileReadResponse {
   read_only: boolean
 }
 
-/** Request body for PUT /api/sftp/sessions/{id}/file?path=... */
+/** Editor write request. */
 export interface SftpFileWriteRequest {
   content: string
   /** Must match the server's current ModTime; mismatch → 409 FILE_MODIFIED. */
@@ -147,7 +148,7 @@ export interface SftpFileWriteRequest {
   line_ending?: LineEnding
 }
 
-/** Response type for PUT /api/sftp/sessions/{id}/file. The new mod_time
+/** Editor write response. The new mod_time
  *  becomes the optimistic-lock token for the next save. */
 export interface SftpFileWriteResponse {
   path: string

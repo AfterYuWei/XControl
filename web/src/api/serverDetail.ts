@@ -1,5 +1,6 @@
-import { api } from './client'
-import type { SftpEntry, SftpListResponse, SftpDeleteResponse } from '@/types/sftp'
+import { invokeCommand } from './tauri'
+import { sftpApi } from './sftp'
+import type { SftpEntry, SftpListResponse } from '@/types/sftp'
 
 // --- Types ---
 
@@ -56,29 +57,40 @@ export type { SftpEntry, SftpListResponse }
 // --- API ---
 
 export const serverDetailApi = {
-  createSession: (profileId: string) =>
-    api.post<ServerSessionResponse>('/api/server/sessions', { profile_id: profileId }),
+  createSession: async (profileId: string): Promise<ServerSessionResponse> => {
+    const response = await sftpApi.createSession(profileId)
+    let status = response.status
+    let homeDir = response.home_dir
+    const deadline = Date.now() + 30_000
+    while (status === 'connecting' && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 250))
+      const session = await sftpApi.getSession(response.session_id)
+      if (session.error) throw new Error(session.error)
+      status = session.status
+      homeDir = session.home_dir ?? homeDir
+    }
+    if (status !== 'connected') throw new Error(`连接失败: ${status}`)
+    return { session_id: response.session_id, status, home_dir: homeDir }
+  },
 
   closeSession: (sessionId: string) =>
-    api.delete<void>(`/api/server/sessions/${sessionId}`),
+    sftpApi.closeSession(sessionId),
 
   getInfo: (sessionId: string) =>
-    api.get<ServerInfo>(`/api/server/sessions/${sessionId}/info`),
+    invokeCommand<ServerInfo>('server_get_info', { sessionId }),
 
   listFiles: (sessionId: string, path: string, showHidden = false) =>
-    api.get<SftpListResponse>(
-      `/api/server/sessions/${sessionId}/files?path=${encodeURIComponent(path)}&show_hidden=${showHidden}`
-    ),
+    sftpApi.list(sessionId, path, showHidden),
 
   mkdir: (sessionId: string, path: string) =>
-    api.post<SftpEntry>(`/api/server/sessions/${sessionId}/mkdir`, { path }),
+    sftpApi.mkdir(sessionId, path),
 
   rename: (sessionId: string, oldPath: string, newPath: string) =>
-    api.post<SftpEntry>(`/api/server/sessions/${sessionId}/rename`, {
-      old_path: oldPath,
-      new_path: newPath,
-    }),
+    sftpApi.rename(sessionId, oldPath, newPath),
 
   delete: (sessionId: string, paths: string[]) =>
-    api.post<SftpDeleteResponse>(`/api/server/sessions/${sessionId}/delete`, { paths }),
+    sftpApi.delete(sessionId, paths),
+
+  getMetrics: (sessionId: string) =>
+    invokeCommand<ServerMetrics>('server_get_metrics', { sessionId }),
 }

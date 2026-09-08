@@ -1,4 +1,4 @@
-//! Electron settings.json → localStorage 一次性迁移（见迁移方案 §9.2）。
+//! Electron settings.json → localStorage 一次性迁移。
 //!
 //! Electron 的 userData/settings.json 结构为 `{"<key>": "<value JSON>"}`，
 //! 其中 key 即 zustand persist 的 name（"xcontrol-settings"），值与 localStorage 同构。
@@ -6,7 +6,7 @@
 
 use std::path::Path;
 
-use crate::backend::user_data_dir;
+use crate::runtime::user_data_dir;
 
 /// 读取尚未迁移的设置。marker 存在或读取失败时返回 None。
 /// marker 必须等前端成功写入 localStorage 后再由 [`mark_migrated`] 创建。

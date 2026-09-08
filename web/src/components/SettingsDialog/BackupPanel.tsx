@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { DatabaseBackup, Download, Upload, AlertTriangle, FileJson, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -7,6 +7,7 @@ import { OptionSelect } from '@/components/OptionSelect'
 import { toast } from 'sonner'
 import {
   exportBackup,
+  pickBackupFile,
   previewBackup,
   importBackup,
   type BackupPreview,
@@ -14,8 +15,6 @@ import {
   type CredentialMode,
   type ImportStrategy,
 } from '@/api/backup'
-import { isTauri } from '@/lib/desktop'
-import { invoke } from '@tauri-apps/api/core'
 import { useProfileStore } from '@/store/profile'
 import { useVaultStore } from '@/store/vault'
 
@@ -31,8 +30,6 @@ const strategyOptions = [
   { value: 'regenerate', label: '全部作为新记录导入（重新生成 ID）' },
 ]
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024
-
 export function BackupPanel() {
   // ── Export state ──
   const [mode, setMode] = useState<CredentialMode>('encrypted')
@@ -41,7 +38,6 @@ export function BackupPanel() {
   const [exporting, setExporting] = useState(false)
 
   // ── Import state ──
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<BackupSource | null>(null)
   const [importPwd, setImportPwd] = useState('')
   const [preview, setPreview] = useState<BackupPreview | null>(null)
@@ -55,7 +51,6 @@ export function BackupPanel() {
     setPreview(null)
     setNeedsPassword(false)
     setStrategy('skip')
-    if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   // ── Export ──
@@ -110,11 +105,6 @@ export function BackupPanel() {
 
   const handleFilePick = (src: BackupSource | null) => {
     if (!src) return
-    if (src.file && src.file.size > MAX_FILE_SIZE) {
-      toast.error('文件超过 50MB 限制')
-      return
-    }
-    // 桌面模式的体积限制由 Rust upload_file_form 兜底（读盘前校验）
     setFile(src)
     setPreview(null)
     setNeedsPassword(false)
@@ -123,22 +113,13 @@ export function BackupPanel() {
   }
 
   const openPicker = () => {
-    // 桌面端：WebView2 虚拟源下 <input File> 经 fetch 上传会失败，
-    // 统一走 Rust 系统对话框 + Rust 侧上传；浏览器保持原生 file input。
-    if (isTauri()) {
-      void (async () => {
-        try {
-          const picked = await invoke<string | null>('pick_backup_file')
-          if (!picked) return
-          const name = picked.split(/[\\/]/).pop() ?? picked
-          handleFilePick({ name, path: picked })
-        } catch (err) {
-          toast.error('选择备份文件失败', { description: errMessage(err) })
-        }
-      })()
-      return
-    }
-    fileInputRef.current?.click()
+    void (async () => {
+      try {
+        handleFilePick(await pickBackupFile())
+      } catch (err) {
+        toast.error('选择备份文件失败', { description: errMessage(err) })
+      }
+    })()
   }
 
   const handleImport = async () => {
@@ -276,17 +257,6 @@ export function BackupPanel() {
         </div>
       </div>
       <div className="backup-card">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".xcbackup,application/json"
-          className="hidden"
-          onChange={(e) =>
-            handleFilePick(
-              e.target.files?.[0] ? { name: e.target.files[0].name, file: e.target.files[0] } : null
-            )
-          }
-        />
         {!file ? (
           <Button variant="outline" onClick={openPicker} className="backup-action">
             <FileJson size={14} />

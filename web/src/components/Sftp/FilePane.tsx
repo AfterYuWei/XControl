@@ -81,7 +81,7 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
     }
   }
 
-  // ─── 指针拖拽引擎（P3：替代 HTML5 DnD，见 docs/TAURI_MIGRATION.md §6.6） ────
+  // ─── 指针拖拽引擎（替代 HTML5 DnD） ──────────────────────────────────────
   // 注意：hook 必须在下方 early return 之前调用；回调经 stateRef 空安全
   const drag = usePointerDrag<SftpDragSession>({
     ghostLabel: (session) =>

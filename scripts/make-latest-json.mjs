@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 生成 Tauri updater 的 latest.json 清单（P4，见 docs/TAURI_MIGRATION.md §8.2）。
+// 生成 Tauri updater 的 latest.json 清单。
 //
 // 用法: node scripts/make-latest-json.mjs <version> <tag> <artifactsDir> <stable|test>
 //

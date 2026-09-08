@@ -7,8 +7,8 @@
   "build": {
     "beforeDevCommand": "npm --prefix web run dev",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "node scripts/prepare-sidecar.mjs --build",
-    "frontendDist": "../server/web_dist"
+    "beforeBuildCommand": "npm --prefix web run build",
+    "frontendDist": "../web/dist"
   },
   "app": {
     "windows": [
@@ -34,7 +34,6 @@
     "category": "DeveloperTool",
     "shortDescription": "XControl - 跨平台 SSH 终端与 SFTP 管理器",
     "copyright": "Copyright © yuweinfo",
-    "externalBin": ["binaries/xcontrol-server"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -44,6 +43,11 @@
     ]
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["xcontrol"]
+      }
+    },
     "updater": {
       "endpoints": [
         "https://github.com/AfterYuWei/XControl/releases/download/tauri-update-channel/latest-{{target}}.json"

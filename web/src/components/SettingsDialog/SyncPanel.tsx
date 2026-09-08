@@ -67,15 +67,6 @@ export function SyncPanel() {
     return () => clearTimeout(t)
   }, [refresh])
 
-  // Register the exit-backup beacon once.
-  useEffect(() => {
-    const handler = () => {
-      if (settings?.auto_backup_enabled) syncApi.notifyShutdown()
-    }
-    window.addEventListener('beforeunload', handler)
-    return () => window.removeEventListener('beforeunload', handler)
-  }, [settings?.auto_backup_enabled])
-
   const handleBackupNow = async () => {
     setBackingUp(true)
     try {

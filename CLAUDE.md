@@ -1,104 +1,56 @@
-# CLAUDE.md
+# Repository Guide
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## Project
 
-## Project Overview
+XControl is a Tauri 2 desktop SSH terminal and SFTP client. React/TypeScript renders the UI;
+all persistence, encryption, SSH/SFTP, backup and sync logic runs in the Rust process. User-facing
+UI and documentation are written in Chinese.
 
-XControl is a browser-based SSH terminal application. Users manage SSH connections through a web UI powered by xterm.js, with encrypted credential storage, multi-tab sessions, and group-based organization. The UI and documentation are in Chinese.
-
-## Development Commands
-
-### Backend (Go 1.26+) — `server/`
+## Commands
 
 ```bash
-cd server
-go build -o xcontrol-server .                      # Dev build
-CGO_ENABLED=0 go build -tags prod -o xcontrol-server .  # Prod build (embeds frontend)
-./xcontrol-server                                   # Run (default port 9090)
+npm ci
+npm --prefix web ci
+npm run desktop:dev
+npm run desktop:build
+npm run desktop:smoke
+
+npm --prefix web run test:unit
+npm --prefix web run lint
+npm --prefix web run build
+
+cd src-tauri
+cargo fmt --all -- --check
+cargo clippy --all-targets --locked -- -D warnings
+cargo test --locked
 ```
-
-Environment variables: `XCONTROL_PORT` (default 9090), `XCONTROL_DB_PATH` (default `./data/xcontrol.db`), `XCONTROL_KEY_PATH` (default `./data/key`), `XCONTROL_LOG_LEVEL` (info|debug).
-
-### Frontend (React/TypeScript) — `web/`
-
-```bash
-cd web
-npm install                     # Install dependencies
-npm run dev                     # Dev server with HMR (proxies /api and /ws to :9090)
-npm run build                   # Type check + production build (tsc -b && vite build)
-npm run lint                    # ESLint
-npm run preview                 # Preview production build
-npx shadcn@latest add <comp>   # Add shadcn/ui components (e.g., button, dialog)
-```
-
-### Running Locally
-
-Start the Go backend first (`cd server && ./xcontrol-server`), then the Vite dev server (`cd web && npm run dev`). The frontend proxies API/WebSocket requests to `localhost:9090`.
 
 ## Architecture
 
-Two-process model: Go HTTP server (API + WebSocket + SQLite) and Vite-served React SPA. They communicate over REST and a WebSocket carrying terminal I/O.
+- `src-tauri/src/lib.rs`: application composition, plugins, state registration and shutdown.
+- `database.rs`: SQLite migrations and connection policy.
+- `credential_crypto.rs`: AES-256-GCM credential compatibility.
+- `profiles.rs`, `vault.rs`, `groups.rs`, `snippets.rs`, `audit.rs`: local domains.
+- `backup.rs`, `sync/`: backup, providers, OAuth and scheduler.
+- `ssh/transport.rs`: direct, SOCKS5, HTTP CONNECT and SSH jump connections.
+- `ssh/session.rs`: PTY, terminal I/O, completion and host-key confirmation.
+- `sftp/`: sessions, file operations, editor, transfers and drag-out materialization.
+- `server_detail.rs`: host information and resource metrics through SSH exec.
+- `web/src/api/`: fine-grained Tauri command wrappers.
+- `web/src/store/`: Zustand state.
 
-### Backend (Go) — `server/`
+React communicates with Rust through Tauri commands and events. Upload/download payloads use
+binary Tauri IPC. There is no local HTTP or WebSocket gateway.
 
-Entry point (`main.go`) wires: `config.Load()` → slog logger → `store.InitDB` → `crypto.NewEncryptor` → `gateway.NewRouter` → `http.ListenAndServe`. Stores, protocol registry, WebSocket hub, and handlers are all constructed inside `gateway.NewRouter()` (`router.go`), not in `main.go`.
+## Data and compatibility
 
-Layered architecture:
-- **`config/`** — Env var loader producing server configuration.
-- **`store/`** — SQLite persistence via `modernc.org/sqlite` (pure Go, no CGO). Uses `SetMaxOpenConns(1)` to serialize writes. Migrations are idempotent `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS` statements; new columns are added via the `addColumnIfMissing` helper (PRAGMA guard + `ALTER TABLE ADD COLUMN`).
-- **`model/`** — Data types: `Profile`, `Group`, `Vault`, `Snippet`, `AuditLog`. Both `Profile` and `Group` carry an `icon` field — a stable string key (e.g. `"server"`, `"folder"`) resolved to Lucide icons by the frontend.
-- **`crypto/`** — AES-256-GCM encryption for vault credentials; key auto-generated on first run at `./data/key`.
-- **`protocol/`** — `Driver` + `Shell` interfaces with `Manager` registry (factory pattern). SSH and SFTP are implemented. This is the extension point for adding new connection types.
-- **`connpool/`** — Shared SSH/SFTP connection pool per server.
-- **`ws/`** — WebSocket hub (session_id → Conn mapping) and message types (input/output/resize/exit/error/ping/pong). Uses `coder/websocket`. Also includes `SftpHub` for SFTP transfer progress.
-- **`gateway/`** — HTTP router (Go 1.22+ enhanced routing), middleware (Recovery → Logger → CORS — no auth middleware yet), and handlers.
+Data stays in the legacy `XControl` user-data directory. The SQLite schema, key file, encrypted
+credential representation and backup format must remain backward compatible. Sensitive resolved
+credentials are zeroized on drop. Host keys use SHA-256 fingerprints and changed keys require
+explicit confirmation.
 
-**Note:** There is no separate service layer. Business logic lives in `gateway/handler/` handlers. Key handlers: `session.go` manages active sessions (each holding a `protocol.Driver` and `protocol.Shell`); `ws.go` bridges the hub to sessions; `profile.go` handles credential rotation (new vault entry, old one cleaned up when `RefCount` drops to zero); `group.go` refuses to delete non-empty groups (409 `GROUP_NOT_EMPTY`).
+## UI conventions
 
-Key request flow: `POST /api/sessions` with `{profile_id, cols, rows}` → backend opens SSH connection → frontend opens `WebSocket /ws?session_id=...` → bidirectional terminal I/O.
-
-SFTP flow: `POST /api/sftp/sessions` → `GET /api/sftp/sessions/{id}/list` for directory listing → file operations (upload/download/mkdir/rename/delete) → built-in text editor via `GET/PUT /api/sftp/sessions/{id}/file`.
-
-### Frontend (React) — `web/src/`
-
-- **`api/`** — Fetch wrapper (`client.ts`) and resource-specific modules (profile, group, session, snippet, sftp)
-- **`store/`** — Zustand stores: `profile.ts` (connections + groups + search/filter), `session.ts` (terminal tabs + lifecycle), `settings.ts` (theme/fonts, localStorage-persisted)
-- **`hooks/`** — `useTerminal.ts` (xterm.js lifecycle), `useWebSocket.ts` (connection, heartbeat, I/O)
-- **`lib/`** — Icon registries: `groupIcons.tsx` and `serverIcons.tsx` map stable icon-key strings to Lucide components with fallback resolvers. Add new icons here rather than inlining Lucide imports in components.
-- **`components/`** — Layout (resizable sidebar), Sidebar (connection list with search/group filter), ProfileForm (create/edit dialog), Terminal (TabBar + TerminalPane), ConnectionDialog (animated progress), CommandPalette (⌘K search across profiles/snippets/settings), Sftp (file browser with dual-pane layout, Monaco editor, transfer queue), `ui/` (shadcn/ui primitives)
-- **`types/`** — TypeScript interfaces mirroring backend models
-
-Path alias: `@` maps to `./src` (configured in `vite.config.ts` and `tsconfig.app.json`).
-
-Frontend builds to `server/web_dist/` (not the default `dist/`), which gets embedded into the Go binary via `//go:embed` when built with `-tags prod`.
-
-### Database
-
-SQLite with 5 auto-migrated tables on startup: `groups` (nested via `parent_id`, with `icon` column), `vault` (encrypted credentials), `profiles` (references `vault` and `groups`, with `icon` column), `snippets`, `audit_logs`. Orphaned vault entries are cleaned up when profiles are deleted or credentials are rotated.
-
-### WebSocket Message Protocol
-
-JSON messages with `type` field: `input`, `output`, `resize`, `exit`, `error`, `ping`, `pong`, `auth`, `metadata`. Binary frames are reserved for future protocol extensions.
-
-## Desktop Packaging (Tauri 2) — `src-tauri/`
-
-The `src-tauri/` directory contains the Tauri 2 desktop runtime (tauri branch; replaced the old `electron/` wrapper). The Rust shell spawns the `xcontrol-server` Go sidecar (bundled via `externalBin`, env-driven config) on a free loopback port with a per-process access token, polls health, and requests graceful shutdown on exit. Frontend assets are embedded via `tauri.conf.json` `frontendDist: ../server/web_dist` (shared with the Go `//go:embed` standalone-server mode). In-app updates use independently selectable stable/test channels; test builds expose frontend/backend debug logs. Commands: `npm run desktop:dev` / `desktop:build` / `desktop:smoke`. See `docs/DESKTOP_RUNTIME.md` and `docs/TAURI_MIGRATION.md` for details.
-
-## UI 设计规范
-
-详见 `DESIGN.md`。核心要点：
-- 新组件优先使用 shadcn/ui（`web/src/components/ui/`），用 `npx shadcn@latest add` 添加
-- 颜色使用语义 CSS 变量（`--bg`、`--fg`、`--accent` 等），不硬编码色值
-- 圆角统一：浮层 `--r-lg`（12px），表单控件 `--r-sm`（6px）
-- 类名合并使用 `cn()`（`@/lib/utils`），不手写模板字符串
-
-## Technical Notes
-
-- Go module: `github.com/yuweinfo/xcontrol`
-- UI components use shadcn/ui (new-york style, Lucide icons, Tailwind CSS variables)
-- Tailwind CSS v4 with CSS-first configuration via `@tailwindcss/vite` plugin and `@theme` directive in `web/src/index.css`
-- No test infrastructure exists yet (no Go test files, no frontend test runner)
-- SSH host key verification uses `InsecureIgnoreHostKey()` — acceptable for development, not production
-- SFTP file editor uses Monaco Editor via `@monaco-editor/loader` and `vite-plugin-monaco-editor`
-- Detailed design document: `docs/DEVELOPMENT.md` (in Chinese, includes API specs, data model, and architecture diagrams)
-- Keep UI text and documentation language consistent (Chinese) when editing user-facing strings
+Follow `DESIGN.md`: prefer shadcn/ui, semantic CSS variables, shared radius tokens and `cn()`.
+Add server/group icons through their registries instead of inline imports. Keep Chinese UI wording
+consistent.

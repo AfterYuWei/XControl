@@ -3,7 +3,7 @@ import { AlertTriangle, Check, Loader2, ShieldAlert, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { ServerIcon } from '@/lib/serverIcons'
-import type { ConnectionLogEntry } from '@/types/ws'
+import type { ConnectionLogEntry } from '@/types/sessionMessage'
 
 interface ConnectionStep {
   id: string

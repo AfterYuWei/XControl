@@ -1,11 +1,8 @@
 import { useEffect, useRef } from 'react'
-import { wsUrl } from '@/lib/desktop'
-import { createAppWebSocket, SOCKET_OPEN, type AppWebSocket } from '@/lib/appWebSocket'
+import { listen } from '@tauri-apps/api/event'
 
-/** WebSocket message from the SFTP transfer progress channel. */
-interface SftpWsMessage {
+interface SftpEvent {
   type: string
-  data?: string
   payload?: {
     task_id?: string
     transferred?: number
@@ -25,16 +22,8 @@ export interface SftpTransferCallbacks {
   onSessionStatus?: (sessionId: string, status: string) => void
 }
 
-/**
- * Connects to the SFTP WebSocket endpoint and dispatches transfer progress
- * messages to the provided callbacks. The connection is server-push only;
- * the hook sends periodic ping messages to keep the connection alive.
- *
- * @param sessionId The SFTP session ID to subscribe to.
- * @param callbacks Callbacks for progress, completion, failure, and session status.
- */
+/** 订阅 Rust SFTP 领域通过 Tauri event 推送的会话状态与传输进度。 */
 export function useSftpTransfer(sessionId: string | null, callbacks: SftpTransferCallbacks) {
-  const wsRef = useRef<AppWebSocket | null>(null)
   const callbacksRef = useRef(callbacks)
 
   useEffect(() => {
@@ -43,104 +32,42 @@ export function useSftpTransfer(sessionId: string | null, callbacks: SftpTransfe
 
   useEffect(() => {
     if (!sessionId) return
-    const activeSessionId = sessionId
-
     let disposed = false
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
-    let pingTimer: ReturnType<typeof setInterval> | null = null
+    let cleanup: (() => void) | undefined
 
-    function clearPing() {
-      if (pingTimer) {
-        clearInterval(pingTimer)
-        pingTimer = null
+    void listen<SftpEvent>('xcontrol-sftp-message', ({ payload: message }) => {
+      const payload = message.payload ?? {}
+      const eventSessionId = payload.session_id
+      if (eventSessionId && eventSessionId !== sessionId) return
+      switch (message.type) {
+        case 'transfer_progress':
+          callbacksRef.current.onProgress?.(
+            payload.task_id ?? '', payload.transferred ?? 0, payload.size ?? 0,
+            payload.speed ?? 0, payload.status ?? '',
+          )
+          break
+        case 'transfer_complete':
+          callbacksRef.current.onComplete?.(
+            payload.task_id ?? '', payload.status ?? 'completed', payload.finished_at ?? Date.now(),
+          )
+          break
+        case 'transfer_failed':
+          callbacksRef.current.onFailed?.(
+            payload.task_id ?? '', payload.status ?? 'failed', payload.error_message ?? 'unknown error',
+          )
+          break
+        case 'sftp_session_status':
+          callbacksRef.current.onSessionStatus?.(payload.session_id ?? '', payload.status ?? '')
+          break
       }
-    }
-
-    function connect() {
-      if (disposed) return
-
-      // URLSearchParams 自动做 URL 编码（原 encodeURIComponent 逻辑已包含）
-      const url = wsUrl('/api/sftp/ws', { session_id: activeSessionId })
-      const ws = createAppWebSocket(url)
-      wsRef.current = ws
-
-      ws.onmessage = (event) => {
-        try {
-          const msg: SftpWsMessage = JSON.parse(event.data)
-          const p = msg.payload ?? {}
-          switch (msg.type) {
-            case 'transfer_progress':
-              callbacksRef.current.onProgress?.(
-                p.task_id ?? '',
-                p.transferred ?? 0,
-                p.size ?? 0,
-                p.speed ?? 0,
-                p.status ?? '',
-              )
-              break
-            case 'transfer_complete':
-              callbacksRef.current.onComplete?.(
-                p.task_id ?? '',
-                p.status ?? 'completed',
-                p.finished_at ?? Date.now(),
-              )
-              break
-            case 'transfer_failed':
-              callbacksRef.current.onFailed?.(
-                p.task_id ?? '',
-                p.status ?? 'failed',
-                p.error_message ?? 'unknown error',
-              )
-              break
-            case 'sftp_session_status':
-              callbacksRef.current.onSessionStatus?.(
-                p.session_id ?? '',
-                p.status ?? '',
-              )
-              break
-            case 'pong':
-              break
-          }
-        } catch {
-          // Ignore malformed messages.
-        }
-      }
-
-      ws.onerror = () => {
-        // onclose performs the retry.
-      }
-
-      ws.onclose = () => {
-        clearPing()
-        if (wsRef.current === ws) {
-          wsRef.current = null
-        }
-        if (!disposed) {
-          reconnectTimer = setTimeout(connect, 3000)
-        }
-      }
-
-      pingTimer = setInterval(() => {
-        if (ws.readyState === SOCKET_OPEN) {
-          ws.send(JSON.stringify({ type: 'ping' }))
-        }
-      }, 30000)
-    }
-
-    connect()
+    }).then((unlisten) => {
+      if (disposed) unlisten()
+      else cleanup = unlisten
+    })
 
     return () => {
       disposed = true
-      clearPing()
-      if (reconnectTimer) {
-        clearTimeout(reconnectTimer)
-      }
-      const ws = wsRef.current
-      if (ws) {
-        ws.onclose = null
-        ws.close()
-        wsRef.current = null
-      }
+      cleanup?.()
     }
   }, [sessionId])
 }

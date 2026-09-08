@@ -1,4 +1,4 @@
-import { api, type APIError } from './client'
+import { invokeCommand } from './tauri'
 import type {
   VaultItem,
   VaultCredential,
@@ -16,30 +16,35 @@ export interface VaultListParams {
 }
 
 export const vaultApi = {
-  list: (params?: VaultListParams) => {
-    const qs = new URLSearchParams()
-    if (params?.type) qs.set('type', params.type)
-    if (params?.q) qs.set('q', params.q)
-    const query = qs.toString()
-    return api.get<VaultItem[]>(`/api/vault${query ? `?${query}` : ''}`)
-  },
+  list: (params?: VaultListParams) =>
+    invokeCommand<VaultItem[]>('vault_list', {
+      vaultType: params?.type ?? null,
+      q: params?.q ?? null,
+    }),
 
-  get: (id: string) => api.get<VaultItem>(`/api/vault/${id}`),
+  get: (id: string) => invokeCommand<VaultItem>('vault_get', { id }),
 
   create: (data: VaultCreateRequest) =>
-    api.post<VaultItem>('/api/vault', data),
+    invokeCommand<VaultItem>('vault_create', { request: data }),
 
   update: (id: string, data: VaultUpdateRequest) =>
-    api.put<VaultItem>(`/api/vault/${id}`, data),
+    invokeCommand<VaultItem>('vault_update', { id, request: data }),
 
-  delete: (id: string) => api.delete<void>(`/api/vault/${id}`),
+  delete: (id: string) => invokeCommand<void>('vault_delete', { id }),
 
-  references: (id: string) => api.get<ProfileRef[]>(`/api/vault/${id}/references`),
+  references: (id: string) =>
+    invokeCommand<ProfileRef[]>('vault_references', { id }),
 
-  reveal: (id: string) => api.get<VaultCredential>(`/api/vault/${id}/reveal`),
+  reveal: (id: string) =>
+    invokeCommand<VaultCredential>('vault_reveal', { id }),
 
   generateKeyPair: (data: GenerateKeyRequest) =>
-    api.post<GenerateKeyResponse>('/api/vault/generate', data),
+    invokeCommand<GenerateKeyResponse>('vault_generate_key_pair', {
+      request: data,
+    }),
 }
 
-export type { APIError }
+export interface APIError extends Error {
+  error: { code: string; message: string }
+  references?: unknown
+}

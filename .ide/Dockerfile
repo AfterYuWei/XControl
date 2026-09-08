@@ -8,17 +8,17 @@ RUN rm -f /etc/apt/sources.list.d/* \
 
 RUN apt-get update \
  && apt-get install -y wget unzip openssh-server curl git maven \
+    build-essential pkg-config libssl-dev libwebkit2gtk-4.1-dev libgtk-3-dev \
+    librsvg2-dev xdg-utils rpm \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/*
 
-# 安装 Go 1.26.1
-ENV GO_VERSION=1.26.1
-RUN wget -O go.tar.gz "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
- && tar -C /usr/local -xzf go.tar.gz \
- && rm go.tar.gz
-
-# 设置 Go 环境变量
-ENV PATH="/usr/local/go/bin:${PATH}"
+# 安装 Rust、rustfmt 与 clippy；项目不再需要 Go toolchain。
+ENV RUSTUP_HOME=/opt/rustup
+ENV CARGO_HOME=/opt/cargo
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+  | sh -s -- -y --no-modify-path --profile minimal --component rustfmt,clippy
+ENV PATH="/opt/cargo/bin:${PATH}"
 
 # 创建 /ide_cnb 目录，用于安装 IDE，注意安装路径必须是这个，便于自动识别环境中支持哪些 ide
 RUN mkdir -p /ide_cnb

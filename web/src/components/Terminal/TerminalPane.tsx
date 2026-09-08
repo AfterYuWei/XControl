@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTerminal } from '@/hooks/useTerminal'
-import { useWebSocket } from '@/hooks/useWebSocket'
+import { useSessionChannel } from '@/hooks/useSessionChannel'
 import { useSessionStore } from '@/store/session'
 import { useProfileStore } from '@/store/profile'
 import { useSettingsStore } from '@/store/settings'
@@ -16,11 +16,11 @@ import type {
   DisconnectPayload,
   ErrorPayload,
   MetaPayload,
-  WSMessage,
-} from '@/types/ws'
+  SessionMessage,
+} from '@/types/sessionMessage'
 import type { SessionApiError } from '@/types/session'
 
-type WSStatus = 'connecting' | 'connected' | 'disconnected'
+type ChannelStatus = 'connecting' | 'connected' | 'disconnected'
 
 const RECONNECT_BACKOFF = [1000, 2000, 4000, 8000, 16000, 30000, 30000, 30000, 30000, 30000]
 const MAX_RECONNECT_ATTEMPTS = RECONNECT_BACKOFF.length
@@ -77,7 +77,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   const hasSpecificError = useRef(false)
   const fontSizeHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const wsStatusRef = useRef<WSStatus>('connecting')
+  const channelStatusRef = useRef<ChannelStatus>('connecting')
   const sendInputRef = useRef<(data: string) => void>(() => {})
   const sendResizeRef = useRef<(cols: number, rows: number) => void>(() => {})
   const handleDataRef = useRef<(data: string) => boolean>(() => false)
@@ -142,7 +142,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
 
   const handleTerminalResize = useCallback((cols: number, rows: number) => {
     if (cols <= 0 || rows <= 0) return
-    if (!tab.sessionId || wsStatusRef.current !== 'connected') return
+    if (!tab.sessionId || channelStatusRef.current !== 'connected') return
     const last = lastReportedSizeRef.current
     if (last && last.cols === cols && last.rows === rows) return
     lastReportedSizeRef.current = { cols, rows }
@@ -156,7 +156,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     fontFamilyCN,
     terminalTheme,
     onData: (data) => {
-      if (tab.sessionId && wsStatusRef.current === 'connected') {
+      if (tab.sessionId && channelStatusRef.current === 'connected') {
         const consumed = handleDataRef.current(data)
         if (!consumed) sendInputRef.current(data)
       }
@@ -235,8 +235,8 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     }
   }, [clearTabHostKeyPrompt, currentHostKeyFingerprint, tab.id, tab.sessionId])
 
-  const handleWSMessage = useCallback(
-    (msg: WSMessage) => {
+  const handleSessionMessage = useCallback(
+    (msg: SessionMessage) => {
       switch (msg.type) {
         case 'output':
           if (msg.data) {
@@ -348,9 +348,9 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     ],
   )
 
-  const { status: wsStatus, latency, sendInput, sendResize, sendComplete } = useWebSocket({
+  const { status: channelStatus, latency, sendInput, sendResize, sendComplete } = useSessionChannel({
     sessionId: tab.sessionId || '',
-    onMessage: handleWSMessage,
+    onMessage: handleSessionMessage,
     onOpen: () => {
       // fit() reports the resulting size through onResize, which forwards
       // it to the backend. Delayed slightly so the container has settled.
@@ -359,7 +359,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
       }, 50)
     },
     onClose: () => {
-      if (wsStatusRef.current === 'connected' && !hasSpecificError.current && !isReconnectingRef.current) {
+      if (channelStatusRef.current === 'connected' && !hasSpecificError.current && !isReconnectingRef.current) {
         hasSpecificError.current = true
         setConnectionError('连接已断开')
         setDialogStatus('reconnecting')
@@ -393,17 +393,17 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   })
 
   useEffect(() => {
-    wsStatusRef.current = wsStatus
+    channelStatusRef.current = channelStatus
     sendInputRef.current = sendInput
     sendResizeRef.current = sendResize
     handleDataRef.current = handleData
     handleCompleteResponseRef.current = handleCompleteResponse
     handleOutputDataRef.current = handleOutputData
-  }, [handleCompleteResponse, handleData, handleOutputData, sendInput, sendResize, wsStatus])
+  }, [channelStatus, handleCompleteResponse, handleData, handleOutputData, sendInput, sendResize])
 
   useEffect(() => {
-    if (wsStatus === 'disconnected') resetCompletion()
-  }, [resetCompletion, wsStatus])
+    if (channelStatus === 'disconnected') resetCompletion()
+  }, [channelStatus, resetCompletion])
 
   useEffect(() => {
     if (latency !== null) {
@@ -447,11 +447,11 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   }, [tab.errorMessage, tab.status])
 
   useEffect(() => {
-    if (wsStatus === 'disconnected' && tab.status === 'connecting' && tab.sessionId && !hasSpecificError.current) {
+    if (channelStatus === 'disconnected' && tab.status === 'connecting' && tab.sessionId && !hasSpecificError.current) {
       setConnectionError('无法连接到服务器')
       setDialogStatus('error')
     }
-  }, [tab.sessionId, tab.status, wsStatus])
+  }, [channelStatus, tab.sessionId, tab.status])
 
   // When the tab becomes active, immediately re-fit and report the size —
   // the container was zero-sized while hidden, so the backend may still

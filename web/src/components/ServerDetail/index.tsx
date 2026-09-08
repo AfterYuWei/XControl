@@ -78,7 +78,7 @@ export function ServerDetail({
   const [renameDialog, setRenameDialog] = useState<{ path: string; currentName: string } | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<{ entries: FileTreeNode[] } | null>(null)
 
-  // Connect WebSocket for real-time metrics
+  // Start Rust command polling for real-time metrics
   useServerMetrics(profileId, active)
 
   // Restore scroll position on mount / when becoming visible again.

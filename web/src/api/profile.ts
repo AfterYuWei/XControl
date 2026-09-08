@@ -1,31 +1,29 @@
-import { api } from './client'
+import { invokeCommand } from './tauri'
 import type { Profile, ProfileCreateRequest, ProfileTestResult, ProfileUpdateRequest } from '@/types/profile'
 
 export const profileApi = {
-  list: (params?: { group_id?: string; search?: string }) => {
-    const searchParams = new URLSearchParams()
-    if (params?.group_id) searchParams.set('group_id', params.group_id)
-    if (params?.search) searchParams.set('search', params.search)
-    const query = searchParams.toString()
-    return api.get<Profile[]>(`/api/profiles${query ? `?${query}` : ''}`)
-  },
+  list: (params?: { group_id?: string; search?: string }) =>
+    invokeCommand<Profile[]>('profile_list', {
+      groupId: params?.group_id ?? null,
+      search: params?.search ?? null,
+    }),
 
-  get: (id: string) => api.get<Profile>(`/api/profiles/${id}`),
+  get: (id: string) => invokeCommand<Profile>('profile_get', { id }),
 
   create: (data: ProfileCreateRequest) =>
-    api.post<Profile>('/api/profiles', data),
+    invokeCommand<Profile>('profile_create', { request: data }),
 
   update: (id: string, data: ProfileUpdateRequest) =>
-    api.put<Profile>(`/api/profiles/${id}`, data),
+    invokeCommand<Profile>('profile_update', { id, request: data }),
 
-  delete: (id: string) => api.delete<void>(`/api/profiles/${id}`),
+  delete: (id: string) => invokeCommand<void>('profile_delete', { id }),
 
   testNew: (data: ProfileCreateRequest) =>
-    api.post<ProfileTestResult>('/api/profiles/test', data),
+    invokeCommand<ProfileTestResult>('profile_test_new', { request: data }),
 
   test: (id: string, data: ProfileUpdateRequest = {}) =>
-    api.post<ProfileTestResult>(`/api/profiles/${id}/test`, data),
+    invokeCommand<ProfileTestResult>('profile_test_existing', { id, request: data }),
 
   confirmHostKey: (id: string, fingerprint: string) =>
-    api.post<{ ok: boolean; fingerprint: string }>(`/api/profiles/${id}/confirm-hostkey`, { fingerprint }),
+    invokeCommand<{ ok: boolean; fingerprint: string }>('profile_confirm_host_key', { id, fingerprint }),
 }

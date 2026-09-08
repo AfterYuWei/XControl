@@ -252,8 +252,8 @@ export function ProviderSection({ providers, onChanged }: Props) {
                 <ShieldCheck size={13} />
                 <span>
                   {form.type === 'gdrive'
-                    ? '需在 Google Cloud Console 创建 OAuth 应用（类型：Web 应用），回调地址填：' + location.origin + '/api/sync/oauth/gdrive/callback'
-                    : '需在 Azure Portal 注册应用，回调地址填：' + location.origin + '/api/sync/oauth/onedrive/callback'}
+                    ? '需在 Google Cloud Console 创建 OAuth 应用，回调地址填：xcontrol://oauth/gdrive'
+                    : '需在 Azure Portal 注册应用，回调地址填：xcontrol://oauth/onedrive'}
                 </span>
               </div>
               <div className="backup-row">

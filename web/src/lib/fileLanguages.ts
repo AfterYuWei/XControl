@@ -1,7 +1,7 @@
 /** Language detection for the built-in editor.
  *
  *  This mapping is a frontend mirror of the backend `detectLanguage` in
- *  `server/gateway/handler/sftp_editor.go`. The backend returns a `language`
+ *  `src-tauri/src/sftp/state.rs`. Rust returns a `language`
  *  hint in SftpFileReadResponse, but we keep this table so the UI can:
  *    1. Pre-show a language badge before the read completes.
  *    2. Let the user manually switch language in the editor (overrides hint).

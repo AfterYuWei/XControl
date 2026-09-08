@@ -1,104 +1,50 @@
-import { useEffect, useRef } from 'react'
-import { wsUrl } from '@/lib/desktop'
+import { useEffect } from 'react'
+import { serverDetailApi } from '@/api/serverDetail'
 import { useServerDetailStore } from '@/store/serverDetail'
-import type { ServerInfo, ServerMetrics } from '@/api/serverDetail'
-import { createAppWebSocket, SOCKET_OPEN, type AppWebSocket } from '@/lib/appWebSocket'
 
-/**
- * Manages the WebSocket connection for real-time server metrics.
- * Connects when the management session is connected, disconnects on unmount.
- */
+/** 通过细粒度 Tauri command 每 3 秒采集一次服务器指标。 */
 export function useServerMetrics(profileId: string, active: boolean) {
-  const sessionId = useServerDetailStore((s) => s.details[profileId]?.sessionId ?? null)
-  const status = useServerDetailStore((s) => s.details[profileId]?.status ?? 'idle')
-  const updateMetrics = useServerDetailStore((s) => s.updateMetrics)
-  const updateInfo = useServerDetailStore((s) => s.updateInfo)
-  const setWsConnected = useServerDetailStore((s) => s.setWsConnected)
-  const markDisconnected = useServerDetailStore((s) => s.markDisconnected)
-  const ensureConnected = useServerDetailStore((s) => s.ensureConnected)
-
-  const wsRef = useRef<AppWebSocket | null>(null)
+  const sessionId = useServerDetailStore((state) => state.details[profileId]?.sessionId ?? null)
+  const status = useServerDetailStore((state) => state.details[profileId]?.status ?? 'idle')
+  const updateMetrics = useServerDetailStore((state) => state.updateMetrics)
+  const setWsConnected = useServerDetailStore((state) => state.setWsConnected)
+  const markDisconnected = useServerDetailStore((state) => state.markDisconnected)
+  const ensureConnected = useServerDetailStore((state) => state.ensureConnected)
 
   useEffect(() => {
-    if (!active) {
-      return
-    }
-
+    if (!active) return
     if (status === 'idle' || status === 'disconnected') {
       void ensureConnected(profileId)
       return
     }
+    if (!sessionId || status !== 'connected') return
 
-    if (!sessionId || status !== 'connected') {
-      return
-    }
-
-    const activeSessionId = sessionId
     let disposed = false
+    let collecting = false
+    setWsConnected(profileId, true)
 
-    function connect() {
-      if (disposed) return
-
-      const url = wsUrl('/api/server/ws', { session_id: activeSessionId })
-      const ws = createAppWebSocket(url)
-      wsRef.current = ws
-
-      ws.onopen = () => {
-        if (disposed) return
-        setWsConnected(profileId, true)
-        ws.send(JSON.stringify({ type: 'subscribe_metrics' }))
-      }
-
-      ws.onmessage = (ev) => {
-        if (disposed) return
-        try {
-          const msg = JSON.parse(ev.data)
-          switch (msg.type) {
-            case 'metrics':
-              updateMetrics(profileId, msg.data as ServerMetrics)
-              break
-            case 'info':
-              updateInfo(profileId, msg.data as ServerInfo)
-              break
-            case 'pong':
-              break
-            default:
-              break
-          }
-        } catch {
-          // ignore malformed messages
+    const collect = async () => {
+      if (disposed || collecting) return
+      collecting = true
+      try {
+        const metrics = await serverDetailApi.getMetrics(sessionId)
+        if (!disposed) updateMetrics(profileId, metrics)
+      } catch (error) {
+        if (!disposed) {
+          setWsConnected(profileId, false)
+          markDisconnected(profileId, error instanceof Error ? error.message : '管理连接已断开')
         }
-      }
-
-      ws.onclose = () => {
-        if (disposed) return
-        setWsConnected(profileId, false)
-        wsRef.current = null
-        if (status === 'connected') {
-          markDisconnected(profileId, '管理连接已断开，正在重连')
-        }
-      }
-
-      ws.onerror = () => {
-        // onclose handles reconnection
+      } finally {
+        collecting = false
       }
     }
 
-    connect()
-
-    const pingInterval = setInterval(() => {
-      if (wsRef.current?.readyState === SOCKET_OPEN) {
-        wsRef.current.send(JSON.stringify({ type: 'ping' }))
-      }
-    }, 30000)
-
+    void collect()
+    const timer = setInterval(() => void collect(), 3000)
     return () => {
       disposed = true
-      clearInterval(pingInterval)
-      if (wsRef.current) {
-        wsRef.current.close()
-        wsRef.current = null
-      }
+      clearInterval(timer)
+      setWsConnected(profileId, false)
     }
-  }, [active, ensureConnected, markDisconnected, profileId, sessionId, setWsConnected, status, updateInfo, updateMetrics])
+  }, [active, ensureConnected, markDisconnected, profileId, sessionId, setWsConnected, status, updateMetrics])
 }

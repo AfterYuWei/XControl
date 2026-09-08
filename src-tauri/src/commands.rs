@@ -1,95 +1,16 @@
-//! 前端 invoke 命令（桌面桥，见迁移方案 §5.5）。
+//! 前端 invoke 命令与桌面系统能力。
 
 use std::{
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
 };
 
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::DialogExt;
 
-use crate::backend::{BackendInfo, BackendState};
 use crate::settings_migrate;
 
-/// WebView 发起的 loopback fetch 在部分 WebView2 安全策略下会在到达 Go 前失败。
-/// 桌面端所有 REST 请求经此结构由 Rust 直连 sidecar，响应再还原为 Web Response。
-#[derive(Clone, serde::Serialize)]
-pub struct ApiProxyResponse {
-    pub status: u16,
-    pub status_text: String,
-    pub headers: Vec<(String, String)>,
-    pub body: Vec<u8>,
-}
-
-/// 代理一个本机 `/api/*` 请求。仅允许固定 HTTP 方法和相对 API 路径，鉴权 token
-/// 始终由 Rust 内部注入，前端无法借此命令访问任意主机或伪造认证信息。
-#[tauri::command]
-pub async fn proxy_api_request(
-    method: String,
-    path: String,
-    content_type: Option<String>,
-    body: Option<Vec<u8>>,
-) -> Result<ApiProxyResponse, String> {
-    let method = method.to_ascii_uppercase();
-    if !matches!(method.as_str(), "GET" | "POST" | "PUT" | "DELETE" | "PATCH") {
-        return Err("不支持的 HTTP 方法".into());
-    }
-    if !(path == "/api" || path.starts_with("/api/"))
-        || path.contains('\r')
-        || path.contains('\n')
-        || path.starts_with("//")
-    {
-        return Err("仅允许访问本机 /api 路径".into());
-    }
-    let content_type = content_type.unwrap_or_else(|| "application/json".into());
-    if content_type.contains('\r') || content_type.contains('\n') {
-        return Err("Content-Type 非法".into());
-    }
-
-    tauri::async_runtime::spawn_blocking(move || {
-        let info = crate::backend::current_info().ok_or_else(|| "后端尚未就绪".to_string())?;
-        let response = crate::http::request_ct(
-            info.port,
-            &method,
-            &path,
-            Some(&info.token),
-            None,
-            body.as_deref(),
-            &content_type,
-        )
-        .map_err(|err| format!("请求后端失败: {err}"))?;
-        Ok(ApiProxyResponse {
-            status: response.status,
-            status_text: response.status_text,
-            headers: response.headers,
-            body: response.body,
-        })
-    })
-    .await
-    .map_err(|err| err.to_string())?
-}
-
-/// 获取后端连接信息（端口 + 访问令牌）。阻塞直到后端就绪或超时（20s）。
-///
-/// 前端在 `main.tsx` 的 `initDesktop()` 中最先调用它，完成后再渲染应用，
-/// 因此所有 API/WS 请求都能拿到确定的 base URL 与 token。
-#[tauri::command]
-pub async fn get_backend_info(state: State<'_, BackendState>) -> Result<BackendInfo, String> {
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(20);
-    loop {
-        match state.get() {
-            Some(Ok(info)) => return Ok(info),
-            Some(Err(err)) => return Err(err),
-            None => {}
-        }
-        if tokio::time::Instant::now() >= deadline {
-            return Err("后端启动超时（20s），请查看用户数据目录 logs/backend.log".into());
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    }
-}
-
-/// 前端首帧渲染完成：显示并最大化窗口（等价 Electron ready-to-show + maximize，方案 §5.2）。
+/// 前端首帧渲染完成：显示并最大化窗口（等价 Electron ready-to-show + maximize）。
 #[tauri::command]
 pub fn frontend_ready(app: AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
@@ -116,7 +37,7 @@ pub struct AppLogSnapshot {
 }
 
 fn app_log_path(kind: &str) -> Result<PathBuf, String> {
-    if !crate::backend::is_test_build() {
+    if !crate::runtime::is_test_build() {
         return Err("日志查看器仅在测试版本中启用".into());
     }
     let filename = match kind {
@@ -124,7 +45,7 @@ fn app_log_path(kind: &str) -> Result<PathBuf, String> {
         "backend" => "backend.log",
         _ => return Err("未知日志类型".into()),
     };
-    let dir = crate::backend::user_data_dir()
+    let dir = crate::runtime::user_data_dir()
         .map_err(|err| err.to_string())?
         .join("logs");
     std::fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
@@ -187,7 +108,7 @@ pub fn clear_app_log(kind: String) -> Result<(), String> {
     Ok(())
 }
 
-/// 一次性读取 Electron 时代的 settings.json（UI 偏好迁移到 localStorage，方案 §9.2）。
+/// 一次性读取 Electron 时代的 settings.json（UI 偏好迁移到 localStorage）。
 /// 仅首次返回 Some，前端写入 localStorage 后 zustand persist 再水化。
 #[tauri::command]
 pub fn migrate_electron_settings() -> Option<serde_json::Value> {
@@ -200,134 +121,9 @@ pub fn mark_electron_settings_migrated() -> Result<(), String> {
     settings_migrate::mark_migrated()
 }
 
-// ─── 文件上传（备份导入） ────────────────────────────────────────────────────
-// WebView2/WebKit 虚拟源（http://tauri.localhost / tauri://localhost）下，
-// <input type="file"> 的 File 经 fetch FormData 发送会以 "Failed to fetch"
-// 失败（webview 网络栈拿不到 file-backed blob）。桌面端备份导入因此切为：
-// Rust 系统对话框选文件 → Rust 读盘 → 直传本机 sidecar，内容不经过 IPC。
-
-/// 打开系统「打开文件」对话框选择备份文件。返回绝对路径；用户取消返回 None。
-#[tauri::command]
-pub async fn pick_backup_file(app: AppHandle) -> Result<Option<String>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let picked = app
-            .dialog()
-            .file()
-            .add_filter("XControl 备份文件", &["xcbackup", "json"])
-            .add_filter("所有文件", &["*"])
-            .blocking_pick_file();
-        match picked {
-            Some(path) => path
-                .into_path()
-                .map(|p| Some(p.display().to_string()))
-                .map_err(|err| err.to_string()),
-            None => Ok(None),
-        }
-    })
-    .await
-    .map_err(|err| err.to_string())?
-}
-
-/// multipart 上传结果：HTTP 状态码 + 响应体（JSON 文本，由前端解析）。
-#[derive(Clone, serde::Serialize)]
-pub struct UploadOutcome {
-    pub status: u16,
-    pub body: String,
-}
-
-/// Rust 侧 multipart 文件上传：`POST <endpoint>`，`file` 字段携带文件内容，
-/// `fields` 作为附加表单字段（如 strategy/password）。返回状态码与响应体，
-/// 非 2xx 不视为 Err（由前端按后端错误码处理，如 PASSWORD_REQUIRED）。
-#[tauri::command]
-pub async fn upload_file_form(
-    endpoint: String,
-    file_path: String,
-    fields: Option<std::collections::HashMap<String, String>>,
-) -> Result<UploadOutcome, String> {
-    if !endpoint.starts_with('/') {
-        return Err("endpoint 必须以 / 开头".into());
-    }
-    tauri::async_runtime::spawn_blocking(move || {
-        let info = crate::backend::current_info().ok_or_else(|| "后端尚未就绪".to_string())?;
-
-        // 与后端 maxBackupSize（gateway/handler/backup.go 50MB）保持一致，
-        // 避免误选超大文件被整包读入内存
-        const MAX_UPLOAD_BYTES: u64 = 50 << 20;
-        let metadata =
-            std::fs::metadata(&file_path).map_err(|err| format!("读取文件失败: {err}"))?;
-        if metadata.len() > MAX_UPLOAD_BYTES {
-            return Err("备份文件超过 50MB 限制".into());
-        }
-        let bytes = std::fs::read(&file_path).map_err(|err| format!("读取文件失败: {err}"))?;
-        let filename = Path::new(&file_path)
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("upload.bin");
-
-        let fields = fields.unwrap_or_default();
-        let extra: Vec<(String, String)> = fields.into_iter().collect();
-        let form = crate::http::build_multipart("file", filename, &bytes, &extra);
-        let response = crate::http::request_ct(
-            info.port,
-            "POST",
-            &endpoint,
-            Some(&info.token),
-            None,
-            Some(&form.body),
-            &form.content_type,
-        )
-        .map_err(|err| format!("请求后端失败: {err}"))?;
-
-        Ok(UploadOutcome {
-            status: response.status,
-            body: String::from_utf8_lossy(&response.body).into_owned(),
-        })
-    })
-    .await
-    .map_err(|err| err.to_string())?
-}
-
-// ─── 磁盘保存（方案 §5.5 / §6） ─────────────────────────────────────────────
+// ─── 磁盘保存 ───────────────────────────────────────────────────────────────
 // WKWebView/WebKitGTK 下 blob + <a download> 不可靠，桌面端统一切换为
 // Rust 侧「系统保存对话框 + 文件落盘」。文件内容不经过 IPC payload（大文件友好）。
-
-/// 将后端 API 响应保存到用户选择的文件（备份导出等）。
-/// 大文件不进 IPC：Rust 直接从 sidecar 拉取（Bearer）→ temp → 对话框 → 移动。
-/// 返回 Ok(Some(最终路径)) 已保存；Ok(None) 用户取消；Err 含后端错误信息。
-///
-/// 注：当前 http 客户端整包读入内存，适用于备份导出等中小文件；
-/// 后续接入大文件下载（SFTP）时可扩展为流式写盘。
-#[tauri::command]
-pub async fn save_url_to_disk(
-    app: AppHandle,
-    api_path: String,
-    suggested_name: String,
-) -> Result<Option<String>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let info = crate::backend::current_info().ok_or_else(|| "后端尚未就绪".to_string())?;
-        let response =
-            crate::http::request(info.port, "GET", &api_path, Some(&info.token), None, None)
-                .map_err(|err| format!("请求后端失败: {err}"))?;
-        if response.status != 200 {
-            let message = serde_json::from_slice::<serde_json::Value>(&response.body)
-                .ok()
-                .and_then(|value| {
-                    value
-                        .pointer("/error/message")
-                        .and_then(|message| message.as_str())
-                        .map(String::from)
-                })
-                .unwrap_or_else(|| format!("后端返回状态码 {}", response.status));
-            return Err(message);
-        }
-        let temp_path = unique_temp_path();
-        std::fs::write(&temp_path, &response.body)
-            .map_err(|err| format!("写入临时文件失败: {err}"))?;
-        prompt_and_persist(&app, &temp_path, &suggested_name)
-    })
-    .await
-    .map_err(|err| err.to_string())?
-}
 
 /// 将前端生成的小段内容（如私钥文本）保存到用户选择的文件。
 #[tauri::command]

@@ -44,7 +44,7 @@ export function SftpView() {
     }
   }, [store])
 
-  // Track the primary session ID for WebSocket subscription.
+  // Track the primary session ID for event subscription.
   // We use a ref + manual subscription to avoid creating new array objects in
   // the selector (which would break useSyncExternalStore's getSnapshot caching
   // and cause infinite render loops).
@@ -69,7 +69,7 @@ export function SftpView() {
     return unsub
   }, [store])
 
-  // WebSocket progress callbacks
+  // Transfer event callbacks
   const handleProgress = useCallback((taskId: string, transferred: number, size: number, speed: number, status: string) => {
     store.getState().updateTransferProgress(taskId, transferred, size, speed, status)
   }, [store])
@@ -82,7 +82,7 @@ export function SftpView() {
     store.getState().failTransfer(taskId, status, errorMessage)
   }, [store])
 
-  // Subscribe to the first active session's WebSocket (transfers are global
+  // Subscribe to the first active session's events (transfers are global
   // per SFTP view; additional sessions' progress is handled by their own
   // connection if needed in the future)
   useSftpTransfer(primarySessionId, {

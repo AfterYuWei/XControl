@@ -297,7 +297,7 @@ export interface SftpStore {
   openDeleteConfirm: (pane: PaneSide, entries?: SftpEntry[]) => void
   closeDialogs: () => void
 
-  // WebSocket progress callbacks (called by useSftpTransfer hook)
+  // Tauri event progress callbacks (called by useSftpTransfer hook)
   updateTransferProgress: (taskId: string, transferred: number, size: number, speed: number, status: string) => void
   completeTransfer: (taskId: string, status: string, finishedAt: number) => void
   failTransfer: (taskId: string, status: string, errorMessage: string) => void
@@ -581,9 +581,18 @@ export function createSftpStore(): SftpStoreApi {
 
     uploadExternalFiles: async (files, target) => {
       try {
-        const res = await sftpApi.upload(target.sessionId, files, target.destDir)
+        const res = await sftpApi.upload(
+          target.sessionId,
+          files,
+          target.destDir,
+          false,
+          (tasks) => set((state) => ({ transfers: [...state.transfers, ...tasks] })),
+        )
         if (res.tasks.length === 0) return
-        set((state) => ({ transfers: [...state.transfers, ...res.tasks] }))
+        const completed = new Map(res.tasks.map((task) => [task.id, task]))
+        set((state) => ({
+          transfers: state.transfers.map((task) => completed.get(task.id) ?? task),
+        }))
         void monitorUploadTasks(get, set, res.tasks.map((task) => task.id), target)
       } catch (err) {
         toast.error(err instanceof Error ? err.message : '上传失败')
@@ -689,7 +698,7 @@ export function createSftpStore(): SftpStoreApi {
       }))
     },
 
-    // --- WebSocket progress callbacks ---
+    // --- Tauri event progress callbacks ---
 
     updateTransferProgress: (taskId, transferred, size, speed, status) => {
       set((state) => ({
@@ -907,8 +916,8 @@ async function connectAndNavigate(
   }
 }
 
-/** Initiate a cross-session transfer via the backend /api/sftp/transfer
- *  endpoint. If the backend reports destination conflicts and no explicit
+/** Initiate a cross-session transfer via the Rust command.
+ *  If Rust reports destination conflicts and no explicit
  *  resolution was provided, stores the conflict info in `pendingConflict` so
  *  the UI can prompt the user. Otherwise starts polling the task status until
  *  it reaches a terminal state. */

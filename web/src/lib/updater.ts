@@ -1,4 +1,4 @@
-// 应用内更新（P4，见 docs/TAURI_MIGRATION.md §8.2）。
+// 应用内更新（stable/test 双通道）。
 //
 // 通道策略：endpoint 指向固定的 tauri-update-channel Release，并用自定义
 // target 区分 stable/test 与平台。选择不同于当前构建的通道时允许跨通道降级，

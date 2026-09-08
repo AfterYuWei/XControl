@@ -20,7 +20,7 @@ import {
   detectTuiSequence,
   type BufferState,
 } from '@/lib/completionBuffer'
-import type { CompleteResponsePayload } from '@/types/ws'
+import type { CompleteResponsePayload } from '@/types/sessionMessage'
 
 interface UseCompletionOptions {
   getTerminal: () => Terminal | null

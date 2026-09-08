@@ -1,42 +1,27 @@
 import { StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
 import { initDesktop, isTauri } from '@/lib/desktop'
 import { scheduleSilentUpdateCheck } from '@/lib/updater'
 import { installFrontendLogging } from '@/lib/appLog'
 import './index.css'
 import '@xterm/xterm/css/xterm.css'
 
-interface BackendExitedPayload {
-  message: string
-}
-
 let appRoot: Root | null = null
 let fatalRendered = false
 
-// 引导时序（docs/TAURI_MIGRATION.md §6.2）：
-// 1. initDesktop 必须先于一切 store 导入 —— Tauri 下获取后端端口/令牌并完成
-//    Electron 设置迁移，保证 zustand persist 水化发生在迁移之后、API/WS 请求
-//    带上确定的 base URL 与鉴权头；浏览器下立即返回，零开销。
+// 引导时序：
+// 1. initDesktop 必须先于一切 store 导入，保证 Electron 历史设置先于
+//    zustand persist 水化完成迁移；浏览器下立即返回。
 // 2. App 动态导入：静态 import 会在本模块求值时立即触发 store 模块初始化，
 //    破坏上述顺序，因此必须放在 await 之后。
 async function bootstrap() {
-  if (isTauri()) {
-    // 先于 get_backend_info 注册，避免 sidecar 在刚完成健康检查后退出时漏掉事件。
-    await listen<BackendExitedPayload>('backend-exited', (event) => {
-      renderFatal(event.payload.message || '后端进程意外退出')
-      void invoke('frontend_ready').catch(() => undefined)
-    }).catch(() => undefined)
-  }
-
   try {
     await initDesktop()
     installFrontendLogging()
   } catch (err) {
     renderFatal(err instanceof Error ? err.message : String(err))
-    // 主窗口初始为 visible:false。后端启动失败时也必须主动显示窗口，
-    // 否则用户只能看到进程存在，却看不到上面的诊断信息。
+    // 主窗口初始为 visible:false，初始化失败时也必须主动显示错误页。
     if (isTauri()) {
       await invoke('frontend_ready').catch(() => undefined)
     }
@@ -45,8 +30,6 @@ async function bootstrap() {
   if (fatalRendered) return
 
   const { default: App } = await import('./App.tsx')
-  // 动态加载 App 期间 sidecar 仍可能退出；不要让随后创建的 React 根节点
-  // 覆盖 backend-exited 事件已经渲染出的致命错误页。
   if (fatalRendered) return
   appRoot = createRoot(document.getElementById('root')!)
   appRoot.render(
@@ -64,7 +47,7 @@ async function bootstrap() {
   }
 }
 
-/** 后端启动失败等致命错误的兜底界面（对齐 Electron dialog.showErrorBox）。 */
+/** 初始化失败的兜底界面。 */
 function renderFatal(message: string) {
   fatalRendered = true
   appRoot?.unmount()
@@ -83,7 +66,7 @@ function renderFatal(message: string) {
   detail.textContent = message
   const hint = document.createElement('p')
   hint.style.cssText = 'margin:0;color:#737373;font-size:12px;'
-  hint.textContent = '可重新启动应用重试；若持续失败，请检查用户数据目录 logs/backend.log。'
+  hint.textContent = '可重新启动应用重试；若持续失败，请查看设置中的诊断日志。'
   content.append(title, detail, hint)
   shell.append(content)
   root.replaceChildren(shell)

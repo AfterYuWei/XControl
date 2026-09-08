@@ -1,4 +1,4 @@
-// 桌面端（Tauri）外部文件拖入（P3，见 docs/TAURI_MIGRATION.md §6.7）。
+// 桌面端（Tauri）外部文件拖入。
 //
 // Tauri dragDropEnabled=true 时 WebView 拦截 OS 级拖放（HTML5 dataTransfer
 // 拿不到文件），改用 webview 级 onDragDropEvent：直接提供 OS 真实路径，

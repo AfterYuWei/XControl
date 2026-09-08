@@ -71,12 +71,6 @@ jobs:
             package-lock.json
             web/package-lock.json
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.26.x'
-          cache-dependency-path: server/go.sum
-
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -87,6 +81,9 @@ jobs:
 
       - name: Install Tauri CLI
         run: npm ci
+
+      - name: Install frontend dependencies
+        run: npm --prefix web ci
 
       - name: Set version in tauri.conf.json
         shell: bash
@@ -138,23 +135,16 @@ jobs:
             echo "==> macOS 已配置签名环境变量，启用签名公证"
           fi
 
-      # beforeBuildCommand（scripts/prepare-sidecar.mjs --build）自动完成：
-      # web 前端构建（输出 server/web_dist）→ Go sidecar 编译 → externalBin triple 重命名拷贝
+      # beforeBuildCommand 自动完成 React 构建，Rust 领域随主程序一起编译。
       - name: Build Tauri app
         run: npx tauri build
 
-      # 直接运行 release 二进制，覆盖 externalBin 从带 triple 的构建源文件
-      # 重命名为资源目录中 xcontrol-server.exe 后的真实启动路径。开发态
-      # cargo run 烟测不会经过这条路径，无法发现“能出包但双击无窗口”。
+      # 直接运行 release 二进制，验证打包后的进程内状态初始化。
       - name: Smoke test Windows release runtime
         if: runner.os == 'Windows'
         shell: pwsh
         timeout-minutes: 2
         run: |
-          $sidecar = "src-tauri/target/release/xcontrol-server.exe"
-          if (-not (Test-Path $sidecar)) {
-            throw "Bundled sidecar was not copied to $sidecar"
-          }
           # release 构建使用 windows GUI subsystem，不附加控制台，因此用退出码
           # 而不是 stdout marker 判断烟测结果。
           $process = Start-Process `
@@ -166,8 +156,7 @@ jobs:
             throw "Windows release smoke test failed with exit code $($process.ExitCode)"
           }
 
-      # 从最终 .app 内启动，验证 macOS externalBin 位于 Contents/MacOS，
-      # 同时覆盖 release cfg 与 sidecar 健康检查，而不只验证能否完成编译。
+      # 从最终 .app 内启动，覆盖 release cfg 与进程内初始化。
       - name: Smoke test macOS app bundle
         if: runner.os == 'macOS'
         shell: bash
@@ -192,7 +181,6 @@ jobs:
             exit 1
           fi
           APP_EXECUTABLE="$APP_BIN/$MAIN_BINARY"
-          SIDECAR="$APP_BIN/xcontrol-server"
           MARKER="$RUNNER_TEMP/xcontrol-tauri-smoke-ok"
 
           echo "==> macOS app bundle: $APP_ROOT"
@@ -201,11 +189,6 @@ jobs:
             echo "macOS app executable is missing or not executable: $APP_EXECUTABLE" >&2
             exit 1
           fi
-          if [ ! -x "$SIDECAR" ]; then
-            echo "macOS bundled sidecar is missing or not executable: $SIDECAR" >&2
-            exit 1
-          fi
-
           rm -f "$MARKER"
           set +e
           OUTPUT="$(XCONTROL_SMOKE_MARKER_PATH="$MARKER" "$APP_EXECUTABLE" --smoke-test 2>&1)"
@@ -319,7 +302,7 @@ jobs:
 
             - 本 Release 由 **tauri 分支** 的 Tauri 2 构建管线产出；main 分支仍发布 Electron 版
             - 从 Electron 版升级：连接配置、密钥、UI 偏好会被自动继承，无需手动迁移
-            - Windows 新版安装程序支持直接覆盖升级，无需先卸载；安装时会自动关闭旧版 sidecar
+            - Windows 新版安装程序支持直接覆盖升级，无需先卸载
             - **应用内更新**（设置 → 关于 → 检查更新）：Windows / macOS / Linux AppImage 支持；
               deb / rpm 用户需手动下载新包覆盖安装（`.app.tar.gz` 为应用内更新用的增量资产，无需手动下载）
           files: |

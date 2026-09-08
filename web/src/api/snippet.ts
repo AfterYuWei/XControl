@@ -1,14 +1,14 @@
-import { api } from './client'
+import { invokeCommand } from './tauri'
 import type { Snippet, SnippetCreateRequest, SnippetUpdateRequest } from '@/types/snippet'
 
 export const snippetApi = {
-  list: () => api.get<Snippet[]>('/api/snippets'),
+  list: () => invokeCommand<Snippet[]>('snippet_list'),
 
   create: (data: SnippetCreateRequest) =>
-    api.post<Snippet>('/api/snippets', data),
+    invokeCommand<Snippet>('snippet_create', { request: data }),
 
   update: (id: string, data: SnippetUpdateRequest) =>
-    api.put<Snippet>(`/api/snippets/${id}`, data),
+    invokeCommand<Snippet>('snippet_update', { id, request: data }),
 
-  delete: (id: string) => api.delete<void>(`/api/snippets/${id}`),
+  delete: (id: string) => invokeCommand<void>('snippet_delete', { id }),
 }

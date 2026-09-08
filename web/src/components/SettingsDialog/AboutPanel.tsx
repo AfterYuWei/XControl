@@ -14,7 +14,7 @@ const channelOptions = [
 ]
 
 /**
- * 「关于」面板：版本信息与应用内更新（P4，见 docs/TAURI_MIGRATION.md §8.2）。
+ * 「关于」面板：版本信息与应用内更新。
  * 正式/测试更新通道独立，选择会持久化；deb/rpm 安装包不支持应用内更新。
  */
 export function AboutPanel() {

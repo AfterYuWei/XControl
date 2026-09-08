@@ -1,14 +1,14 @@
 [package]
 name = "xcontrol"
 version = "1.0.0"
-description = "XControl 桌面壳（Tauri 2）：管理 xcontrol-server sidecar 与桌面能力"
+description = "XControl 桌面 SSH 终端与 SFTP 管理器（Tauri 2 + Rust）"
 authors = ["yuweinfo"]
 license = "MIT"
 repository = "https://github.com/AfterYuWei/XControl"
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.89"
 
-# 移动端预留（docs/TAURI_MIGRATION.md §14）：桌面逻辑全部 #[cfg(desktop)] 门控，
+# 移动端预留：桌面逻辑通过 #[cfg(desktop)] 门控，
 # 未来 tauri ios/android init 时以 staticlib/cdylib 形式复用。
 [lib]
 name = "xcontrol_lib"
@@ -26,27 +26,46 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
-tauri-plugin-single-instance = "2"
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+tauri-plugin-deep-link = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
-# 文件拖出到系统（社区插件，crabnebula 维护，见方案 §1.8/§12）
+# 文件拖出到系统（社区插件，crabnebula 维护）
 tauri-plugin-drag = "2"
-# 应用内更新（stable/test 双通道，见方案 §8.2）
+# 应用内更新（stable/test 双通道）
 tauri-plugin-updater = "2"
 # 更新完成后重启
 tauri-plugin-process = "2"
-# WebView 自定义 origin 无法可靠直连 loopback WS；由 Rust 原生客户端承载
-tauri-plugin-websocket = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 dirs = "5"
 getrandom = "0.3"
-# 异步命令（get_backend_info）的阻塞等待轮询
-tokio = { version = "1", features = ["time"] }
+aes-gcm = "0.10"
+argon2 = "0.5"
+base64 = "0.22"
+chrono = { version = "0.4", features = ["clock"] }
+hex = "0.4"
+rand_core = { version = "0.6", features = ["getrandom"] }
+rusqlite = { version = "0.37", features = ["bundled"] }
+sha2 = "0.10"
+hmac = "0.12"
+percent-encoding = "2"
+reqwest = { version = "0.13", default-features = false, features = ["json", "form", "multipart", "rustls-no-provider", "system-proxy"] }
+ssh-key = { version = "0.6", features = ["ed25519", "encryption", "getrandom", "rsa"] }
+russh = { version = "0.63.2", default-features = false, features = ["ring", "rsa"] }
+russh-sftp = "3.0.0"
+flate2 = "1.1.10"
+tar = "0.4.46"
+zip = { version = "4.6.1", default-features = false, features = ["deflate"] }
+thiserror = "2"
+uuid = { version = "1", features = ["v4"] }
+zeroize = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt", "sync", "time"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+url = "2"
 
-[target.'cfg(target_os = "linux")'.dependencies]
-# PR_SET_PDEATHSIG：父进程死亡时由内核向 sidecar 发 SIGTERM，杜绝孤儿进程
-libc = "0.2"
+[dev-dependencies]
+tempfile = "3"
 
 [profile.release]
 strip = true

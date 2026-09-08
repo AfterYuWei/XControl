@@ -1,4 +1,4 @@
-// 拖放目标注册表（P3 指针拖拽核心设施，见 docs/TAURI_MIGRATION.md §6.6）。
+// 拖放目标注册表（指针拖拽核心设施）。
 //
 // 设计：拖放表面通过 data-drag-payload 属性声明目标元数据（JSON），
 // 命中测试用 elementFromPoint + closest 语义向上找最近的声明元素——

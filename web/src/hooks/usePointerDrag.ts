@@ -1,4 +1,4 @@
-// 指针拖拽引擎（P3，见 docs/TAURI_MIGRATION.md §6.6）。
+// 指针拖拽引擎。
 //
 // 取代 HTML5 Drag and Drop：Tauri 的 dragDropEnabled=true 会接管 WebView
 // 拖放处理器（Windows WebView2 上 HTML5 DnD 完全失效），因此内部拖拽

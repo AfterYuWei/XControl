@@ -3,7 +3,7 @@
 //! 数据库、Argon2id 和 AES-GCM 均在 Rust 阻塞线程执行；桌面端只通过文件路径
 //! 交换大文件，不把备份正文送入 WebView IPC。
 
-use std::{collections::HashMap, path::PathBuf};
+use std::collections::HashMap;
 
 use aes_gcm::{
     aead::{Aead, KeyInit, Payload},
@@ -16,7 +16,6 @@ use rusqlite::{params, Transaction};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use tauri::State;
 use zeroize::Zeroizing;
 
 use crate::{
@@ -235,7 +234,7 @@ pub struct BackupImportResult {
 }
 
 #[derive(Clone)]
-pub struct BackupState {
+pub(crate) struct BackupService {
     database: Database,
     encryptor: Encryptor,
     audit: AuditRepository,
@@ -244,7 +243,7 @@ pub struct BackupState {
     vault: VaultService,
 }
 
-impl BackupState {
+impl BackupService {
     pub fn new(
         database: Database,
         encryptor: Encryptor,
@@ -263,7 +262,7 @@ impl BackupState {
         }
     }
 
-    fn export_bytes(&self, mode: &str, password: &str) -> Result<Vec<u8>, CommandError> {
+    pub(crate) fn export_bytes(&self, mode: &str, password: &str) -> Result<Vec<u8>, CommandError> {
         let mode = if mode.is_empty() {
             MODE_ENCRYPTED
         } else {
@@ -411,7 +410,11 @@ impl BackupState {
         decode_backup_file(&raw, password)
     }
 
-    fn preview(&self, path: &str, password: &str) -> Result<BackupPreview, CommandError> {
+    pub(crate) fn preview(
+        &self,
+        path: &str,
+        password: &str,
+    ) -> Result<BackupPreview, CommandError> {
         let parsed = self.parse_path(path, password)?;
         let conflicts = self
             .conflicts(&parsed.payload)
@@ -465,7 +468,7 @@ impl BackupState {
         })
     }
 
-    fn import(
+    pub(crate) fn import(
         &self,
         path: &str,
         strategy: &str,
@@ -1285,114 +1288,11 @@ fn result_error<T>(result: Result<T, CommandError>) -> String {
         .unwrap_or_else(|| "<nil>".into())
 }
 
-#[cfg(desktop)]
-fn backup_name() -> String {
-    format!(
-        "xcontrol-backup-{}.xcbackup",
-        chrono::Local::now().format("%Y%m%d-%H%M%S")
-    )
-}
-
-#[cfg(desktop)]
-fn dialog_path(path: tauri_plugin_dialog::FilePath) -> Result<PathBuf, CommandError> {
-    path.into_path()
-        .map_err(|error| CommandError::new("FILE_ERROR", error.to_string()))
-}
-
-#[cfg(desktop)]
-#[tauri::command]
-pub async fn backup_pick_file(app: tauri::AppHandle) -> Result<Option<String>, CommandError> {
-    use tauri_plugin_dialog::DialogExt;
-    tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
-            .file()
-            .add_filter("XControl 备份文件", &["xcbackup", "json"])
-            .add_filter("所有文件", &["*"])
-            .blocking_pick_file()
-            .map(dialog_path)
-            .transpose()
-            .map(|path| path.map(|value| value.display().to_string()))
-    })
-    .await
-    .map_err(CommandError::database)?
-}
-
-#[cfg(desktop)]
-#[tauri::command]
-pub async fn backup_export(
-    app: tauri::AppHandle,
-    state: State<'_, BackupState>,
-    mode: String,
-    password: Option<String>,
-) -> Result<Option<String>, CommandError> {
-    use tauri_plugin_dialog::DialogExt;
-    let state = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let bytes = state.export_bytes(&mode, password.as_deref().unwrap_or_default())?;
-        let Some(path) = app
-            .dialog()
-            .file()
-            .set_file_name(backup_name())
-            .add_filter("XControl 备份文件", &["xcbackup"])
-            .blocking_save_file()
-        else {
-            return Ok(None);
-        };
-        let path = dialog_path(path)?;
-        std::fs::write(&path, bytes).map_err(|error| {
-            CommandError::new("FILE_ERROR", format!("写入目标文件失败: {error}"))
-        })?;
-        Ok(Some(path.display().to_string()))
-    })
-    .await
-    .map_err(CommandError::database)?
-}
-
-#[tauri::command]
-pub async fn backup_preview(
-    state: State<'_, BackupState>,
-    file_path: String,
-    password: Option<String>,
-) -> Result<BackupPreview, CommandError> {
-    let state = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        state.preview(&file_path, password.as_deref().unwrap_or_default())
-    })
-    .await
-    .map_err(CommandError::database)?
-}
-
-#[tauri::command]
-pub async fn backup_import(
-    state: State<'_, BackupState>,
-    sync_state: State<'_, crate::sync::SyncState>,
-    file_path: String,
-    strategy: String,
-    password: Option<String>,
-) -> Result<BackupImportResult, CommandError> {
-    let state = state.inner().clone();
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        state.import(
-            &file_path,
-            if strategy.is_empty() {
-                STRATEGY_SKIP
-            } else {
-                &strategy
-            },
-            password.as_deref().unwrap_or_default(),
-        )
-    })
-    .await
-    .map_err(CommandError::database)??;
-    sync_state.notify_change();
-    Ok(result)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn state() -> (tempfile::TempDir, BackupState) {
+    fn state() -> (tempfile::TempDir, BackupService) {
         let directory = tempfile::tempdir().unwrap();
         let database = Database::initialize(directory.path().join("xcontrol.db")).unwrap();
         let encryptor = Encryptor::load_or_create(directory.path().join("key")).unwrap();
@@ -1403,7 +1303,7 @@ mod tests {
             ProfileService::initialize(database.clone(), encryptor.clone(), vault.clone()).unwrap();
         (
             directory,
-            BackupState::new(database, encryptor, audit, groups, profiles, vault),
+            BackupService::new(database, encryptor, audit, groups, profiles, vault),
         )
     }
 

@@ -77,8 +77,8 @@ pub(crate) fn run() {
                 sftp::sftp_move,
                 server_detail::server_get_info,
                 server_detail::server_get_metrics,
-                backup::backup_preview,
-                backup::backup_import,
+                commands::backup_preview,
+                commands::backup_import,
                 sync::sync_status,
                 sync::sync_backup_now,
                 sync::sync_versions,
@@ -117,7 +117,7 @@ pub(crate) fn run() {
                     vault.clone(),
                 )?;
                 let groups = crate::group::GroupService::new(database.clone());
-                let backup = backup::BackupState::new(
+                let backup = backup::BackupService::new(
                     database.clone(),
                     encryptor.clone(),
                     audit.clone(),
@@ -185,10 +185,10 @@ fn desktop_run() {
             commands::migrate_electron_settings,
             commands::mark_electron_settings_migrated,
             commands::save_blob_to_disk,
-            backup::backup_pick_file,
-            backup::backup_export,
-            backup::backup_preview,
-            backup::backup_import,
+            commands::backup_pick_file,
+            commands::backup_export,
+            commands::backup_preview,
+            commands::backup_import,
             drag_out::sftp_drag_out,
             commands::snippet_list,
             commands::snippet_create,
@@ -289,7 +289,7 @@ fn desktop_run() {
                 vault.clone(),
             )?;
             let groups = crate::group::GroupService::new(database.clone());
-            let backup = backup::BackupState::new(
+            let backup = backup::BackupService::new(
                 database.clone(),
                 encryptor.clone(),
                 audit.clone(),

@@ -9,7 +9,7 @@ use std::{
 use chrono::{Local, SecondsFormat};
 use serde::Serialize;
 
-use crate::{backup::BackupState, error::CommandError};
+use crate::{backup::BackupService, error::CommandError};
 
 use super::{
     model::{
@@ -33,7 +33,7 @@ pub struct SyncState {
 
 pub(crate) struct SyncInner {
     pub repository: SyncRepository,
-    pub backup: BackupState,
+    pub backup: BackupService,
     pub backup_dir: PathBuf,
     pub device_id: String,
     operation: Mutex<()>,
@@ -59,7 +59,7 @@ pub struct RestoreResult {
 impl SyncState {
     pub fn initialize(
         repository: SyncRepository,
-        backup: BackupState,
+        backup: BackupService,
         backup_dir: PathBuf,
     ) -> Result<Self, CommandError> {
         std::fs::create_dir_all(&backup_dir).map_err(|error| {
@@ -395,7 +395,7 @@ mod tests {
         let vault = VaultService::new(database.clone(), encryptor.clone(), audit.clone());
         let profiles =
             ProfileService::initialize(database.clone(), encryptor.clone(), vault.clone()).unwrap();
-        let backup = BackupState::new(
+        let backup = BackupService::new(
             database.clone(),
             encryptor.clone(),
             audit,

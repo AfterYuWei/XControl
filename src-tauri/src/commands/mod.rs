@@ -1,6 +1,7 @@
 //! Tauri IPC adapter layer.
 
 mod audit;
+mod backup;
 #[cfg(desktop)]
 mod desktop;
 mod group;
@@ -9,6 +10,7 @@ mod snippet;
 mod vault;
 
 pub(crate) use audit::*;
+pub(crate) use backup::*;
 #[cfg(desktop)]
 pub(crate) use desktop::*;
 pub(crate) use group::*;

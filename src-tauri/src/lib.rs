@@ -6,13 +6,12 @@
 mod app;
 mod audit;
 mod backup;
-#[cfg(desktop)]
 mod commands;
 mod credential_crypto;
 #[cfg(desktop)]
 mod drag_out;
 mod error;
-mod groups;
+mod group;
 mod infrastructure;
 mod profiles;
 mod runtime;
@@ -20,7 +19,7 @@ mod server_detail;
 #[cfg(desktop)]
 mod settings_migrate;
 mod sftp;
-mod snippets;
+mod snippet;
 mod ssh;
 mod sync;
 mod vault;

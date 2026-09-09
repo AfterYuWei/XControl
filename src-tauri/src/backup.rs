@@ -20,10 +20,10 @@ use tauri::State;
 use zeroize::Zeroizing;
 
 use crate::{
-    audit::AuditState,
+    audit::AuditRepository,
     credential_crypto::Encryptor,
     error::CommandError,
-    groups::{Group, GroupState},
+    group::{Group, GroupService},
     infrastructure::database::Database,
     profiles::{Profile, ProfileState},
     vault::{decode_plaintext, encode_plaintext, Credential, VaultItem, VaultState},
@@ -239,8 +239,8 @@ pub struct BackupImportResult {
 pub struct BackupState {
     database: Database,
     encryptor: Encryptor,
-    audit: AuditState,
-    groups: GroupState,
+    audit: AuditRepository,
+    groups: GroupService,
     profiles: ProfileState,
     vault: VaultState,
 }
@@ -249,8 +249,8 @@ impl BackupState {
     pub fn new(
         database: Database,
         encryptor: Encryptor,
-        audit: AuditState,
-        groups: GroupState,
+        audit: AuditRepository,
+        groups: GroupService,
         profiles: ProfileState,
         vault: VaultState,
     ) -> Self {
@@ -1397,8 +1397,8 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let database = Database::initialize(directory.path().join("xcontrol.db")).unwrap();
         let encryptor = Encryptor::load_or_create(directory.path().join("key")).unwrap();
-        let audit = AuditState::new(database.clone());
-        let groups = GroupState::new(database.clone());
+        let audit = AuditRepository::new(database.clone());
+        let groups = GroupService::new(database.clone());
         let profiles = ProfileState::initialize(database.clone(), encryptor.clone()).unwrap();
         let vault = VaultState::new(database.clone(), encryptor.clone(), audit.clone());
         (

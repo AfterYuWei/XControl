@@ -16,7 +16,7 @@ use tauri::State;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
-    audit::AuditState, credential_crypto::Encryptor, error::CommandError,
+    audit::AuditRepository, credential_crypto::Encryptor, error::CommandError,
     infrastructure::database::Database,
 };
 
@@ -98,11 +98,11 @@ pub struct GenerateKeyResponse {
 pub struct VaultState {
     database: Database,
     encryptor: Encryptor,
-    audit: AuditState,
+    audit: AuditRepository,
 }
 
 impl VaultState {
-    pub fn new(database: Database, encryptor: Encryptor, audit: AuditState) -> Self {
+    pub fn new(database: Database, encryptor: Encryptor, audit: AuditRepository) -> Self {
         Self {
             database,
             encryptor,
@@ -654,7 +654,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let database = Database::initialize(directory.path().join("xcontrol.db")).unwrap();
         let encryptor = Encryptor::load_or_create(directory.path().join("key")).unwrap();
-        let audit = AuditState::new(database.clone());
+        let audit = AuditRepository::new(database.clone());
         let state = VaultState::new(database, encryptor, audit);
         (directory, state)
     }

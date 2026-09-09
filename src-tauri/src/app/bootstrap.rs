@@ -1,12 +1,9 @@
 //! Tauri application composition root.
 
-use crate::{
-    audit, backup, credential_crypto, groups, profiles, server_detail, sftp, snippets, ssh, sync,
-    vault,
-};
+use crate::{backup, commands, credential_crypto, profiles, server_detail, sftp, ssh, sync, vault};
 
 #[cfg(desktop)]
-use crate::{commands, drag_out, runtime};
+use crate::{drag_out, runtime};
 
 pub(crate) fn run() {
     #[cfg(desktop)]
@@ -18,15 +15,15 @@ pub(crate) fn run() {
         tauri::Builder::default()
             .plugin(tauri_plugin_deep_link::init())
             .invoke_handler(tauri::generate_handler![
-                snippets::snippet_list,
-                snippets::snippet_create,
-                snippets::snippet_update,
-                snippets::snippet_delete,
-                groups::group_list,
-                groups::group_create,
-                groups::group_update,
-                groups::group_delete,
-                audit::audit_list,
+                commands::snippet_list,
+                commands::snippet_create,
+                commands::snippet_update,
+                commands::snippet_delete,
+                commands::group_list,
+                commands::group_create,
+                commands::group_update,
+                commands::group_delete,
+                commands::audit_list,
                 vault::vault_list,
                 vault::vault_get,
                 vault::vault_create,
@@ -111,10 +108,10 @@ pub(crate) fn run() {
                 .map_err(|error| std::io::Error::other(error.to_string()))?;
                 let encryptor = credential_crypto::Encryptor::load_or_create(data_dir.join("key"))
                     .map_err(|error| std::io::Error::other(error.to_string()))?;
-                let audit = audit::AuditState::new(database.clone());
+                let audit = crate::audit::AuditRepository::new(database.clone());
                 let profiles =
                     profiles::ProfileState::initialize(database.clone(), encryptor.clone())?;
-                let groups = groups::GroupState::new(database.clone());
+                let groups = crate::group::GroupService::new(database.clone());
                 let vault =
                     vault::VaultState::new(database.clone(), encryptor.clone(), audit.clone());
                 let backup = backup::BackupState::new(
@@ -136,7 +133,7 @@ pub(crate) fn run() {
                     ssh::SessionState::new(profiles.clone(), audit.clone(), app.handle().clone());
                 let sftp =
                     sftp::SftpState::new(profiles.clone(), audit.clone(), app.handle().clone());
-                app.manage(snippets::SnippetState::new(database.clone()));
+                app.manage(crate::snippet::SnippetService::new(database.clone()));
                 app.manage(groups);
                 app.manage(vault);
                 app.manage(profiles);
@@ -190,15 +187,15 @@ fn desktop_run() {
             backup::backup_preview,
             backup::backup_import,
             drag_out::sftp_drag_out,
-            snippets::snippet_list,
-            snippets::snippet_create,
-            snippets::snippet_update,
-            snippets::snippet_delete,
-            groups::group_list,
-            groups::group_create,
-            groups::group_update,
-            groups::group_delete,
-            audit::audit_list,
+            commands::snippet_list,
+            commands::snippet_create,
+            commands::snippet_update,
+            commands::snippet_delete,
+            commands::group_list,
+            commands::group_create,
+            commands::group_update,
+            commands::group_delete,
+            commands::audit_list,
             vault::vault_list,
             vault::vault_get,
             vault::vault_create,
@@ -280,9 +277,9 @@ fn desktop_run() {
                     .map_err(|error| std::io::Error::other(error.to_string()))?;
             let encryptor = credential_crypto::Encryptor::load_or_create(data_dir.join("key"))
                 .map_err(|error| std::io::Error::other(error.to_string()))?;
-            let audit = audit::AuditState::new(database.clone());
+            let audit = crate::audit::AuditRepository::new(database.clone());
             let profiles = profiles::ProfileState::initialize(database.clone(), encryptor.clone())?;
-            let groups = groups::GroupState::new(database.clone());
+            let groups = crate::group::GroupService::new(database.clone());
             let vault = vault::VaultState::new(database.clone(), encryptor.clone(), audit.clone());
             let backup = backup::BackupState::new(
                 database.clone(),
@@ -302,7 +299,7 @@ fn desktop_run() {
             let sessions =
                 ssh::SessionState::new(profiles.clone(), audit.clone(), app.handle().clone());
             let sftp = sftp::SftpState::new(profiles.clone(), audit.clone(), app.handle().clone());
-            app.manage(snippets::SnippetState::new(database.clone()));
+            app.manage(crate::snippet::SnippetService::new(database.clone()));
             app.manage(groups);
             app.manage(vault);
             app.manage(profiles);

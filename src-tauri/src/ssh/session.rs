@@ -18,7 +18,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::transport::{connect_route, ClientHandler, ConnectedRoute, HostKeyVerifier};
 use crate::{
-    audit::AuditState,
+    audit::AuditRepository,
     error::CommandError,
     profiles::{ProfileState, ResolvedProfileNode},
 };
@@ -386,12 +386,12 @@ impl HostKeyVerifier for SessionHostKeyVerifier {
 pub struct SessionState {
     sessions: Arc<RwLock<HashMap<String, Arc<Session>>>>,
     profiles: ProfileState,
-    audit: AuditState,
+    audit: AuditRepository,
     app: AppHandle,
 }
 
 impl SessionState {
-    pub fn new(profiles: ProfileState, audit: AuditState, app: AppHandle) -> Self {
+    pub fn new(profiles: ProfileState, audit: AuditRepository, app: AppHandle) -> Self {
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             profiles,

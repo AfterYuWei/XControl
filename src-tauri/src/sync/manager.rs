@@ -378,7 +378,7 @@ fn now() -> String {
 mod tests {
     use super::*;
     use crate::{
-        audit::AuditState, credential_crypto::Encryptor, groups::GroupState,
+        audit::AuditRepository, credential_crypto::Encryptor, group::GroupService,
         infrastructure::database::Database, profiles::ProfileState, sync::store::SyncRepository,
         vault::VaultState,
     };
@@ -387,8 +387,8 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let database = Database::initialize(directory.path().join("xcontrol.db")).unwrap();
         let encryptor = Encryptor::load_or_create(directory.path().join("key")).unwrap();
-        let audit = AuditState::new(database.clone());
-        let groups = GroupState::new(database.clone());
+        let audit = AuditRepository::new(database.clone());
+        let groups = GroupService::new(database.clone());
         let profiles = ProfileState::initialize(database.clone(), encryptor.clone()).unwrap();
         let vault = VaultState::new(database.clone(), encryptor.clone(), audit.clone());
         let backup = BackupState::new(

@@ -65,4 +65,24 @@ describe('profileApi', () => {
       fingerprint: 'SHA256:test',
     })
   })
+
+  it('在纯浏览器环境中返回明确的客户端能力错误', async () => {
+    mockedInvoke.mockRejectedValueOnce(
+      new TypeError("Cannot read properties of undefined (reading 'invoke')"),
+    )
+
+    await expect(
+      profileApi.testNew({
+        name: 'web',
+        host: 'example.com',
+        username: 'root',
+        auth_type: 'agent',
+      }),
+    ).rejects.toMatchObject({
+      error: {
+        code: 'TAURI_UNAVAILABLE',
+        message: '此功能需要 XControl 客户端，请使用 make dev 启动完整开发环境',
+      },
+    })
+  })
 })

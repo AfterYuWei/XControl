@@ -13,8 +13,11 @@ XControl 是基于 React、Tauri 2 与 Rust 的 SSH/SFTP 客户端。当前发�
 ```bash
 npm ci
 npm --prefix web ci
-npm run desktop:dev
+make dev
 ```
+
+`make dev` 会同时启动 Vite 与 Tauri/Rust 后端，可测试 SSH、SFTP 和持久化功能。仅调试
+React 界面时可使用 `make web-dev`；该模式不提供 Tauri IPC，不能执行连接测试等原生功能。
 
 ## 验证
 

@@ -4,7 +4,7 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use rusqlite::Connection;
 
-use crate::{error::CommandError, infrastructure::database::migration};
+use crate::infrastructure::database::{migration, StorageError};
 
 #[derive(Clone)]
 pub struct Database {
@@ -12,9 +12,9 @@ pub struct Database {
 }
 
 impl Database {
-    pub fn initialize(path: PathBuf) -> Result<Self, CommandError> {
+    pub fn initialize(path: PathBuf) -> Result<Self, StorageError> {
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(CommandError::database)?;
+            std::fs::create_dir_all(parent)?;
         }
         let database = Self {
             path: Arc::new(path),
@@ -23,14 +23,10 @@ impl Database {
         Ok(database)
     }
 
-    pub fn connect(&self) -> Result<Connection, CommandError> {
-        let connection = Connection::open(self.path.as_ref()).map_err(CommandError::database)?;
-        connection
-            .busy_timeout(Duration::from_secs(5))
-            .map_err(CommandError::database)?;
-        connection
-            .execute_batch("PRAGMA foreign_keys = ON;")
-            .map_err(CommandError::database)?;
+    pub fn connect(&self) -> Result<Connection, StorageError> {
+        let connection = Connection::open(self.path.as_ref())?;
+        connection.busy_timeout(Duration::from_secs(5))?;
+        connection.execute_batch("PRAGMA foreign_keys = ON;")?;
         Ok(connection)
     }
 }

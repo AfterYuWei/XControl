@@ -6,6 +6,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::ssh::transport::ConnectedRoute;
 
+use super::SftpError;
+
 pub(crate) enum FileBackend {
     Local,
     Remote {
@@ -34,14 +36,17 @@ impl FileBackend {
         }
     }
 
-    pub async fn exec(&self, command: &str) -> Result<(String, i32), String> {
+    pub async fn exec(&self, command: &str) -> Result<(String, i32), SftpError> {
         let Self::Remote { _route: route, .. } = self else {
             return Err("command execution is unavailable for local sessions".into());
         };
-        route.exec(command).await
+        Ok(route
+            .exec(command)
+            .await
+            .map_err(|error| error.to_string())?)
     }
 
-    pub async fn list(&self, path: &str) -> Result<Vec<FileInfo>, String> {
+    pub async fn list(&self, path: &str) -> Result<Vec<FileInfo>, SftpError> {
         match self {
             Self::Local => {
                 let mut directory = tokio::fs::read_dir(posix_to_os(path))
@@ -85,7 +90,7 @@ impl FileBackend {
         }
     }
 
-    pub async fn stat(&self, path: &str) -> Result<FileInfo, String> {
+    pub async fn stat(&self, path: &str) -> Result<FileInfo, SftpError> {
         match self {
             Self::Local => {
                 let metadata = tokio::fs::metadata(posix_to_os(path))
@@ -114,7 +119,7 @@ impl FileBackend {
         }
     }
 
-    pub async fn mkdir(&self, path: &str) -> Result<(), String> {
+    pub async fn mkdir(&self, path: &str) -> Result<(), SftpError> {
         match self {
             Self::Local => tokio::fs::create_dir(posix_to_os(path))
                 .await
@@ -123,7 +128,7 @@ impl FileBackend {
         }
     }
 
-    pub async fn mkdir_all(&self, path: &str) -> Result<(), String> {
+    pub async fn mkdir_all(&self, path: &str) -> Result<(), SftpError> {
         if matches!(self, Self::Local) {
             return tokio::fs::create_dir_all(posix_to_os(path))
                 .await
@@ -143,7 +148,7 @@ impl FileBackend {
         Ok(())
     }
 
-    pub async fn rename(&self, old_path: &str, new_path: &str) -> Result<(), String> {
+    pub async fn rename(&self, old_path: &str, new_path: &str) -> Result<(), SftpError> {
         match self {
             Self::Local => tokio::fs::rename(posix_to_os(old_path), posix_to_os(new_path))
                 .await
@@ -152,7 +157,7 @@ impl FileBackend {
         }
     }
 
-    pub async fn remove_file(&self, path: &str) -> Result<(), String> {
+    pub async fn remove_file(&self, path: &str) -> Result<(), SftpError> {
         match self {
             Self::Local => tokio::fs::remove_file(posix_to_os(path))
                 .await
@@ -161,7 +166,7 @@ impl FileBackend {
         }
     }
 
-    pub async fn remove_dir(&self, path: &str) -> Result<(), String> {
+    pub async fn remove_dir(&self, path: &str) -> Result<(), SftpError> {
         match self {
             Self::Local => tokio::fs::remove_dir(posix_to_os(path))
                 .await
@@ -170,7 +175,7 @@ impl FileBackend {
         }
     }
 
-    pub async fn read(&self, path: &str, limit: Option<usize>) -> Result<Vec<u8>, String> {
+    pub async fn read(&self, path: &str, limit: Option<usize>) -> Result<Vec<u8>, SftpError> {
         let mut output = Vec::new();
         match self {
             Self::Local => {
@@ -195,7 +200,7 @@ impl FileBackend {
         Ok(output)
     }
 
-    pub async fn open_read(&self, path: &str) -> Result<BackendReader, String> {
+    pub async fn open_read(&self, path: &str) -> Result<BackendReader, SftpError> {
         match self {
             Self::Local => tokio::fs::File::open(posix_to_os(path))
                 .await
@@ -209,7 +214,7 @@ impl FileBackend {
         }
     }
 
-    pub async fn open_write(&self, path: &str) -> Result<BackendWriter, String> {
+    pub async fn open_write(&self, path: &str) -> Result<BackendWriter, SftpError> {
         match self {
             Self::Local => tokio::fs::File::create(posix_to_os(path))
                 .await
@@ -223,7 +228,7 @@ impl FileBackend {
         }
     }
 
-    pub async fn write(&self, path: &str, data: &[u8]) -> Result<(), String> {
+    pub async fn write(&self, path: &str, data: &[u8]) -> Result<(), SftpError> {
         match self {
             Self::Local => tokio::fs::write(posix_to_os(path), data)
                 .await
@@ -332,10 +337,10 @@ fn local_mode(metadata: &std::fs::Metadata) -> String {
     .into()
 }
 
-fn file_error(error: std::io::Error) -> String {
-    error.to_string()
+fn file_error(error: std::io::Error) -> SftpError {
+    SftpError::Backend(error.to_string())
 }
 
-fn sftp_error(error: russh_sftp::client::error::Error) -> String {
-    error.to_string()
+fn sftp_error(error: russh_sftp::client::error::Error) -> SftpError {
+    SftpError::Backend(error.to_string())
 }

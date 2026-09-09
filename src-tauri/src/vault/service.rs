@@ -59,7 +59,7 @@ impl VaultService {
         let (name, entry_type, username, remark, credential) = prepare_request(request)?;
         validate_credential(&credential, &entry_type)?;
         let (plaintext, fingerprint) = encode_plaintext(&credential, &entry_type)
-            .map_err(|error| CommandError::new("VAULT_ERROR", error))?;
+            .map_err(|error| CommandError::new("VAULT_ERROR", error.to_string()))?;
         let encrypted = self
             .encryptor
             .encrypt(&plaintext)
@@ -100,7 +100,7 @@ impl VaultService {
         }
         validate_credential(&credential, &entry_type)?;
         let (plaintext, fingerprint) = encode_plaintext(&credential, &entry_type)
-            .map_err(|error| CommandError::new("VAULT_ERROR", error))?;
+            .map_err(|error| CommandError::new("VAULT_ERROR", error.to_string()))?;
         let encrypted = self
             .encryptor
             .encrypt(&plaintext)
@@ -254,16 +254,16 @@ fn validate_credential(credential: &Credential, entry_type: &str) -> Result<(), 
 pub(crate) fn encode_plaintext(
     credential: &Credential,
     entry_type: &str,
-) -> Result<(String, String), String> {
+) -> Result<(String, String), super::VaultError> {
     match entry_type {
         PASSWORD => Ok((credential.password.clone(), String::new())),
         PRIVATE_KEY => {
-            let payload = serde_json::to_string(credential).map_err(|error| error.to_string())?;
+            let payload = serde_json::to_string(credential)?;
             let plaintext = format!("\u{1}{payload}");
             let digest = Sha256::digest(credential.private_key.as_bytes());
             Ok((plaintext, hex::encode(&digest[..8])))
         }
-        other => Err(format!("unsupported vault type: {other}")),
+        other => Err(super::VaultError::UnsupportedType(other.to_owned())),
     }
 }
 

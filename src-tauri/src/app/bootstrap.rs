@@ -3,7 +3,7 @@
 use crate::{backup, commands, profile, sftp, ssh, sync, vault};
 
 #[cfg(desktop)]
-use crate::{drag_out, runtime};
+use crate::infrastructure::platform::desktop;
 
 pub(crate) fn run() {
     #[cfg(desktop)]
@@ -189,7 +189,7 @@ fn desktop_run() {
             commands::backup_export,
             commands::backup_preview,
             commands::backup_import,
-            drag_out::sftp_drag_out,
+            commands::sftp_drag_out,
             commands::snippet_list,
             commands::snippet_create,
             commands::snippet_update,
@@ -273,7 +273,7 @@ fn desktop_run() {
             commands::sync_oauth_url
         ])
         .setup(move |app| {
-            let data_dir = runtime::user_data_dir()
+            let data_dir = desktop::user_data_dir()
                 .map_err(|error| std::io::Error::other(error.to_string()))?;
             let database =
                 crate::infrastructure::database::Database::initialize(data_dir.join("xcontrol.db"))
@@ -317,7 +317,7 @@ fn desktop_run() {
             app.manage(sessions);
             app.manage(sftp);
             app.manage(audit);
-            drag_out::sweep_stale_drag_temps();
+            desktop::sweep_stale_drag_temps();
             if smoke {
                 let handle = app.handle().clone();
                 std::thread::spawn(move || {

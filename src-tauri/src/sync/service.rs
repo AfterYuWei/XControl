@@ -12,6 +12,7 @@ use serde::Serialize;
 use crate::{backup::BackupService, error::CommandError};
 
 use super::{
+    error::SyncError,
     model::{
         SyncConflictInfo, SyncEvent, SyncProviderConfig, SyncProviderMeta, SyncSettings,
         SyncStatus, SyncVersion, SyncVersionInfo,
@@ -28,17 +29,17 @@ pub const ORIGIN_RESTORE: &str = "restore";
 
 #[derive(Clone)]
 pub(crate) struct SyncService {
-    pub(crate) inner: Arc<SyncInner>,
+    pub(super) inner: Arc<SyncInner>,
 }
 
-pub(crate) struct SyncInner {
-    pub repository: SyncRepository,
-    pub backup: BackupService,
-    pub backup_dir: PathBuf,
-    pub device_id: String,
+pub(super) struct SyncInner {
+    pub(super) repository: SyncRepository,
+    pub(super) backup: BackupService,
+    pub(super) backup_dir: PathBuf,
+    pub(super) device_id: String,
     pub(super) operation: OperationCoordinator,
-    pub oauth_states: Mutex<HashMap<String, super::oauth::OAuthState>>,
-    pub scheduler: Mutex<Option<super::scheduler::SchedulerRuntime>>,
+    pub(super) oauth_states: Mutex<HashMap<String, super::oauth::OAuthState>>,
+    pub(super) scheduler: Mutex<Option<super::scheduler::SchedulerRuntime>>,
 }
 
 #[derive(Default)]
@@ -47,10 +48,8 @@ pub(super) struct OperationCoordinator {
 }
 
 impl OperationCoordinator {
-    pub(super) fn try_enter(&self) -> Result<tokio::sync::MutexGuard<'_, ()>, CommandError> {
-        self.lock
-            .try_lock()
-            .map_err(|_| CommandError::new("SYNC_IN_PROGRESS", "同步操作进行中，请稍后"))
+    pub(super) fn try_enter(&self) -> Result<tokio::sync::MutexGuard<'_, ()>, SyncError> {
+        self.lock.try_lock().map_err(|_| SyncError::InProgress)
     }
 }
 

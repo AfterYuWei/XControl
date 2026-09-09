@@ -8,9 +8,12 @@ use crate::{
     vault::{decode_plaintext, encode_plaintext, Encryptor},
 };
 
-use super::model::{
-    BackupGroup, BackupImportResult, BackupPayload, BackupProfile, BackupSnippet, BackupStats,
-    BackupVaultItem,
+use super::{
+    error::BackupError,
+    model::{
+        BackupGroup, BackupImportResult, BackupPayload, BackupProfile, BackupSnippet, BackupStats,
+        BackupVaultItem,
+    },
 };
 
 const STRATEGY_SKIP: &str = "skip";
@@ -93,7 +96,7 @@ impl BackupRepository {
         let mut connection = self
             .database
             .connect()
-            .map_err(|error| CommandError::new("IMPORT_FAILED", error.message))?;
+            .map_err(|error| CommandError::new("IMPORT_FAILED", error.to_string()))?;
         let transaction = connection
             .transaction()
             .map_err(|error| CommandError::new("IMPORT_FAILED", error.to_string()))?;
@@ -397,7 +400,7 @@ fn import_group(
     transaction: &Transaction<'_>,
     item: &BackupGroup,
     strategy: &str,
-) -> Result<ImportAction, String> {
+) -> Result<ImportAction, BackupError> {
     if strategy == STRATEGY_SKIP && exists(transaction, "groups", &item.id)? {
         return Ok(ImportAction::Skipped);
     }
@@ -421,7 +424,7 @@ fn import_group(
                 item.created_at
             ],
         )
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| BackupError::Repository(error.to_string()))?;
     Ok(ImportAction::Imported)
 }
 
@@ -430,18 +433,17 @@ fn import_vault(
     item: &BackupVaultItem,
     strategy: &str,
     encryptor: &Encryptor,
-) -> Result<ImportAction, String> {
+) -> Result<ImportAction, BackupError> {
     if strategy == STRATEGY_SKIP && exists(transaction, "vault", &item.id)? {
         return Ok(ImportAction::Skipped);
     }
-    let credential = item
-        .credential
-        .as_ref()
-        .ok_or_else(|| format!("vault item {} has no credential", item.id))?;
+    let credential = item.credential.as_ref().ok_or_else(|| {
+        BackupError::Repository(format!("vault item {} has no credential", item.id))
+    })?;
     let (plaintext, fingerprint) = encode_plaintext(credential, &item.entry_type)?;
     let encrypted = encryptor
         .encrypt(&plaintext)
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| BackupError::Repository(error.to_string()))?;
     let sql = if strategy == STRATEGY_OVERWRITE {
         "INSERT OR REPLACE INTO vault \
          (id,type,data,fingerprint,name,username,remark,created_at,updated_at) \
@@ -465,7 +467,7 @@ fn import_vault(
                 item.updated_at,
             ],
         )
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| BackupError::Repository(error.to_string()))?;
     Ok(ImportAction::Imported)
 }
 
@@ -474,17 +476,20 @@ fn import_profile(
     item: &BackupProfile,
     strategy: &str,
     encryptor: &Encryptor,
-) -> Result<ImportAction, String> {
+) -> Result<ImportAction, BackupError> {
     if strategy == STRATEGY_SKIP && exists(transaction, "profiles", &item.id)? {
         return Ok(ImportAction::Skipped);
     }
     let inline = match item.inline_credential.as_ref() {
         Some(credential) => {
-            let raw = serde_json::to_string(credential).map_err(|error| error.to_string())?;
+            let raw = serde_json::to_string(credential)
+                .map_err(|error| BackupError::Repository(error.to_string()))?;
             if raw == "{}" {
                 String::new()
             } else {
-                encryptor.encrypt(&raw).map_err(|error| error.to_string())?
+                encryptor
+                    .encrypt(&raw)
+                    .map_err(|error| BackupError::Repository(error.to_string()))?
             }
         }
         None => String::new(),
@@ -494,9 +499,10 @@ fn import_profile(
     } else {
         encryptor
             .encrypt(&item.proxy_password)
-            .map_err(|error| error.to_string())?
+            .map_err(|error| BackupError::Repository(error.to_string()))?
     };
-    let tags = serde_json::to_string(&item.tags).map_err(|error| error.to_string())?;
+    let tags = serde_json::to_string(&item.tags)
+        .map_err(|error| BackupError::Repository(error.to_string()))?;
     let sql = if strategy == STRATEGY_OVERWRITE {
         "INSERT OR REPLACE INTO profiles \
          (id,name,host,port,username,auth_type,icon,vault_id,inline_credential,\
@@ -531,7 +537,7 @@ fn import_profile(
                 item.updated_at,
             ],
         )
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| BackupError::Repository(error.to_string()))?;
     Ok(ImportAction::Imported)
 }
 
@@ -539,11 +545,12 @@ fn import_snippet(
     transaction: &Transaction<'_>,
     item: &BackupSnippet,
     strategy: &str,
-) -> Result<ImportAction, String> {
+) -> Result<ImportAction, BackupError> {
     if strategy == STRATEGY_SKIP && exists(transaction, "snippets", &item.id)? {
         return Ok(ImportAction::Skipped);
     }
-    let tags = serde_json::to_string(&item.tags).map_err(|error| error.to_string())?;
+    let tags = serde_json::to_string(&item.tags)
+        .map_err(|error| BackupError::Repository(error.to_string()))?;
     let sql = if strategy == STRATEGY_OVERWRITE {
         "INSERT OR REPLACE INTO snippets \
          (id,name,content,description,tags,is_global,created_at,updated_at) \
@@ -566,15 +573,15 @@ fn import_snippet(
                 item.updated_at,
             ],
         )
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| BackupError::Repository(error.to_string()))?;
     Ok(ImportAction::Imported)
 }
 
-fn exists(transaction: &Transaction<'_>, table: &str, id: &str) -> Result<bool, String> {
+fn exists(transaction: &Transaction<'_>, table: &str, id: &str) -> Result<bool, BackupError> {
     let query = format!("SELECT EXISTS(SELECT 1 FROM {table} WHERE id=?1)");
     transaction
         .query_row(&query, [id], |row| row.get(0))
-        .map_err(|error| error.to_string())
+        .map_err(|error| BackupError::Repository(error.to_string()))
 }
 
 fn normalize_vault_usernames(transaction: &Transaction<'_>) -> Result<(), rusqlite::Error> {

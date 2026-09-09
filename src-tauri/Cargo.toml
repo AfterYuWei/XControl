@@ -26,16 +26,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
-tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-deep-link = "2"
-tauri-plugin-dialog = "2"
-tauri-plugin-opener = "2"
-# 文件拖出到系统（社区插件，crabnebula 维护）
-tauri-plugin-drag = "2"
-# 应用内更新（stable/test 双通道）
-tauri-plugin-updater = "2"
-# 更新完成后重启
-tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 dirs = "5"
@@ -63,6 +54,19 @@ zeroize = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt", "sync", "time"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 url = "2"
+
+# Tauri 的 `desktop` 是 build-script cfg，Cargo target table 使用等价的 OS 排除条件。
+# 这些插件不会进入 Android/iOS 依赖图。
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+# 文件拖出到系统（社区插件，crabnebula 维护）
+tauri-plugin-drag = "2"
+# 应用内更新（stable/test 双通道）
+tauri-plugin-updater = "2"
+# 更新完成后重启
+tauri-plugin-process = "2"
 
 [dev-dependencies]
 tempfile = "3"

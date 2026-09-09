@@ -14,6 +14,7 @@ use tokio::{
 use super::backend::join_path;
 use super::backend::{base_name, clean_path, format_time, local_home_dir, FileBackend, FileInfo};
 use super::transfer::TransferManager;
+use super::SftpError;
 use crate::{
     audit::AuditRepository,
     error::CommandError,
@@ -231,11 +232,11 @@ impl SftpService {
                 let resolved = self.profiles.resolve_connection(&session.profile_id)?;
                 let route = connect_route(resolved, Arc::new(StrictHostKeyVerifier))
                     .await
-                    .map_err(|error| CommandError::new("SFTP_CONNECT_FAILED", error))?;
+                    .map_err(|error| CommandError::new("SFTP_CONNECT_FAILED", error.to_string()))?;
                 let stream = route
                     .open_subsystem("sftp")
                     .await
-                    .map_err(|error| CommandError::new("SFTP_CONNECT_FAILED", error))?;
+                    .map_err(|error| CommandError::new("SFTP_CONNECT_FAILED", error.to_string()))?;
                 let sftp = Arc::new(russh_sftp::client::SftpSession::new(stream).await.map_err(
                     |error| CommandError::new("SFTP_CONNECT_FAILED", error.to_string()),
                 )?);
@@ -374,7 +375,7 @@ impl SftpService {
         backend
             .exec(command)
             .await
-            .map_err(|error| CommandError::new("EXEC_FAILED", error))
+            .map_err(|error| CommandError::new("EXEC_FAILED", error.to_string()))
     }
 }
 
@@ -393,7 +394,7 @@ fn tree<'a>(
     backend: &'a FileBackend,
     path: &'a str,
     depth: u32,
-) -> Pin<Box<dyn Future<Output = Result<Vec<SftpTreeNode>, String>> + Send + 'a>> {
+) -> Pin<Box<dyn Future<Output = Result<Vec<SftpTreeNode>, SftpError>> + Send + 'a>> {
     Box::pin(async move {
         let mut nodes = Vec::new();
         for info in backend.list(path).await? {
@@ -422,7 +423,7 @@ fn tree<'a>(
 fn remove_all<'a>(
     backend: &'a FileBackend,
     path: &'a str,
-) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+) -> Pin<Box<dyn Future<Output = Result<(), SftpError>> + Send + 'a>> {
     Box::pin(async move {
         let info = backend.stat(path).await?;
         if !info.is_dir {
@@ -435,8 +436,9 @@ fn remove_all<'a>(
     })
 }
 
-fn backend_error(error: String) -> CommandError {
-    let lower = error.to_lowercase();
+fn backend_error(error: SftpError) -> CommandError {
+    let message = error.to_string();
+    let lower = message.to_lowercase();
     let code = if lower.contains("not found") || lower.contains("no such") {
         "NOT_FOUND"
     } else if lower.contains("permission") || lower.contains("denied") {
@@ -446,7 +448,7 @@ fn backend_error(error: String) -> CommandError {
     } else {
         "INTERNAL"
     };
-    CommandError::new(code, error)
+    CommandError::new(code, message)
 }
 
 pub(crate) async fn create_session(

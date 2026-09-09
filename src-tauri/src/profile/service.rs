@@ -19,6 +19,7 @@ use super::{
         same_proxy_identity, with_profile_host_key_fingerprint, with_proxy_options, PROXY_DIRECT,
         PROXY_JUMP,
     },
+    error::ProfileError,
     repository::ProfileRepository,
     Profile, ProfileCreateRequest, ProfileUpdateRequest, ProxyConfig, ProxyInput,
     ResolvedProfileNode,
@@ -94,9 +95,9 @@ impl ProfileService {
         }
         let id = format!("draft-{}", uuid::Uuid::new_v4());
         let proxy = normalize_proxy_input(request.proxy.as_ref())
-            .map_err(|message| CommandError::new("INVALID_PROXY_CONFIG", message))?;
+            .map_err(|error| CommandError::new("INVALID_PROXY_CONFIG", error.to_string()))?;
         self.validate_proxy_chain(&id, &proxy)
-            .map_err(|message| CommandError::new("INVALID_PROXY_CHAIN", message))?;
+            .map_err(|error| CommandError::new("INVALID_PROXY_CHAIN", error.to_string()))?;
         let options = with_proxy_options(&request.options, &proxy)
             .map_err(|_| CommandError::new("INVALID_OPTIONS", "连接高级配置不是有效 JSON"))?;
         let proxy_credential = self.prepare_proxy_on_create(request.proxy.as_ref(), &proxy)?;
@@ -134,9 +135,9 @@ impl ProfileService {
     ) -> Result<ResolvedProfileNode, CommandError> {
         let mut profile = self.get(profile_id)?;
         self.prepare_credential_on_update(&profile, &mut request)
-            .map_err(|message| CommandError::new("VALIDATION", message))?;
+            .map_err(|error| CommandError::new("VALIDATION", error.to_string()))?;
         self.prepare_proxy_on_update(&profile, &mut request)
-            .map_err(|message| CommandError::new("INVALID_PROXY_CONFIG", message))?;
+            .map_err(|error| CommandError::new("INVALID_PROXY_CONFIG", error.to_string()))?;
         if let Some(value) = request.name.take() {
             profile.name = value;
         }
@@ -285,9 +286,9 @@ impl ProfileService {
 
         let id = uuid::Uuid::new_v4().to_string();
         let proxy = normalize_proxy_input(request.proxy.as_ref())
-            .map_err(|message| CommandError::new("INVALID_PROXY_CONFIG", message))?;
+            .map_err(|error| CommandError::new("INVALID_PROXY_CONFIG", error.to_string()))?;
         self.validate_proxy_chain(&id, &proxy)
-            .map_err(|message| CommandError::new("INVALID_PROXY_CHAIN", message))?;
+            .map_err(|error| CommandError::new("INVALID_PROXY_CHAIN", error.to_string()))?;
         request.options = with_proxy_options(&request.options, &proxy)
             .map_err(|_| CommandError::new("INVALID_OPTIONS", "连接高级配置不是有效 JSON"))?;
 
@@ -330,9 +331,9 @@ impl ProfileService {
     ) -> Result<Profile, CommandError> {
         let current = self.get(id)?;
         self.prepare_credential_on_update(&current, &mut request)
-            .map_err(|message| CommandError::new("VALIDATION", message))?;
+            .map_err(|error| CommandError::new("VALIDATION", error.to_string()))?;
         self.prepare_proxy_on_update(&current, &mut request)
-            .map_err(|message| CommandError::new("INVALID_PROXY_CONFIG", message))?;
+            .map_err(|error| CommandError::new("INVALID_PROXY_CONFIG", error.to_string()))?;
 
         let mut updated = current;
         if let Some(value) = request.name.take() {
@@ -406,7 +407,7 @@ impl ProfileService {
             }
             credential = self
                 .encode_proxy_password(password)
-                .map_err(|message| CommandError::new("ENCRYPT_FAILED", message))?;
+                .map_err(|error| CommandError::new("ENCRYPT_FAILED", error.to_string()))?;
         }
         if !proxy.username.is_empty() && credential.is_empty() {
             return Err(CommandError::new(
@@ -421,7 +422,7 @@ impl ProfileService {
         &self,
         current: &Profile,
         request: &mut ProfileUpdateRequest,
-    ) -> Result<(), String> {
+    ) -> Result<(), ProfileError> {
         let Some(input) = request.proxy.as_ref() else {
             if let Some(options) = request.options.as_ref() {
                 request.options = Some(
@@ -478,7 +479,7 @@ impl ProfileService {
                     .map_err(|_| CommandError::new("VALIDATION", "vault entry not found"))?;
                 let username =
                     apply_vault_username(&entry_type, &vault_username, &request.username)
-                        .map_err(|message| CommandError::new("VALIDATION", message))?;
+                        .map_err(|error| CommandError::new("VALIDATION", error.to_string()))?;
                 Ok((request.vault_id.clone(), String::new(), username))
             }
             AUTH_PASSWORD => {
@@ -500,7 +501,7 @@ impl ProfileService {
                 Ok((
                     String::new(),
                     self.encode_inline_credential(&credential)
-                        .map_err(|message| CommandError::new("VALIDATION", message))?,
+                        .map_err(|error| CommandError::new("VALIDATION", error.to_string()))?,
                     request.username.clone(),
                 ))
             }
@@ -523,7 +524,7 @@ impl ProfileService {
                 Ok((
                     String::new(),
                     self.encode_inline_credential(&credential)
-                        .map_err(|message| CommandError::new("VALIDATION", message))?,
+                        .map_err(|error| CommandError::new("VALIDATION", error.to_string()))?,
                     request.username.clone(),
                 ))
             }
@@ -544,7 +545,7 @@ impl ProfileService {
         &self,
         current: &Profile,
         request: &mut ProfileUpdateRequest,
-    ) -> Result<(), String> {
+    ) -> Result<(), ProfileError> {
         let next_auth_type = request
             .auth_type
             .as_deref()
@@ -622,26 +623,28 @@ impl ProfileService {
                 request.inline_credential = Some(self.encode_inline_credential(&credential)?);
                 request.vault_id = Some(String::new());
             }
-            other => return Err(format!("unsupported auth_type: {other}")),
+            other => return Err(format!("unsupported auth_type: {other}").into()),
         }
         Ok(())
     }
 
-    fn resolve_profile_credential(&self, profile: &Profile) -> Result<Credential, String> {
+    fn resolve_profile_credential(&self, profile: &Profile) -> Result<Credential, ProfileError> {
         if profile.auth_type == AUTH_VAULT && !profile.vault_id.is_empty() {
-            return self
-                .retrieve_vault(&profile.vault_id)
-                .map_err(|error| format!("retrieve vault credential: {error}"));
+            return self.retrieve_vault(&profile.vault_id).map_err(|error| {
+                ProfileError::Credential(format!("retrieve vault credential: {error}"))
+            });
         }
         if !profile.inline_credential.is_empty() {
             return self
                 .decode_inline_credential(&profile.inline_credential)
-                .map_err(|error| format!("decode inline credential: {error}"));
+                .map_err(|error| {
+                    ProfileError::Credential(format!("decode inline credential: {error}"))
+                });
         }
         if !profile.vault_id.is_empty() {
-            return self
-                .retrieve_vault(&profile.vault_id)
-                .map_err(|error| format!("retrieve legacy vault credential: {error}"));
+            return self.retrieve_vault(&profile.vault_id).map_err(|error| {
+                ProfileError::Credential(format!("retrieve legacy vault credential: {error}"))
+            });
         }
         Ok(Credential::default())
     }
@@ -650,62 +653,70 @@ impl ProfileService {
         self.vault.metadata(id)
     }
 
-    fn retrieve_vault(&self, id: &str) -> Result<Credential, String> {
+    fn retrieve_vault(&self, id: &str) -> Result<Credential, ProfileError> {
         self.vault
             .resolve_for_profile(id)
-            .map_err(|error| error.message)
+            .map_err(|error| ProfileError::Credential(error.message))
     }
 
-    fn encode_inline_credential(&self, credential: &Credential) -> Result<String, String> {
-        let raw = serde_json::to_string(credential)
-            .map_err(|error| format!("marshal inline credential: {error}"))?;
+    fn encode_inline_credential(&self, credential: &Credential) -> Result<String, ProfileError> {
+        let raw = serde_json::to_string(credential).map_err(|error| {
+            ProfileError::Credential(format!("marshal inline credential: {error}"))
+        })?;
         if raw == "{}" {
             return Ok(String::new());
         }
-        self.encryptor
-            .encrypt(&raw)
-            .map_err(|error| format!("encrypt inline credential: {error}"))
+        self.encryptor.encrypt(&raw).map_err(|error| {
+            ProfileError::Credential(format!("encrypt inline credential: {error}"))
+        })
     }
 
-    fn decode_inline_credential(&self, encoded: &str) -> Result<Credential, String> {
+    fn decode_inline_credential(&self, encoded: &str) -> Result<Credential, ProfileError> {
         if encoded.is_empty() {
             return Ok(Credential::default());
         }
-        let decrypted = self
-            .encryptor
-            .decrypt(encoded)
-            .map_err(|error| format!("decrypt inline credential: {error}"))?;
-        serde_json::from_str(&decrypted)
-            .map_err(|error| format!("unmarshal inline credential: {error}"))
+        let decrypted = self.encryptor.decrypt(encoded).map_err(|error| {
+            ProfileError::Credential(format!("decrypt inline credential: {error}"))
+        })?;
+        serde_json::from_str(&decrypted).map_err(|error| {
+            ProfileError::Credential(format!("unmarshal inline credential: {error}"))
+        })
     }
 
-    fn encode_proxy_password(&self, password: &str) -> Result<String, String> {
+    fn encode_proxy_password(&self, password: &str) -> Result<String, ProfileError> {
         if password.is_empty() {
             return Ok(String::new());
         }
         self.encryptor
             .encrypt(password)
-            .map_err(|error| format!("加密代理密码: {error}"))
+            .map_err(|error| ProfileError::Credential(format!("加密代理密码: {error}")))
     }
 
-    fn validate_proxy_chain(&self, root_id: &str, root: &ProxyConfig) -> Result<(), String> {
+    fn validate_proxy_chain(&self, root_id: &str, root: &ProxyConfig) -> Result<(), ProfileError> {
         let mut visited = HashSet::from([root_id.to_owned()]);
         let mut path = vec![root_id.to_owned()];
         let mut proxy = root.clone();
         let mut depth = 0;
         while proxy.proxy_type == PROXY_JUMP {
             if depth >= MAX_JUMP_PROFILES {
-                return Err(format!("SSH 跳板链最多允许 {MAX_JUMP_PROFILES} 层"));
+                return Err(ProfileError::Reference(format!(
+                    "SSH 跳板链最多允许 {MAX_JUMP_PROFILES} 层"
+                )));
             }
             let next_id = proxy.jump_profile_id.clone();
             if visited.contains(&next_id) {
                 path.push(next_id);
-                return Err(format!("SSH 跳板链存在循环引用: {}", path.join(" -> ")));
+                return Err(ProfileError::Reference(format!(
+                    "SSH 跳板链存在循环引用: {}",
+                    path.join(" -> ")
+                )));
             }
             let next = self
                 .get_optional(&next_id)
-                .map_err(|error| error.message)?
-                .ok_or_else(|| format!("跳板机 Profile 不存在: {next_id}"))?;
+                .map_err(|error| ProfileError::Reference(error.message))?
+                .ok_or_else(|| {
+                    ProfileError::Reference(format!("跳板机 Profile 不存在: {next_id}"))
+                })?;
             visited.insert(next_id.clone());
             path.push(next_id);
             proxy = next.proxy;
@@ -719,7 +730,7 @@ fn apply_vault_username(
     entry_type: &str,
     vault_username: &str,
     requested_username: &str,
-) -> Result<String, String> {
+) -> Result<String, ProfileError> {
     let requested = requested_username.trim();
     if entry_type != AUTH_PASSWORD {
         return if requested.is_empty() {
@@ -934,7 +945,7 @@ mod tests {
                 },
             )
             .unwrap_err();
-        assert!(error.contains("最多"), "{error}");
+        assert!(error.to_string().contains("最多"), "{error}");
         assert!(state
             .validate_proxy_chain(
                 "root",
@@ -948,6 +959,7 @@ mod tests {
                 },
             )
             .unwrap_err()
+            .to_string()
             .contains("不存在"));
     }
 

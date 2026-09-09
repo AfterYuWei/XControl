@@ -10,33 +10,33 @@ use std::{
 };
 
 use serde::Serialize;
-use tauri::State;
 
 use crate::sftp::SftpService;
+
+use super::PlatformError;
 
 /// 拖出临时目录前缀（与 Electron 保持一致，便于清扫历史残留）。
 const DRAG_TEMP_PREFIX: &str = "xcontrol-drag-";
 /// 拖拽预览图标（编译期内嵌，避免依赖打包后的资源文件）。
-const DRAG_ICON_PNG: &[u8] = include_bytes!("../app-icon.png");
+const DRAG_ICON_PNG: &[u8] = include_bytes!("../../../../app-icon.png");
 
 #[derive(Serialize)]
-pub struct DragOutFiles {
+pub(crate) struct DragOutFiles {
     /// 物化后的本机文件绝对路径（native 格式，直接喂给 drag 插件）。
-    pub files: Vec<String>,
+    files: Vec<String>,
     /// 原生拖拽的预览图标路径。
-    pub icon: String,
+    icon: String,
 }
 
 /// 前端命令入口：物化远程文件，返回本机路径 + 图标路径。
-#[tauri::command]
-pub async fn sftp_drag_out(
-    state: State<'_, SftpService>,
+pub(crate) async fn materialize_drag(
+    service: &SftpService,
     source_session_id: String,
     _local_session_id: String,
     paths: Vec<String>,
-) -> Result<DragOutFiles, String> {
+) -> Result<DragOutFiles, PlatformError> {
     if paths.is_empty() {
-        return Err("未选择要拖出的文件".into());
+        return Err(PlatformError::InvalidInput("未选择要拖出的文件"));
     }
 
     // 1. 同名检测（Windows 大小写不敏感），对齐 Electron 行为
@@ -49,26 +49,31 @@ pub async fn sftp_drag_out(
         names.iter().any(|name| !seen.insert(name.clone()))
     };
     if duplicated {
-        return Err("所选项目包含同名文件，暂时无法同时拖出".into());
+        return Err(PlatformError::InvalidInput(
+            "所选项目包含同名文件，暂时无法同时拖出",
+        ));
     }
 
     // 2. 临时目录 + 拖拽预览图标
     let temp_dir = std::env::temp_dir().join(format!("{DRAG_TEMP_PREFIX}{}", unique_suffix()));
     tokio::fs::create_dir_all(&temp_dir)
         .await
-        .map_err(|err| format!("创建临时目录失败: {err}"))?;
+        .map_err(|error| PlatformError::io("创建临时目录失败", error))?;
     let icon_path = temp_dir.join(".drag-icon.png");
     tokio::fs::write(&icon_path, DRAG_ICON_PNG)
         .await
-        .map_err(|err| format!("写入图标失败: {err}"))?;
+        .map_err(|error| PlatformError::io("写入图标失败", error))?;
 
     // 3. Rust 进程内直接把 SFTP 内容物化到临时目录。
-    if let Err(error) = state
+    if let Err(error) = service
         .materialize_paths(&source_session_id, &paths, &native_to_api(&temp_dir))
         .await
     {
         schedule_cleanup(&temp_dir);
-        return Err(format!("无法准备拖出文件: {}", error.message));
+        return Err(PlatformError::Preparation(format!(
+            "无法准备拖出文件: {}",
+            error.message
+        )));
     }
 
     // 4. 校验物化结果
@@ -77,7 +82,7 @@ pub async fn sftp_drag_out(
         let path = temp_dir.join(name);
         if !path.exists() {
             schedule_cleanup(&temp_dir);
-            return Err("拖出文件准备不完整".into());
+            return Err(PlatformError::Preparation("拖出文件准备不完整".into()));
         }
         files.push(path.to_string_lossy().into_owned());
     }
@@ -92,7 +97,7 @@ pub async fn sftp_drag_out(
 }
 
 /// 启动时清扫 24 小时以上的拖出临时目录（对应 Electron sweepNativeDragTemps）。
-pub fn sweep_stale_drag_temps() {
+pub(crate) fn sweep_stale_drag_temps() {
     let temp_root = match std::env::temp_dir().read_dir() {
         Ok(entries) => entries,
         Err(_) => return,
@@ -148,7 +153,7 @@ fn unique_suffix() -> String {
 /// 1 小时后删除临时目录（Tokio 定时任务，进程退出则放弃——启动清扫兜底）。
 fn schedule_cleanup(temp_dir: &Path) {
     let temp_dir = temp_dir.to_path_buf();
-    tauri::async_runtime::spawn(async move {
+    tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(60 * 60)).await;
         let _ = tokio::fs::remove_dir_all(temp_dir).await;
     });

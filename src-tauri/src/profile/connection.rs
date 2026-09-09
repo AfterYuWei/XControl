@@ -2,7 +2,7 @@ use serde_json::{Map, Value};
 
 use crate::error::CommandError;
 
-use super::{ProxyConfig, ProxyInput};
+use super::{error::ProfileError, ProxyConfig, ProxyInput};
 
 pub(super) const PROXY_DIRECT: &str = "direct";
 pub(super) const PROXY_SOCKS5: &str = "socks5";
@@ -43,7 +43,9 @@ pub(super) fn with_profile_host_key_fingerprint(
         .map_err(|error| CommandError::new("INVALID_OPTIONS", error.to_string()))
 }
 
-pub(super) fn normalize_proxy_input(input: Option<&ProxyInput>) -> Result<ProxyConfig, String> {
+pub(super) fn normalize_proxy_input(
+    input: Option<&ProxyInput>,
+) -> Result<ProxyConfig, ProfileError> {
     let Some(input) = input else {
         return Ok(ProxyConfig::direct());
     };
@@ -91,7 +93,7 @@ pub(super) fn normalize_proxy_input(input: Option<&ProxyInput>) -> Result<ProxyC
             proxy.port = 0;
             proxy.username.clear();
         }
-        other => return Err(format!("不支持的代理类型: {other}")),
+        other => return Err(format!("不支持的代理类型: {other}").into()),
     }
     Ok(proxy)
 }

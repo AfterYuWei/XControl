@@ -8,11 +8,14 @@ use tokio::{
 
 use crate::error::CommandError;
 
-use super::service::{SyncService, ORIGIN_CHANGE, ORIGIN_SCHEDULED, ORIGIN_SHUTDOWN};
+use super::{
+    error::SyncError,
+    service::{SyncService, ORIGIN_CHANGE, ORIGIN_SCHEDULED, ORIGIN_SHUTDOWN},
+};
 
 const CHANNEL_CAPACITY: usize = 32;
 
-pub(crate) struct SchedulerRuntime {
+pub(super) struct SchedulerRuntime {
     sender: mpsc::Sender<Message>,
     task: tokio::task::JoinHandle<()>,
 }
@@ -31,7 +34,7 @@ impl SyncService {
             .inner
             .scheduler
             .lock()
-            .map_err(|_| CommandError::new("SYNC_FAILED", "同步调度器锁已损坏"))?;
+            .map_err(|_| SyncError::SchedulerPoisoned)?;
         if slot.is_some() {
             return Ok(());
         }
@@ -49,36 +52,30 @@ impl SyncService {
     }
 
     pub(crate) fn reload_scheduler(&self) -> Result<(), CommandError> {
-        self.send_scheduler(Message::Reload)
+        self.send_scheduler(Message::Reload).map_err(Into::into)
     }
 
     pub(crate) fn request_sync(&self) -> Result<(), CommandError> {
-        self.send_scheduler(Message::Sync)
+        self.send_scheduler(Message::Sync).map_err(Into::into)
     }
 
     pub(crate) fn request_push(&self) -> Result<(), CommandError> {
-        self.send_scheduler(Message::Push)
+        self.send_scheduler(Message::Push).map_err(Into::into)
     }
 
-    fn send_scheduler(&self, message: Message) -> Result<(), CommandError> {
+    fn send_scheduler(&self, message: Message) -> Result<(), SyncError> {
         let slot = self
             .inner
             .scheduler
             .lock()
-            .map_err(|_| CommandError::new("SYNC_FAILED", "同步调度器锁已损坏"))?;
-        let runtime = slot
-            .as_ref()
-            .ok_or_else(|| CommandError::new("SYNC_SCHEDULER_STOPPED", "同步调度器尚未启动"))?;
+            .map_err(|_| SyncError::SchedulerPoisoned)?;
+        let runtime = slot.as_ref().ok_or(SyncError::SchedulerNotStarted)?;
         runtime
             .sender
             .try_send(message)
             .map_err(|error| match error {
-                mpsc::error::TrySendError::Full(_) => {
-                    CommandError::new("SYNC_SCHEDULER_BUSY", "同步请求队列已满，请稍后重试")
-                }
-                mpsc::error::TrySendError::Closed(_) => {
-                    CommandError::new("SYNC_SCHEDULER_STOPPED", "同步调度器已停止")
-                }
+                mpsc::error::TrySendError::Full(_) => SyncError::SchedulerBusy,
+                mpsc::error::TrySendError::Closed(_) => SyncError::SchedulerStopped,
             })
     }
 

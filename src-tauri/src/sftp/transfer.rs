@@ -18,6 +18,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::{
     backend::{base_name, clean_path, join_path, local_path_to_api, BackendWriter, FileBackend},
+    error::SftpError,
     state::SftpService,
 };
 use crate::error::CommandError;
@@ -383,7 +384,7 @@ async fn copy_with_progress(
     target_path: &str,
     entry: &TransferEntry,
     app: &AppHandle,
-) -> Result<(), String> {
+) -> Result<(), SftpError> {
     let mut reader = source.open_read(source_path).await?;
     let mut writer = target.open_write(target_path).await?;
     let mut buffer = vec![0_u8; 128 * 1024];
@@ -416,7 +417,7 @@ async fn copy_with_progress(
             }),
         );
     }
-    writer.shutdown().await.map_err(|error| error.to_string())
+    Ok(writer.shutdown().await.map_err(|error| error.to_string())?)
 }
 
 fn validate_upload_name(name: &str) -> Result<(), CommandError> {
@@ -746,8 +747,8 @@ pub(crate) async fn sftp_clear_completed_transfers(
     Ok(())
 }
 
-fn internal(error: String) -> CommandError {
-    CommandError::new("INTERNAL", error)
+fn internal(error: SftpError) -> CommandError {
+    CommandError::new("INTERNAL", error.to_string())
 }
 
 fn archive_name(path: &str) -> String {
@@ -785,7 +786,7 @@ fn append_tar_directory(
     directory: &Path,
     archive_root: &str,
     cancel: &CancellationToken,
-) -> Result<(), String> {
+) -> Result<(), SftpError> {
     if cancel.is_cancelled() {
         return Err("transfer cancelled".into());
     }
@@ -837,11 +838,12 @@ fn make_tar_gz_from_directory(
     source: &Path,
     output: &Path,
     cancel: &CancellationToken,
-) -> Result<(), String> {
+) -> Result<(), SftpError> {
     if cancel.is_cancelled() {
         return Err("transfer cancelled".into());
     }
-    let file = std::fs::File::create(output).map_err(|error| error.to_string())?;
+    let file = std::fs::File::create(output)
+        .map_err(|error| SftpError::archive(format!("create archive: {error}")))?;
     let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::default());
     let mut archive = tar::Builder::new(encoder);
     let root_name = source
@@ -866,7 +868,7 @@ fn append_zip_directory(
     root: &Path,
     directory: &Path,
     cancel: &CancellationToken,
-) -> Result<(), String> {
+) -> Result<(), SftpError> {
     if cancel.is_cancelled() {
         return Err("transfer cancelled".into());
     }
@@ -912,7 +914,7 @@ fn make_zip_from_directory(
     source: &Path,
     output: &Path,
     cancel: &CancellationToken,
-) -> Result<(), String> {
+) -> Result<(), SftpError> {
     let file = std::fs::File::create(output).map_err(|error| error.to_string())?;
     let mut archive = zip::ZipWriter::new(file);
     append_zip_directory(&mut archive, source, source, cancel)?;
@@ -923,7 +925,7 @@ fn make_zip_from_directory(
 fn tree_size<'a>(
     backend: &'a FileBackend,
     path: &'a str,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<u64, String>> + Send + 'a>> {
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<u64, SftpError>> + Send + 'a>> {
     Box::pin(async move {
         let info = backend.stat(path).await?;
         if !info.is_dir {
@@ -1047,7 +1049,7 @@ pub(crate) async fn sftp_download(
                 )
                 .await?;
             }
-            Ok::<(), String>(())
+            Ok::<(), SftpError>(())
         }
         .await;
         if zipped {
@@ -1066,7 +1068,7 @@ pub(crate) async fn sftp_download(
                 if let Some(path) = transfer.download_path.lock().await.take() {
                     let _ = tokio::fs::remove_file(path).await;
                 }
-                TransferManager::fail(&transfer, &app, error).await;
+                TransferManager::fail(&transfer, &app, error.to_string()).await;
             }
         }
     });
@@ -1105,7 +1107,7 @@ pub(crate) async fn sftp_download_chunk(
         .ok_or_else(|| CommandError::new("NOT_FOUND", "download file expired or cleaned up"))?;
     let bytes = read_file_chunk(&path, offset, max_bytes as usize)
         .await
-        .map_err(|error| CommandError::new("INTERNAL", error))?;
+        .map_err(|error| CommandError::new("INTERNAL", error.to_string()))?;
     Ok(bytes)
 }
 
@@ -1140,11 +1142,11 @@ pub(crate) async fn sftp_download_chunk_base64(
         .ok_or_else(|| CommandError::new("NOT_FOUND", "download file expired or cleaned up"))?;
     let bytes = read_file_chunk(&path, offset, max_bytes as usize)
         .await
-        .map_err(|error| CommandError::new("INTERNAL", error))?;
+        .map_err(|error| CommandError::new("INTERNAL", error.to_string()))?;
     Ok(STANDARD.encode(bytes))
 }
 
-async fn read_file_chunk(path: &Path, offset: u64, max_bytes: usize) -> Result<Vec<u8>, String> {
+async fn read_file_chunk(path: &Path, offset: u64, max_bytes: usize) -> Result<Vec<u8>, SftpError> {
     let mut file = tokio::fs::File::open(path)
         .await
         .map_err(|error| error.to_string())?;
@@ -1174,7 +1176,7 @@ pub(crate) async fn sftp_download_close(
     Ok(())
 }
 
-async fn auto_rename(backend: &FileBackend, path: &str) -> Result<String, String> {
+async fn auto_rename(backend: &FileBackend, path: &str) -> Result<String, SftpError> {
     let (stem, extension) = match base_name(path).rsplit_once('.') {
         Some((stem, extension)) if !stem.is_empty() => (stem.to_owned(), format!(".{extension}")),
         _ => (base_name(path), String::new()),
@@ -1207,7 +1209,7 @@ async fn resolve_destination(
     backend: &FileBackend,
     destination: String,
     resolution: &str,
-) -> Result<Option<String>, String> {
+) -> Result<Option<String>, SftpError> {
     if backend.stat(&destination).await.is_err() {
         return Ok(Some(destination));
     }
@@ -1225,7 +1227,7 @@ async fn resolve_destination(
 fn remove_all<'a>(
     backend: &'a FileBackend,
     path: &'a str,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'a>> {
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), SftpError>> + Send + 'a>> {
     Box::pin(async move {
         let info = backend.stat(path).await?;
         if !info.is_dir {
@@ -1245,7 +1247,7 @@ fn copy_directory<'a>(
     target_root: &'a str,
     transfer: &'a TransferEntry,
     app: &'a AppHandle,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'a>> {
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), SftpError>> + Send + 'a>> {
     Box::pin(async move {
         target.mkdir_all(target_root).await?;
         for child in source.list(source_root).await? {
@@ -1266,13 +1268,13 @@ async fn copy_plain(
     source_path: &str,
     target: &FileBackend,
     target_path: &str,
-) -> Result<(), String> {
+) -> Result<(), SftpError> {
     let mut reader = source.open_read(source_path).await?;
     let mut writer = target.open_write(target_path).await?;
     tokio::io::copy(&mut reader, &mut writer)
         .await
         .map_err(|error| error.to_string())?;
-    writer.shutdown().await.map_err(|error| error.to_string())
+    Ok(writer.shutdown().await.map_err(|error| error.to_string())?)
 }
 
 fn copy_directory_plain<'a>(
@@ -1280,7 +1282,7 @@ fn copy_directory_plain<'a>(
     source_root: &'a str,
     target: &'a FileBackend,
     target_root: &'a str,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'a>> {
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), SftpError>> + Send + 'a>> {
     Box::pin(async move {
         target.mkdir_all(target_root).await?;
         for child in source.list(source_root).await? {
@@ -1454,7 +1456,7 @@ pub(crate) async fn sftp_transfer(
                     let Some(destination) =
                         resolve_destination(&target, destination, &resolution).await?
                     else {
-                        return Ok::<(), String>(());
+                        return Ok::<(), SftpError>(());
                     };
                     if info.is_dir && directory_mode == "preserve" {
                         copy_directory(&source, path, &target, &destination, &transfer, &app).await
@@ -1515,7 +1517,10 @@ pub(crate) async fn sftp_transfer(
                 }
             }
             if failures.len() == paths.len() {
-                Err(format!("all paths failed: {}", failures.join("; ")))
+                Err(SftpError::transfer(format!(
+                    "all paths failed: {}",
+                    failures.join("; ")
+                )))
             } else {
                 if !failures.is_empty() {
                     transfer.task.lock().await.error_message = failures.join("; ");
@@ -1526,7 +1531,7 @@ pub(crate) async fn sftp_transfer(
         .await;
         match result {
             Ok(()) => TransferManager::complete(&transfer, &app).await,
-            Err(error) => TransferManager::fail(&transfer, &app, error).await,
+            Err(error) => TransferManager::fail(&transfer, &app, error.to_string()).await,
         }
     });
     manager.track_worker(task_id, worker).await;
@@ -1601,10 +1606,16 @@ pub(crate) async fn sftp_move(
         match resolve_destination(&backend, destination, &resolution).await {
             Ok(Some(destination)) => match backend.rename(&path, &destination).await {
                 Ok(()) => response.moved.push(destination),
-                Err(message) => response.failures.push(SftpMoveFailure { path, message }),
+                Err(message) => response.failures.push(SftpMoveFailure {
+                    path,
+                    message: message.to_string(),
+                }),
             },
             Ok(None) => response.skipped.push(path),
-            Err(message) => response.failures.push(SftpMoveFailure { path, message }),
+            Err(message) => response.failures.push(SftpMoveFailure {
+                path,
+                message: message.to_string(),
+            }),
         }
     }
     let _ = state.audit.record(
@@ -1714,6 +1725,6 @@ mod tests {
         cancel.cancel();
         let error =
             make_tar_gz_from_directory(&path, &directory.path().join("out"), &cancel).unwrap_err();
-        assert_eq!(error, "transfer cancelled");
+        assert_eq!(error.to_string(), "transfer cancelled");
     }
 }

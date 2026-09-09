@@ -1,6 +1,7 @@
 //! SSH connection profile feature.
 
 mod connection;
+mod error;
 mod legacy;
 mod model;
 mod repository;

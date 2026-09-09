@@ -9,7 +9,10 @@ use zeroize::Zeroizing;
 
 use crate::error::CommandError;
 
-use super::model::{strip_credentials, BackupFile, BackupPayload};
+use super::{
+    error::BackupError,
+    model::{strip_credentials, BackupFile, BackupPayload},
+};
 
 pub(super) const FORMAT: &str = "xcontrol-backup";
 pub(super) const VERSION: i64 = 1;
@@ -42,32 +45,41 @@ impl KdfParams {
         })
     }
 
-    pub(super) fn derive(&self, password: &str) -> Result<Zeroizing<[u8; 32]>, String> {
+    pub(super) fn derive(&self, password: &str) -> Result<Zeroizing<[u8; 32]>, BackupError> {
         if self.algo != "argon2id" {
-            return Err(format!("unsupported kdf algo: {}", self.algo));
+            return Err(BackupError::Kdf(format!(
+                "unsupported kdf algo: {}",
+                self.algo
+            )));
         }
         let salt = STANDARD
             .decode(&self.salt)
-            .map_err(|_| "invalid kdf salt".to_owned())?;
+            .map_err(|_| BackupError::Kdf("invalid kdf salt".to_owned()))?;
         if salt.is_empty() {
-            return Err("invalid kdf salt".into());
+            return Err(BackupError::Kdf("invalid kdf salt".to_owned()));
         }
         if self.time == 0 || self.time > 100 {
-            return Err(format!("invalid kdf time: {}", self.time));
+            return Err(BackupError::Kdf(format!("invalid kdf time: {}", self.time)));
         }
         if self.memory == 0 || self.memory > 1 << 20 {
-            return Err(format!("invalid kdf memory: {}", self.memory));
+            return Err(BackupError::Kdf(format!(
+                "invalid kdf memory: {}",
+                self.memory
+            )));
         }
         if self.threads == 0 || self.threads > 16 {
-            return Err(format!("invalid kdf threads: {}", self.threads));
+            return Err(BackupError::Kdf(format!(
+                "invalid kdf threads: {}",
+                self.threads
+            )));
         }
         let params = Params::new(self.memory, self.time, u32::from(self.threads), Some(32))
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| BackupError::Kdf(error.to_string()))?;
         let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
         let mut key = Zeroizing::new([0_u8; 32]);
         argon
             .hash_password_into(password.as_bytes(), &salt, key.as_mut())
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| BackupError::Kdf(error.to_string()))?;
         Ok(key)
     }
 }
@@ -138,9 +150,10 @@ pub(super) fn invalid_backup(message: impl Into<String>) -> CommandError {
     CommandError::new("INVALID_BACKUP_FORMAT", message)
 }
 
-pub(super) fn encrypt_backup(key: &[u8; 32], plaintext: &[u8]) -> Result<String, String> {
+pub(super) fn encrypt_backup(key: &[u8; 32], plaintext: &[u8]) -> Result<String, BackupError> {
     let mut nonce = [0_u8; NONCE_LEN];
-    getrandom::fill(&mut nonce).map_err(|error| error.to_string())?;
+    getrandom::fill(&mut nonce)
+        .map_err(|error| BackupError::InvalidCiphertext(error.to_string()))?;
     encrypt_backup_with_nonce(key, plaintext, nonce)
 }
 
@@ -148,7 +161,7 @@ pub(super) fn encrypt_backup_with_nonce(
     key: &[u8; 32],
     plaintext: &[u8],
     nonce: [u8; NONCE_LEN],
-) -> Result<String, String> {
+) -> Result<String, BackupError> {
     let cipher = Aes256Gcm::new(aes_gcm::Key::<Aes256Gcm>::from_slice(key));
     let body = cipher
         .encrypt(
@@ -158,19 +171,21 @@ pub(super) fn encrypt_backup_with_nonce(
                 aad: AAD,
             },
         )
-        .map_err(|_| "encrypt failed".to_owned())?;
+        .map_err(|_| BackupError::Encrypt)?;
     let mut output = Vec::with_capacity(NONCE_LEN + body.len());
     output.extend_from_slice(&nonce);
     output.extend_from_slice(&body);
     Ok(STANDARD.encode(output))
 }
 
-pub(super) fn decrypt_backup(key: &[u8; 32], encoded: &str) -> Result<Vec<u8>, String> {
+pub(super) fn decrypt_backup(key: &[u8; 32], encoded: &str) -> Result<Vec<u8>, BackupError> {
     let raw = STANDARD
         .decode(encoded)
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| BackupError::InvalidCiphertext(error.to_string()))?;
     if raw.len() < NONCE_LEN {
-        return Err("ciphertext too short".into());
+        return Err(BackupError::InvalidCiphertext(
+            "ciphertext too short".to_owned(),
+        ));
     }
     let (nonce, body) = raw.split_at(NONCE_LEN);
     let cipher = Aes256Gcm::new(aes_gcm::Key::<Aes256Gcm>::from_slice(key));
@@ -182,5 +197,5 @@ pub(super) fn decrypt_backup(key: &[u8; 32], encoded: &str) -> Result<Vec<u8>, S
                 aad: AAD,
             },
         )
-        .map_err(|_| "decrypt failed".to_owned())
+        .map_err(|_| BackupError::Decrypt)
 }

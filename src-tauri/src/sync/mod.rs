@@ -1,6 +1,7 @@
 //! 本地版本、云端 Provider 与调度的进程内同步领域。
 
 mod cloud;
+mod error;
 mod model;
 mod oauth;
 mod provider;

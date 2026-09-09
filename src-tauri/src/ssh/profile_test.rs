@@ -140,7 +140,7 @@ async fn run_test(node: ResolvedProfileNode) -> ProfileTestResult {
                 .await;
             "SSH 握手与认证成功".to_owned()
         }
-        Err(error) => error,
+        Err(error) => error.to_string(),
     };
     stages
         .lock()

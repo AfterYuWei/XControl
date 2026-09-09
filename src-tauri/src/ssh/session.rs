@@ -15,8 +15,8 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
-use super::session_manager::SessionManager;
 use super::transport::{connect_route, ClientHandler, ConnectedRoute, HostKeyVerifier};
+use super::{session_manager::SessionManager, SshError};
 use crate::{
     audit::AuditRepository,
     error::CommandError,
@@ -476,7 +476,7 @@ impl SshService {
         session.stage("starting_shell", "info", "正在启动远程 Shell");
         if let Err(error) = self.run_terminal(session.clone(), route, cols, rows).await {
             if !session.cancel.is_cancelled() {
-                session.failed("starting_shell", error);
+                session.failed("starting_shell", error.to_string());
             }
         }
     }
@@ -487,7 +487,7 @@ impl SshService {
         route: ConnectedRoute,
         cols: u32,
         rows: u32,
-    ) -> Result<(), String> {
+    ) -> Result<(), SshError> {
         let mut channel = route
             .handle
             .channel_open_session()
@@ -577,7 +577,7 @@ impl SshService {
                             Err(error) => json!({
                                 "request_id":request_id,
                                 "output":"",
-                                "error":error,
+                                "error":error.to_string(),
                                 "exit_code":-1,
                             }),
                         };
@@ -743,7 +743,7 @@ async fn run_completion(
     handle: &client::Handle<ClientHandler>,
     script: String,
     cwd: Option<String>,
-) -> Result<(String, i32), String> {
+) -> Result<(String, i32), SshError> {
     let command = match cwd.filter(|value| !value.is_empty()) {
         Some(cwd) => format!("cd {} && {script}", shell_quote(&cwd)),
         None => script,
@@ -766,7 +766,7 @@ async fn run_completion(
                 _ => {}
             }
         }
-        Ok::<_, String>((String::from_utf8_lossy(&output).into_owned(), code))
+        Ok::<_, SshError>((String::from_utf8_lossy(&output).into_owned(), code))
     })
     .await
     .map_err(|_| "timeout".to_owned())?

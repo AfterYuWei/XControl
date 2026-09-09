@@ -7,16 +7,11 @@ mod app;
 mod audit;
 mod backup;
 mod commands;
-#[cfg(desktop)]
-mod drag_out;
 mod error;
 mod group;
 mod infrastructure;
 mod profile;
-mod runtime;
 mod server_detail;
-#[cfg(desktop)]
-mod settings_migrate;
 mod sftp;
 mod snippet;
 mod ssh;

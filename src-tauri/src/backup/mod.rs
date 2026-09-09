@@ -1,5 +1,6 @@
 //! Backup format, persistence and orchestration.
 
+mod error;
 mod format;
 mod model;
 mod repository;

@@ -29,3 +29,9 @@ impl CommandError {
         Self::new("DB_ERROR", error.to_string())
     }
 }
+
+impl From<crate::infrastructure::database::StorageError> for CommandError {
+    fn from(error: crate::infrastructure::database::StorageError) -> Self {
+        Self::database(error)
+    }
+}

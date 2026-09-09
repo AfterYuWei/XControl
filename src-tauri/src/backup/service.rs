@@ -96,11 +96,11 @@ impl BackupService {
             let kdf = KdfParams::generate()?;
             let key = kdf
                 .derive(password)
-                .map_err(|error| CommandError::new("KDF_FAILED", error))?;
+                .map_err(|error| CommandError::new("KDF_FAILED", error.to_string()))?;
             let plaintext = serde_json::to_vec(&payload)
                 .map_err(|error| CommandError::new("EXPORT_FAILED", error.to_string()))?;
             file.payload = encrypt_backup(&key, &plaintext)
-                .map_err(|error| CommandError::new("ENCRYPT_FAILED", error))?;
+                .map_err(|error| CommandError::new("ENCRYPT_FAILED", error.to_string()))?;
             file.kdf = Some(kdf);
         } else {
             if mode == MODE_NONE {
@@ -135,9 +135,9 @@ impl BackupService {
             .map_err(|error| CommandError::new("SYNC_FAILED", error.message))?;
         let key = kdf
             .derive(password)
-            .map_err(|error| CommandError::new("SYNC_FAILED", error))?;
+            .map_err(|error| CommandError::new("SYNC_FAILED", error.to_string()))?;
         let payload = encrypt_backup(&key, &plaintext)
-            .map_err(|error| CommandError::new("SYNC_FAILED", error))?;
+            .map_err(|error| CommandError::new("SYNC_FAILED", error.to_string()))?;
         let file = BackupFile {
             format: FORMAT.into(),
             version: VERSION,
@@ -171,7 +171,7 @@ impl BackupService {
             .take()
             .expect("checked kdf")
             .derive(password)
-            .map_err(|error| CommandError::new("SYNC_FAILED", error))?;
+            .map_err(|error| CommandError::new("SYNC_FAILED", error.to_string()))?;
         let plaintext = Zeroizing::new(decrypt_backup(&key, &file.payload).map_err(|error| {
             CommandError::new(
                 "SYNC_FAILED",
@@ -253,7 +253,7 @@ impl BackupService {
             remap_ids(&mut payload);
         }
         let group_order = topo_sort_groups(&payload.groups)
-            .map_err(|error| CommandError::new("IMPORT_FAILED", error))?;
+            .map_err(|error| CommandError::new("IMPORT_FAILED", error.to_string()))?;
 
         let mut result = self
             .repository
@@ -298,7 +298,7 @@ impl BackupService {
     }
 }
 
-fn topo_sort_groups(groups: &[BackupGroup]) -> Result<Vec<usize>, String> {
+fn topo_sort_groups(groups: &[BackupGroup]) -> Result<Vec<usize>, super::error::BackupError> {
     let by_id: HashMap<&str, usize> = groups
         .iter()
         .enumerate()
@@ -312,11 +312,16 @@ fn topo_sort_groups(groups: &[BackupGroup]) -> Result<Vec<usize>, String> {
         by_id: &HashMap<&'a str, usize>,
         state: &mut HashMap<&'a str, u8>,
         ordered: &mut Vec<usize>,
-    ) -> Result<(), String> {
+    ) -> Result<(), super::error::BackupError> {
         let group = &groups[index];
         match state.get(group.id.as_str()).copied().unwrap_or_default() {
             2 => return Ok(()),
-            1 => return Err(format!("分组存在循环引用（group {}）", group.id)),
+            1 => {
+                return Err(super::error::BackupError::InvalidGraph(format!(
+                    "分组存在循环引用（group {}）",
+                    group.id
+                )))
+            }
             _ => {}
         }
         state.insert(group.id.as_str(), 1);
@@ -721,7 +726,7 @@ mod tests {
             },
         ];
         assert_eq!(
-            topo_sort_groups(&groups).unwrap_err(),
+            topo_sort_groups(&groups).unwrap_err().to_string(),
             "分组存在循环引用（group a）"
         );
     }

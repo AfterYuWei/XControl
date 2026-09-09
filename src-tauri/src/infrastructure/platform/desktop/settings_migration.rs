@@ -6,11 +6,11 @@
 
 use std::path::Path;
 
-use crate::runtime::user_data_dir;
+use super::{user_data_dir, PlatformError};
 
 /// 读取尚未迁移的设置。marker 存在或读取失败时返回 None。
 /// marker 必须等前端成功写入 localStorage 后再由 [`mark_migrated`] 创建。
-pub fn read_unmigrated() -> Option<serde_json::Value> {
+pub(crate) fn read_unmigrated() -> Option<serde_json::Value> {
     read_unmigrated_in(&user_data_dir().ok()?)
 }
 
@@ -24,14 +24,15 @@ fn read_unmigrated_in(dir: &Path) -> Option<serde_json::Value> {
 }
 
 /// 前端确认 localStorage 已写入（或已有更新设置）后创建迁移 marker。
-pub fn mark_migrated() -> Result<(), String> {
-    let dir = user_data_dir().map_err(|err| err.to_string())?;
-    std::fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
+pub(crate) fn mark_migrated() -> Result<(), PlatformError> {
+    let dir = user_data_dir()?;
+    std::fs::create_dir_all(&dir).map_err(|error| PlatformError::io("创建数据目录失败", error))?;
     mark_migrated_in(&dir)
 }
 
-fn mark_migrated_in(dir: &Path) -> Result<(), String> {
-    std::fs::write(dir.join(".tauri-migrated"), "").map_err(|err| err.to_string())
+fn mark_migrated_in(dir: &Path) -> Result<(), PlatformError> {
+    std::fs::write(dir.join(".tauri-migrated"), "")
+        .map_err(|error| PlatformError::io("写入迁移标记失败", error))
 }
 
 #[cfg(test)]

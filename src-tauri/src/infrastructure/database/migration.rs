@@ -2,12 +2,11 @@
 
 use rusqlite::Connection;
 
-use crate::error::CommandError;
+use crate::infrastructure::database::StorageError;
 
-pub(super) fn migrate(connection: &Connection) -> Result<(), CommandError> {
-    connection
-        .execute_batch(
-            "PRAGMA journal_mode = WAL;\
+pub(super) fn migrate(connection: &Connection) -> Result<(), StorageError> {
+    connection.execute_batch(
+        "PRAGMA journal_mode = WAL;\
              CREATE TABLE IF NOT EXISTS groups (\
                 id         TEXT PRIMARY KEY,\
                 name       TEXT NOT NULL,\
@@ -109,8 +108,7 @@ pub(super) fn migrate(connection: &Connection) -> Result<(), CommandError> {
                 ON sync_events(created_at DESC);\
              INSERT OR IGNORE INTO sync_state (id,next_version,status) \
                 VALUES (1,1,'idle');",
-        )
-        .map_err(CommandError::database)?;
+    )?;
 
     // A pre-metadata XControl database may be opened on mobile where no Go
     // process has ever run. Keep the historical migration idempotent.
@@ -131,12 +129,10 @@ pub(super) fn migrate(connection: &Connection) -> Result<(), CommandError> {
         "proxy_credential",
         "TEXT DEFAULT ''",
     )?;
-    connection
-        .execute(
-            "UPDATE vault SET updated_at=created_at WHERE updated_at IS NULL",
-            [],
-        )
-        .map_err(CommandError::database)?;
+    connection.execute(
+        "UPDATE vault SET updated_at=created_at WHERE updated_at IS NULL",
+        [],
+    )?;
     Ok(())
 }
 
@@ -145,22 +141,16 @@ fn add_column_if_missing(
     table: &str,
     column: &str,
     definition: &str,
-) -> Result<(), CommandError> {
-    let mut statement = connection
-        .prepare(&format!("PRAGMA table_info({table})"))
-        .map_err(CommandError::database)?;
+) -> Result<(), StorageError> {
+    let mut statement = connection.prepare(&format!("PRAGMA table_info({table})"))?;
     let columns = statement
-        .query_map([], |row| row.get::<_, String>(1))
-        .map_err(CommandError::database)?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(CommandError::database)?;
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<Vec<_>, _>>()?;
     drop(statement);
     if !columns.iter().any(|existing| existing == column) {
-        connection
-            .execute_batch(&format!(
-                "ALTER TABLE {table} ADD COLUMN {column} {definition}"
-            ))
-            .map_err(CommandError::database)?;
+        connection.execute_batch(&format!(
+            "ALTER TABLE {table} ADD COLUMN {column} {definition}"
+        ))?;
     }
     Ok(())
 }

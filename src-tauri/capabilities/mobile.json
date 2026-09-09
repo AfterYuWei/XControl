@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "mobile-core",
+  "description": "Android/iOS 共用核心能力；不授予窗口、drag-out、updater、process 或任意桌面文件系统权限。",
+  "platforms": ["android", "iOS"],
+  "permissions": [
+    "core:default",
+    "core:app:default"
+  ]
+}

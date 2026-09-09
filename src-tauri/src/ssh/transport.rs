@@ -20,6 +20,8 @@ use tokio::{
 
 use crate::profile::{ProxyConfig, ResolvedProfileNode};
 
+use super::SshError;
+
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub(crate) trait AsyncStream: AsyncRead + AsyncWrite + Unpin + Send {}
@@ -76,7 +78,7 @@ impl ConnectedRoute {
         &self.host_keys
     }
 
-    pub(crate) async fn open_subsystem(&self, name: &str) -> Result<BoxStream, String> {
+    pub(crate) async fn open_subsystem(&self, name: &str) -> Result<BoxStream, SshError> {
         let channel = self
             .handle
             .channel_open_session()
@@ -89,7 +91,7 @@ impl ConnectedRoute {
         Ok(Box::new(channel.into_stream()))
     }
 
-    pub(crate) async fn exec(&self, command: &str) -> Result<(String, i32), String> {
+    pub(crate) async fn exec(&self, command: &str) -> Result<(String, i32), SshError> {
         let mut channel = self
             .handle
             .channel_open_session()
@@ -117,14 +119,14 @@ impl ConnectedRoute {
 pub(crate) async fn connect_route(
     root: ResolvedProfileNode,
     verifier: Arc<dyn HostKeyVerifier>,
-) -> Result<ConnectedRoute, String> {
+) -> Result<ConnectedRoute, SshError> {
     connect_node(root, verifier).await
 }
 
 fn connect_node(
     mut node: ResolvedProfileNode,
     verifier: Arc<dyn HostKeyVerifier>,
-) -> Pin<Box<dyn Future<Output = Result<ConnectedRoute, String>> + Send>> {
+) -> Pin<Box<dyn Future<Output = Result<ConnectedRoute, SshError>> + Send>> {
     Box::pin(async move {
         let (stream, jump_handles, mut host_keys) = if let Some(jump) = node.jump.take() {
             let mut route = connect_node(*jump, verifier.clone()).await?;
@@ -196,7 +198,7 @@ fn connect_node(
 async fn authenticate(
     handle: &mut client::Handle<ClientHandler>,
     node: &ResolvedProfileNode,
-) -> Result<(), String> {
+) -> Result<(), SshError> {
     let result = match node.auth_type.as_str() {
         "password" | "vault" if !node.password.is_empty() => handle
             .authenticate_password(node.username.clone(), node.password.clone())
@@ -222,12 +224,18 @@ async fn authenticate(
                 .map_err(|error| format!("私钥认证失败: {error}"))?
         }
         "agent" => return authenticate_agent(handle, &node.username).await,
-        other => return Err(format!("不支持的 SSH 认证类型: {other}")),
+        other => {
+            return Err(SshError::Authentication(format!(
+                "不支持的 SSH 认证类型: {other}"
+            )))
+        }
     };
     if result.success() {
         Ok(())
     } else {
-        Err("SSH 认证失败，请检查用户名和凭据".into())
+        Err(SshError::Authentication(
+            "SSH 认证失败，请检查用户名和凭据".into(),
+        ))
     }
 }
 
@@ -235,7 +243,7 @@ async fn authenticate(
 async fn authenticate_agent(
     handle: &mut client::Handle<ClientHandler>,
     username: &str,
-) -> Result<(), String> {
+) -> Result<(), SshError> {
     let mut agent = keys::agent::client::AgentClient::connect_env()
         .await
         .map_err(|error| format!("连接 SSH Agent: {error}"))?;
@@ -265,7 +273,7 @@ async fn authenticate_agent(
 async fn authenticate_agent(
     _handle: &mut client::Handle<ClientHandler>,
     _username: &str,
-) -> Result<(), String> {
+) -> Result<(), SshError> {
     Err("当前平台暂不支持 SSH Agent 认证".into())
 }
 
@@ -274,7 +282,7 @@ async fn dial_transport(
     port: u16,
     proxy: &ProxyConfig,
     proxy_password: &str,
-) -> Result<BoxStream, String> {
+) -> Result<BoxStream, SshError> {
     if proxy.proxy_type.is_empty() || proxy.proxy_type == "direct" {
         return Ok(Box::new(connect_tcp(host, port).await?));
     }
@@ -290,16 +298,16 @@ async fn dial_transport(
             establish_http_connect(&mut stream, host, port, &proxy.username, proxy_password)
                 .await?;
         }
-        other => return Err(format!("不支持的代理类型: {other}")),
+        other => return Err(format!("不支持的代理类型: {other}").into()),
     }
     Ok(Box::new(stream))
 }
 
-async fn connect_tcp(host: &str, port: u16) -> Result<TcpStream, String> {
-    timeout(CONNECT_TIMEOUT, TcpStream::connect((host, port)))
+async fn connect_tcp(host: &str, port: u16) -> Result<TcpStream, SshError> {
+    Ok(timeout(CONNECT_TIMEOUT, TcpStream::connect((host, port)))
         .await
         .map_err(|_| format!("连接 {host}:{port} 超时"))?
-        .map_err(|error| format!("连接 {host}:{port}: {error}"))
+        .map_err(|error| format!("连接 {host}:{port}: {error}"))?)
 }
 
 async fn establish_socks5(
@@ -308,7 +316,7 @@ async fn establish_socks5(
     port: u16,
     username: &str,
     password: &str,
-) -> Result<(), String> {
+) -> Result<(), SshError> {
     let methods: &[u8] = if username.is_empty() { &[0] } else { &[0, 2] };
     stream
         .write_all(&[&[5, methods.len() as u8], methods].concat())
@@ -342,7 +350,7 @@ async fn establish_socks5(
             return Err("SOCKS5 用户名或密码错误".into());
         }
     } else if response[1] != 0 {
-        return Err(format!("SOCKS5 代理返回未知认证方式: {}", response[1]));
+        return Err(format!("SOCKS5 代理返回未知认证方式: {}", response[1]).into());
     }
 
     if host.len() > 255 {
@@ -361,7 +369,7 @@ async fn establish_socks5(
         .await
         .map_err(proxy_io("读取 SOCKS5 CONNECT 响应"))?;
     if header[0] != 5 || header[1] != 0 {
-        return Err(format!("SOCKS5 CONNECT 被拒绝，状态码 {}", header[1]));
+        return Err(format!("SOCKS5 CONNECT 被拒绝，状态码 {}", header[1]).into());
     }
     let address_len = match header[3] {
         1 => 4,
@@ -390,7 +398,7 @@ async fn establish_http_connect(
     port: u16,
     username: &str,
     password: &str,
-) -> Result<(), String> {
+) -> Result<(), SshError> {
     let authority = format!("{host}:{port}");
     let auth = if username.is_empty() {
         String::new()
@@ -424,7 +432,7 @@ async fn establish_http_connect(
         .and_then(|value| value.parse::<u16>().ok())
         .is_some_and(|code| (200..300).contains(&code));
     if !accepted {
-        return Err(format!("HTTP CONNECT 被拒绝: {status}"));
+        return Err(format!("HTTP CONNECT 被拒绝: {status}").into());
     }
     Ok(())
 }

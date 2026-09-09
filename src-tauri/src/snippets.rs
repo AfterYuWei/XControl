@@ -5,7 +5,7 @@ use rusqlite::{params, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::{database::Database, error::CommandError};
+use crate::{error::CommandError, infrastructure::database::Database};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Snippet {

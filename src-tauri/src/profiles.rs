@@ -14,8 +14,8 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
     credential_crypto::Encryptor,
-    database::Database,
     error::CommandError,
+    infrastructure::database::Database,
     vault::{decode_plaintext, Credential, ProfileRef},
 };
 

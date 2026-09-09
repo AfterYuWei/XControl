@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use chrono::{Local, SecondsFormat};
 use rusqlite::{params, OptionalExtension, Row};
 
-use crate::{credential_crypto::Encryptor, database::Database, error::CommandError};
+use crate::{
+    credential_crypto::Encryptor, error::CommandError, infrastructure::database::Database,
+};
 
 use super::model::{
     SyncConflictInfo, SyncEvent, SyncProviderConfig, SyncProviderMeta, SyncSettings, SyncVersion,

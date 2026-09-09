@@ -1,4 +1,7 @@
-//! 前端 invoke 命令与桌面系统能力。
+//! Tauri command adapter。
+//!
+//! 当前桌面命令会在后续平台边界阶段按职责继续拆分；业务 Feature command
+//! 则在各自迁移阶段移入本模块。
 
 use std::{
     io::{Read, Seek, SeekFrom, Write},

@@ -16,7 +16,8 @@ use tauri::State;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
-    audit::AuditState, credential_crypto::Encryptor, database::Database, error::CommandError,
+    audit::AuditState, credential_crypto::Encryptor, error::CommandError,
+    infrastructure::database::Database,
 };
 
 const PASSWORD: &str = "password";

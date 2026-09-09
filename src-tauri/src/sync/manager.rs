@@ -378,8 +378,9 @@ fn now() -> String {
 mod tests {
     use super::*;
     use crate::{
-        audit::AuditState, credential_crypto::Encryptor, database::Database, groups::GroupState,
-        profiles::ProfileState, sync::store::SyncRepository, vault::VaultState,
+        audit::AuditState, credential_crypto::Encryptor, groups::GroupState,
+        infrastructure::database::Database, profiles::ProfileState, sync::store::SyncRepository,
+        vault::VaultState,
     };
 
     fn state() -> (tempfile::TempDir, SyncState) {

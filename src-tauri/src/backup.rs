@@ -22,9 +22,9 @@ use zeroize::Zeroizing;
 use crate::{
     audit::AuditState,
     credential_crypto::Encryptor,
-    database::Database,
     error::CommandError,
     groups::{Group, GroupState},
+    infrastructure::database::Database,
     profiles::{Profile, ProfileState},
     vault::{decode_plaintext, encode_plaintext, Credential, VaultItem, VaultState},
 };

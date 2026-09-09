@@ -8,7 +8,7 @@ use rusqlite::{params, Row};
 use serde::Serialize;
 use tauri::State;
 
-use crate::{database::Database, error::CommandError};
+use crate::{error::CommandError, infrastructure::database::Database};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AuditLog {

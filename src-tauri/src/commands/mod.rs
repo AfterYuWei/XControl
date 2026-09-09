@@ -10,6 +10,7 @@ mod server_detail;
 mod sftp;
 mod snippet;
 mod ssh;
+mod sync;
 mod vault;
 
 pub(crate) use audit::*;
@@ -22,4 +23,5 @@ pub(crate) use server_detail::*;
 pub(crate) use sftp::*;
 pub(crate) use snippet::*;
 pub(crate) use ssh::*;
+pub(crate) use sync::*;
 pub(crate) use vault::*;

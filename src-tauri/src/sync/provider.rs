@@ -12,7 +12,7 @@ use crate::error::CommandError;
 use super::{
     model::{CloudIndex, SyncProviderConfig},
     oauth,
-    store::SyncRepository,
+    repository::SyncRepository,
 };
 
 const GDRIVE_API: &str = "https://www.googleapis.com/drive/v3";
@@ -630,9 +630,9 @@ async fn http_error(action: &str, response: Response) -> CommandError {
     body_error(action, status, &body)
 }
 
-fn body_error(action: &str, status: StatusCode, body: &[u8]) -> CommandError {
-    let detail = String::from_utf8_lossy(&body[..body.len().min(512)]);
-    CommandError::new("SYNC_FAILED", format!("{action} (HTTP {status}): {detail}"))
+fn body_error(action: &str, status: StatusCode, _body: &[u8]) -> CommandError {
+    // Provider response bodies may contain echoed credentials or OAuth details.
+    CommandError::new("SYNC_FAILED", format!("{action} (HTTP {status})"))
 }
 
 fn hex_sha256(bytes: &[u8]) -> String {

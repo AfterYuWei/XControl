@@ -2,7 +2,7 @@ use tauri::State;
 
 use crate::{
     error::CommandError,
-    sync::SyncState,
+    sync::SyncService,
     vault::{
         generate_key_pair, Credential, GenerateKeyRequest, GenerateKeyResponse, ProfileRef,
         VaultItem, VaultService, VaultWriteRequest,
@@ -35,7 +35,7 @@ pub(crate) async fn vault_get(
 #[tauri::command]
 pub(crate) async fn vault_create(
     state: State<'_, VaultService>,
-    sync: State<'_, SyncState>,
+    sync: State<'_, SyncService>,
     request: VaultWriteRequest,
 ) -> Result<VaultItem, CommandError> {
     let state = state.inner().clone();
@@ -49,7 +49,7 @@ pub(crate) async fn vault_create(
 #[tauri::command]
 pub(crate) async fn vault_update(
     state: State<'_, VaultService>,
-    sync: State<'_, SyncState>,
+    sync: State<'_, SyncService>,
     id: String,
     request: VaultWriteRequest,
 ) -> Result<VaultItem, CommandError> {
@@ -64,7 +64,7 @@ pub(crate) async fn vault_update(
 #[tauri::command]
 pub(crate) async fn vault_delete(
     state: State<'_, VaultService>,
-    sync: State<'_, SyncState>,
+    sync: State<'_, SyncService>,
     id: String,
 ) -> Result<(), CommandError> {
     let state = state.inner().clone();

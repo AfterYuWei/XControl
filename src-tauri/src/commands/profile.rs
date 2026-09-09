@@ -3,7 +3,7 @@ use tauri::State;
 use crate::{
     error::CommandError,
     profile::{Profile, ProfileCreateRequest, ProfileService, ProfileUpdateRequest},
-    sync::SyncState,
+    sync::SyncService,
 };
 
 #[tauri::command]
@@ -32,7 +32,7 @@ pub(crate) async fn profile_get(
 #[tauri::command]
 pub(crate) async fn profile_create(
     state: State<'_, ProfileService>,
-    sync: State<'_, SyncState>,
+    sync: State<'_, SyncService>,
     request: ProfileCreateRequest,
 ) -> Result<Profile, CommandError> {
     let state = state.inner().clone();
@@ -46,7 +46,7 @@ pub(crate) async fn profile_create(
 #[tauri::command]
 pub(crate) async fn profile_update(
     state: State<'_, ProfileService>,
-    sync: State<'_, SyncState>,
+    sync: State<'_, SyncService>,
     id: String,
     request: ProfileUpdateRequest,
 ) -> Result<Profile, CommandError> {
@@ -61,7 +61,7 @@ pub(crate) async fn profile_update(
 #[tauri::command]
 pub(crate) async fn profile_delete(
     state: State<'_, ProfileService>,
-    sync: State<'_, SyncState>,
+    sync: State<'_, SyncService>,
     id: String,
 ) -> Result<(), CommandError> {
     let state = state.inner().clone();

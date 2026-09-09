@@ -3,7 +3,7 @@ use tauri::State;
 use crate::{
     error::CommandError,
     snippet::{Snippet, SnippetCreateRequest, SnippetService, SnippetUpdateRequest},
-    sync::SyncState,
+    sync::SyncService,
 };
 
 #[tauri::command]
@@ -19,7 +19,7 @@ pub(crate) async fn snippet_list(
 #[tauri::command]
 pub(crate) async fn snippet_create(
     service: State<'_, SnippetService>,
-    sync: State<'_, SyncState>,
+    sync: State<'_, SyncService>,
     request: SnippetCreateRequest,
 ) -> Result<Snippet, CommandError> {
     let service = service.inner().clone();
@@ -33,7 +33,7 @@ pub(crate) async fn snippet_create(
 #[tauri::command]
 pub(crate) async fn snippet_update(
     service: State<'_, SnippetService>,
-    sync: State<'_, SyncState>,
+    sync: State<'_, SyncService>,
     id: String,
     request: SnippetUpdateRequest,
 ) -> Result<Snippet, CommandError> {
@@ -48,7 +48,7 @@ pub(crate) async fn snippet_update(
 #[tauri::command]
 pub(crate) async fn snippet_delete(
     service: State<'_, SnippetService>,
-    sync: State<'_, SyncState>,
+    sync: State<'_, SyncService>,
     id: String,
 ) -> Result<(), CommandError> {
     let service = service.inner().clone();

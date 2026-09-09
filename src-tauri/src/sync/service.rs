@@ -16,7 +16,7 @@ use super::{
         SyncConflictInfo, SyncEvent, SyncProviderConfig, SyncProviderMeta, SyncSettings,
         SyncStatus, SyncVersion, SyncVersionInfo,
     },
-    store::SyncRepository,
+    repository::SyncRepository,
 };
 
 pub const ORIGIN_MANUAL: &str = "manual";
@@ -27,7 +27,7 @@ pub const ORIGIN_CONFLICT_RESOLVE: &str = "conflict_resolve";
 pub const ORIGIN_RESTORE: &str = "restore";
 
 #[derive(Clone)]
-pub struct SyncState {
+pub(crate) struct SyncService {
     pub(crate) inner: Arc<SyncInner>,
 }
 
@@ -36,9 +36,22 @@ pub(crate) struct SyncInner {
     pub backup: BackupService,
     pub backup_dir: PathBuf,
     pub device_id: String,
-    operation: Mutex<()>,
+    pub(super) operation: OperationCoordinator,
     pub oauth_states: Mutex<HashMap<String, super::oauth::OAuthState>>,
     pub scheduler: Mutex<Option<super::scheduler::SchedulerRuntime>>,
+}
+
+#[derive(Default)]
+pub(super) struct OperationCoordinator {
+    lock: tokio::sync::Mutex<()>,
+}
+
+impl OperationCoordinator {
+    pub(super) fn try_enter(&self) -> Result<tokio::sync::MutexGuard<'_, ()>, CommandError> {
+        self.lock
+            .try_lock()
+            .map_err(|_| CommandError::new("SYNC_IN_PROGRESS", "同步操作进行中，请稍后"))
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -56,7 +69,7 @@ pub struct RestoreResult {
     pub version: Option<SyncVersion>,
 }
 
-impl SyncState {
+impl SyncService {
     pub fn initialize(
         repository: SyncRepository,
         backup: BackupService,
@@ -74,7 +87,7 @@ impl SyncState {
                 backup,
                 backup_dir,
                 device_id: uuid::Uuid::new_v4().to_string(),
-                operation: Mutex::new(()),
+                operation: OperationCoordinator::default(),
                 oauth_states: Mutex::new(HashMap::new()),
                 scheduler: Mutex::new(None),
             }),
@@ -136,6 +149,14 @@ impl SyncState {
     }
 
     pub fn create_version(&self, origin: &str) -> Result<Option<SyncVersion>, CommandError> {
+        let _operation = self.inner.operation.try_enter()?;
+        self.create_version_inner(origin)
+    }
+
+    pub(super) fn create_version_inner(
+        &self,
+        origin: &str,
+    ) -> Result<Option<SyncVersion>, CommandError> {
         let settings = self.inner.repository.load_settings()?;
         if settings.sync_password.is_empty() {
             return Err(password_required());
@@ -153,11 +174,6 @@ impl SyncState {
             return Ok(None);
         }
 
-        let _operation = self
-            .inner
-            .operation
-            .try_lock()
-            .map_err(|_| CommandError::new("SYNC_IN_PROGRESS", "同步操作进行中，请稍后"))?;
         if self
             .inner
             .repository
@@ -220,6 +236,7 @@ impl SyncState {
     }
 
     pub fn restore_version(&self, id: &str) -> Result<Option<SyncVersion>, CommandError> {
+        let _operation = self.inner.operation.try_enter()?;
         let settings = self.inner.repository.load_settings()?;
         let version = self.inner.repository.get_version(id)?;
         let bytes = std::fs::read(&version.file_path).map_err(|error| {
@@ -234,7 +251,7 @@ impl SyncState {
         self.inner
             .repository
             .log_event("", "restore", version.version, true, "");
-        self.create_version(ORIGIN_RESTORE)
+        self.create_version_inner(ORIGIN_RESTORE)
     }
 
     pub fn list_providers(&self) -> Result<Vec<SyncProviderMeta>, CommandError> {
@@ -382,11 +399,11 @@ mod tests {
         group::GroupService,
         infrastructure::database::Database,
         profile::ProfileService,
-        sync::store::SyncRepository,
+        sync::repository::SyncRepository,
         vault::{Encryptor, VaultService},
     };
 
-    fn state() -> (tempfile::TempDir, SyncState) {
+    fn state() -> (tempfile::TempDir, SyncService) {
         let directory = tempfile::tempdir().unwrap();
         let database = Database::initialize(directory.path().join("xcontrol.db")).unwrap();
         let encryptor = Encryptor::load_or_create(directory.path().join("key")).unwrap();
@@ -405,7 +422,7 @@ mod tests {
         );
         let repository = SyncRepository::new(database, encryptor);
         let state =
-            SyncState::initialize(repository, backup, directory.path().join("backups")).unwrap();
+            SyncService::initialize(repository, backup, directory.path().join("backups")).unwrap();
         (directory, state)
     }
 
@@ -454,6 +471,25 @@ mod tests {
         );
         state.delete_version(&version.id, true).unwrap();
         assert!(state.list_versions().unwrap().is_empty());
+    }
+
+    #[test]
+    fn operation_coordinator_rejects_overlapping_mutations() {
+        let (_directory, state) = state();
+        let _operation = state.inner.operation.try_enter().unwrap();
+        assert_eq!(
+            state.create_version(ORIGIN_MANUAL).unwrap_err().code,
+            "SYNC_IN_PROGRESS"
+        );
+    }
+
+    #[test]
+    fn scheduler_requests_report_when_runtime_is_stopped() {
+        let (_directory, state) = state();
+        assert_eq!(
+            state.request_sync().unwrap_err().code,
+            "SYNC_SCHEDULER_STOPPED"
+        );
     }
 
     #[test]

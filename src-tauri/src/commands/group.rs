@@ -3,7 +3,7 @@ use tauri::State;
 use crate::{
     error::CommandError,
     group::{Group, GroupCreateRequest, GroupService, GroupUpdateRequest},
-    sync::SyncState,
+    sync::SyncService,
 };
 
 #[tauri::command]
@@ -19,7 +19,7 @@ pub(crate) async fn group_list(
 #[tauri::command]
 pub(crate) async fn group_create(
     service: State<'_, GroupService>,
-    sync: State<'_, SyncState>,
+    sync: State<'_, SyncService>,
     request: GroupCreateRequest,
 ) -> Result<Group, CommandError> {
     let service = service.inner().clone();
@@ -33,7 +33,7 @@ pub(crate) async fn group_create(
 #[tauri::command]
 pub(crate) async fn group_update(
     service: State<'_, GroupService>,
-    sync: State<'_, SyncState>,
+    sync: State<'_, SyncService>,
     id: String,
     request: GroupUpdateRequest,
 ) -> Result<Group, CommandError> {
@@ -48,7 +48,7 @@ pub(crate) async fn group_update(
 #[tauri::command]
 pub(crate) async fn group_delete(
     service: State<'_, GroupService>,
-    sync: State<'_, SyncState>,
+    sync: State<'_, SyncService>,
     id: String,
 ) -> Result<(), CommandError> {
     let service = service.inner().clone();

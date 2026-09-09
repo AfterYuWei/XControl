@@ -1,13 +1,15 @@
 //! 本地版本、云端 Provider 与调度的进程内同步领域。
 
 mod cloud;
-mod commands;
-mod manager;
 mod model;
 mod oauth;
 mod provider;
+mod repository;
 mod scheduler;
-pub(crate) mod store;
+mod service;
 
-pub use commands::*;
-pub use manager::SyncState;
+pub(crate) use model::{
+    SyncEvent, SyncProviderConfig, SyncProviderMeta, SyncSettings, SyncStatus, SyncVersion,
+};
+pub(crate) use repository::SyncRepository;
+pub(crate) use service::{BackupNowResult, RestoreResult, SyncService, ORIGIN_MANUAL};

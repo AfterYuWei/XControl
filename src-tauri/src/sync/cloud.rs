@@ -6,16 +6,16 @@ use tokio::task::JoinSet;
 use crate::error::CommandError;
 
 use super::{
-    manager::{SyncState, ORIGIN_CONFLICT_RESOLVE},
     model::{
         CloudIndex, CloudVersionInfo, SyncConflictInfo, SyncSettings, SyncStatus, SyncVersion,
         SyncVersionInfo, STATUS_IDLE, STATUS_SYNCING,
     },
     provider::{object_name, CloudProvider},
-    store::ProviderRow,
+    repository::ProviderRow,
+    service::{SyncService, ORIGIN_CONFLICT_RESOLVE},
 };
 
-impl SyncState {
+impl SyncService {
     fn provider(&self, row: ProviderRow) -> Result<CloudProvider, CommandError> {
         CloudProvider::new(row.meta.id, row.config, self.inner.repository.clone())
     }
@@ -64,6 +64,7 @@ impl SyncState {
     }
 
     pub async fn sync_all(&self) -> Result<(), CommandError> {
+        let _operation = self.inner.operation.try_enter()?;
         let settings = self.inner.repository.load_settings()?;
         let rows = self.inner.repository.list_providers(true)?;
         if rows.is_empty() {
@@ -111,6 +112,11 @@ impl SyncState {
     }
 
     pub async fn push_latest(&self) -> Result<(), CommandError> {
+        let _operation = self.inner.operation.try_enter()?;
+        self.push_latest_inner().await
+    }
+
+    async fn push_latest_inner(&self) -> Result<(), CommandError> {
         let Some(latest) = self.inner.repository.latest_version()? else {
             return Ok(());
         };
@@ -225,6 +231,7 @@ impl SyncState {
         &self,
         choice: &str,
     ) -> Result<Option<SyncVersion>, CommandError> {
+        let _operation = self.inner.operation.try_enter()?;
         if choice != "keep_local" && choice != "use_cloud" {
             return Err(CommandError::new(
                 "INVALID_CHOICE",
@@ -245,15 +252,16 @@ impl SyncState {
                 .await?;
         }
         let state = self.clone();
-        let mut version =
-            tokio::task::spawn_blocking(move || state.create_version(ORIGIN_CONFLICT_RESOLVE))
-                .await
-                .map_err(join_error)??;
+        let mut version = tokio::task::spawn_blocking(move || {
+            state.create_version_inner(ORIGIN_CONFLICT_RESOLVE)
+        })
+        .await
+        .map_err(join_error)??;
         if version.is_none() {
             version = self.inner.repository.latest_version()?;
         }
         if version.is_some() {
-            self.push_latest().await?;
+            self.push_latest_inner().await?;
         }
         self.inner.repository.set_conflict(None)?;
         self.inner.repository.log_event(
@@ -333,7 +341,7 @@ impl SyncState {
         let path = self.inner.backup_dir.join(filename);
         let write_path = path.clone();
         tokio::task::spawn_blocking(move || {
-            super::manager::write_private_file(&write_path, &bytes)
+            super::service::write_private_file(&write_path, &bytes)
         })
         .await
         .map_err(join_error)?
@@ -414,6 +422,7 @@ impl SyncState {
         id: &str,
         force: bool,
     ) -> Result<(), CommandError> {
+        let _operation = self.inner.operation.try_enter()?;
         let version = self
             .inner
             .repository

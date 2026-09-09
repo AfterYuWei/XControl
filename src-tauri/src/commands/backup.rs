@@ -5,7 +5,7 @@ use tauri::State;
 use crate::{
     backup::{BackupImportResult, BackupPreview, BackupService},
     error::CommandError,
-    sync::SyncState,
+    sync::SyncService,
 };
 
 #[cfg(desktop)]
@@ -90,7 +90,7 @@ pub(crate) async fn backup_preview(
 #[tauri::command]
 pub(crate) async fn backup_import(
     service: State<'_, BackupService>,
-    sync: State<'_, SyncState>,
+    sync: State<'_, SyncService>,
     file_path: String,
     strategy: String,
     password: Option<String>,

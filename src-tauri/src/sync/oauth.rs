@@ -6,7 +6,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::error::CommandError;
 
-use super::{manager::SyncState, model::SyncProviderConfig};
+use super::{model::SyncProviderConfig, service::SyncService};
 
 const GDRIVE_AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const GDRIVE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
@@ -42,7 +42,7 @@ struct TokenResponse {
     error_description: String,
 }
 
-impl SyncState {
+impl SyncService {
     pub fn build_oauth_url(
         &self,
         provider_type: &str,

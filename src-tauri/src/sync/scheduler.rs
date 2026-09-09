@@ -8,13 +8,13 @@ use tokio::{
 
 use crate::error::CommandError;
 
-use super::manager::{SyncState, ORIGIN_CHANGE, ORIGIN_SCHEDULED, ORIGIN_SHUTDOWN};
+use super::service::{SyncService, ORIGIN_CHANGE, ORIGIN_SCHEDULED, ORIGIN_SHUTDOWN};
 
 const CHANNEL_CAPACITY: usize = 32;
 
 pub(crate) struct SchedulerRuntime {
     sender: mpsc::Sender<Message>,
-    task: tauri::async_runtime::JoinHandle<()>,
+    task: tokio::task::JoinHandle<()>,
 }
 
 enum Message {
@@ -25,7 +25,7 @@ enum Message {
     Stop,
 }
 
-impl SyncState {
+impl SyncService {
     pub fn start_scheduler(&self) -> Result<(), CommandError> {
         let mut slot = self
             .inner
@@ -37,34 +37,49 @@ impl SyncState {
         }
         let (sender, receiver) = mpsc::channel(CHANNEL_CAPACITY);
         let state = self.clone();
-        let task = tauri::async_runtime::spawn(async move { run(state, receiver).await });
+        let task = tokio::spawn(async move { run(state, receiver).await });
         *slot = Some(SchedulerRuntime { sender, task });
         Ok(())
     }
 
-    pub fn notify_change(&self) {
-        self.send_scheduler(Message::Change);
-    }
-
-    pub fn reload_scheduler(&self) {
-        self.send_scheduler(Message::Reload);
-    }
-
-    pub fn request_sync(&self) {
-        self.send_scheduler(Message::Sync);
-    }
-
-    pub fn request_push(&self) {
-        self.send_scheduler(Message::Push);
-    }
-
-    fn send_scheduler(&self, message: Message) {
-        let Ok(slot) = self.inner.scheduler.lock() else {
-            return;
-        };
-        if let Some(runtime) = slot.as_ref() {
-            let _ = runtime.sender.try_send(message);
+    pub(crate) fn notify_change(&self) {
+        if let Err(error) = self.send_scheduler(Message::Change) {
+            eprintln!("queue sync change notification failed: {error}");
         }
+    }
+
+    pub(crate) fn reload_scheduler(&self) -> Result<(), CommandError> {
+        self.send_scheduler(Message::Reload)
+    }
+
+    pub(crate) fn request_sync(&self) -> Result<(), CommandError> {
+        self.send_scheduler(Message::Sync)
+    }
+
+    pub(crate) fn request_push(&self) -> Result<(), CommandError> {
+        self.send_scheduler(Message::Push)
+    }
+
+    fn send_scheduler(&self, message: Message) -> Result<(), CommandError> {
+        let slot = self
+            .inner
+            .scheduler
+            .lock()
+            .map_err(|_| CommandError::new("SYNC_FAILED", "同步调度器锁已损坏"))?;
+        let runtime = slot
+            .as_ref()
+            .ok_or_else(|| CommandError::new("SYNC_SCHEDULER_STOPPED", "同步调度器尚未启动"))?;
+        runtime
+            .sender
+            .try_send(message)
+            .map_err(|error| match error {
+                mpsc::error::TrySendError::Full(_) => {
+                    CommandError::new("SYNC_SCHEDULER_BUSY", "同步请求队列已满，请稍后重试")
+                }
+                mpsc::error::TrySendError::Closed(_) => {
+                    CommandError::new("SYNC_SCHEDULER_STOPPED", "同步调度器已停止")
+                }
+            })
     }
 
     pub async fn stop_scheduler(&self) {
@@ -103,7 +118,7 @@ impl SyncState {
     }
 }
 
-async fn run(state: SyncState, mut receiver: mpsc::Receiver<Message>) {
+async fn run(state: SyncService, mut receiver: mpsc::Receiver<Message>) {
     let mut scheduled_at = next_scheduled_in(&state).map(|delay| Instant::now() + delay);
     let mut debounce_at: Option<Instant> = None;
     loop {
@@ -142,7 +157,7 @@ async fn run(state: SyncState, mut receiver: mpsc::Receiver<Message>) {
     }
 }
 
-async fn fire(state: &SyncState, origin: &'static str) {
+async fn fire(state: &SyncService, origin: &'static str) {
     let Ok(settings) = state.inner.repository.load_settings() else {
         return;
     };
@@ -193,7 +208,7 @@ async fn fire(state: &SyncState, origin: &'static str) {
     }
 }
 
-fn next_scheduled_in(state: &SyncState) -> Option<Duration> {
+fn next_scheduled_in(state: &SyncService) -> Option<Duration> {
     let settings = state.inner.repository.load_settings().ok()?;
     if !settings.scheduled_enabled {
         return None;

@@ -79,25 +79,25 @@ pub(crate) fn run() {
                 commands::server_get_metrics,
                 commands::backup_preview,
                 commands::backup_import,
-                sync::sync_status,
-                sync::sync_backup_now,
-                sync::sync_versions,
-                sync::sync_restore_version,
-                sync::sync_delete_version,
-                sync::sync_events,
-                sync::sync_get_settings,
-                sync::sync_update_settings,
-                sync::sync_reveal_password,
-                sync::sync_shutdown,
-                sync::sync_now,
-                sync::sync_push,
-                sync::sync_resolve_conflict,
-                sync::sync_providers,
-                sync::sync_create_provider,
-                sync::sync_update_provider,
-                sync::sync_delete_provider,
-                sync::sync_test_provider,
-                sync::sync_oauth_url
+                commands::sync_status,
+                commands::sync_backup_now,
+                commands::sync_versions,
+                commands::sync_restore_version,
+                commands::sync_delete_version,
+                commands::sync_events,
+                commands::sync_get_settings,
+                commands::sync_update_settings,
+                commands::sync_reveal_password,
+                commands::sync_shutdown,
+                commands::sync_now,
+                commands::sync_push,
+                commands::sync_resolve_conflict,
+                commands::sync_providers,
+                commands::sync_create_provider,
+                commands::sync_update_provider,
+                commands::sync_delete_provider,
+                commands::sync_test_provider,
+                commands::sync_oauth_url
             ])
             .setup(|app| {
                 use tauri::Manager;
@@ -125,8 +125,8 @@ pub(crate) fn run() {
                     profiles.clone(),
                     vault.clone(),
                 );
-                let sync = sync::SyncState::initialize(
-                    sync::store::SyncRepository::new(database.clone(), encryptor.clone()),
+                let sync = sync::SyncService::initialize(
+                    sync::SyncRepository::new(database.clone(), encryptor.clone()),
                     backup.clone(),
                     data_dir.join("backups"),
                 )?;
@@ -252,25 +252,25 @@ fn desktop_run() {
             commands::sftp_move,
             commands::server_get_info,
             commands::server_get_metrics,
-            sync::sync_status,
-            sync::sync_backup_now,
-            sync::sync_versions,
-            sync::sync_restore_version,
-            sync::sync_delete_version,
-            sync::sync_events,
-            sync::sync_get_settings,
-            sync::sync_update_settings,
-            sync::sync_reveal_password,
-            sync::sync_shutdown,
-            sync::sync_now,
-            sync::sync_push,
-            sync::sync_resolve_conflict,
-            sync::sync_providers,
-            sync::sync_create_provider,
-            sync::sync_update_provider,
-            sync::sync_delete_provider,
-            sync::sync_test_provider,
-            sync::sync_oauth_url
+            commands::sync_status,
+            commands::sync_backup_now,
+            commands::sync_versions,
+            commands::sync_restore_version,
+            commands::sync_delete_version,
+            commands::sync_events,
+            commands::sync_get_settings,
+            commands::sync_update_settings,
+            commands::sync_reveal_password,
+            commands::sync_shutdown,
+            commands::sync_now,
+            commands::sync_push,
+            commands::sync_resolve_conflict,
+            commands::sync_providers,
+            commands::sync_create_provider,
+            commands::sync_update_provider,
+            commands::sync_delete_provider,
+            commands::sync_test_provider,
+            commands::sync_oauth_url
         ])
         .setup(move |app| {
             let data_dir = runtime::user_data_dir()
@@ -297,8 +297,8 @@ fn desktop_run() {
                 profiles.clone(),
                 vault.clone(),
             );
-            let sync = sync::SyncState::initialize(
-                sync::store::SyncRepository::new(database.clone(), encryptor.clone()),
+            let sync = sync::SyncService::initialize(
+                sync::SyncRepository::new(database.clone(), encryptor.clone()),
                 backup.clone(),
                 data_dir.join("backups"),
             )?;
@@ -335,7 +335,7 @@ fn desktop_run() {
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
-                let sync = app_handle.state::<sync::SyncState>().inner().clone();
+                let sync = app_handle.state::<sync::SyncService>().inner().clone();
                 let sessions = app_handle.state::<ssh::SshService>().inner().clone();
                 let sftp = app_handle.state::<sftp::SftpService>().inner().clone();
                 tauri::async_runtime::block_on(async {
@@ -350,7 +350,7 @@ fn desktop_run() {
 
 fn install_oauth_deep_links<R: tauri::Runtime>(
     app: &tauri::App<R>,
-    sync: &sync::SyncState,
+    sync: &sync::SyncService,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::Emitter;
     use tauri_plugin_deep_link::DeepLinkExt;

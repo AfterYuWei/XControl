@@ -38,7 +38,7 @@ impl From<&SyncVersion> for SyncVersionInfo {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
+#[derive(Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct SyncSettings {
     pub sync_mode: String,
     pub conflict_policy: String,
@@ -93,7 +93,7 @@ pub struct SyncProviderMeta {
     pub updated_at: String,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
+#[derive(Clone, Default, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct SyncProviderConfig {
     #[serde(rename = "type")]
     pub provider_type: String,

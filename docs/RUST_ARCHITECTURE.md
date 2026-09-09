@@ -122,6 +122,7 @@ src/
     ├── database/{mod.rs,connection.rs,error.rs,migration.rs}
     └── platform/
         ├── mod.rs
+        ├── local_files.rs
         └── desktop/
             ├── mod.rs
             ├── dialogs.rs
@@ -193,7 +194,7 @@ src/
 | `ssh/session_manager.rs` | session/JoinHandle 注册、查询、移除、cancel-and-join | runtime owner |
 | `sftp/error.rs` | backend/transfer/archive typed errors | feature boundary |
 | `sftp/events.rs` | SFTP outbound event port | 不依赖 Tauri |
-| `sftp/backend.rs` | Local/remote 流式文件操作，remote 持有封装 route | 不暴露 russh handle |
+| `sftp/backend.rs` | Local/remote 流式文件操作，remote 持有封装 route | 不暴露 russh handle；路径策略委托 platform adapter |
 | `sftp/state.rs` | `SftpService`、session registry、连接和文件 use case | connection task owner |
 | `sftp/transfer.rs` | TransferManager、分块上传下载、复制/移动、磁盘 staging 归档 | worker/cancellation owner |
 | `sync/model.rs` | settings/provider/version/conflict DTO | secret config zeroize 且无 `Debug` |
@@ -207,7 +208,8 @@ src/
 | `infrastructure/database/connection.rs` | SQLite connection factory、busy timeout、foreign keys | 不含业务 SQL |
 | `infrastructure/database/migration.rs` | schema 和幂等兼容 migration | 不依赖 feature |
 | `infrastructure/database/error.rs` | `StorageError` | 保留 rusqlite/io source |
-| `infrastructure/platform/mod.rs` | 平台模块 cfg 路由 | 当前只创建真实 desktop adapter |
+| `infrastructure/platform/mod.rs` | 平台模块路由 | 共用 sandbox filesystem；desktop 子模块由 cfg 隔离 |
+| `infrastructure/platform/local_files.rs` | process-visible local path、Windows drive、mode 和 home adapter | mobile document URI 的扩展边界 |
 | `infrastructure/platform/desktop/paths.rs` | legacy `XControl` 数据目录和 build channel | desktop only |
 | `infrastructure/platform/desktop/dialogs.rs` | 系统保存对话框与落盘 | desktop only |
 | `infrastructure/platform/desktop/logs.rs` | 测试渠道日志读取/写入/截断 | desktop only |
@@ -380,7 +382,7 @@ Cargo target dependency、composition 分支和 feature port 处理，不复制�
 | `rusqlite(bundled)` | 无系统 SQLite 路径假设；需各 target 编译验证 |
 | `russh`/`russh-sftp`/`ring` | 不含 desktop API；需 Android/iOS toolchain 验证 |
 | `reqwest` + rustls + system-proxy | 无 OpenSSL 依赖；system proxy 行为需 mobile 验证 |
-| `dirs` | 只用于 desktop legacy path 与 local SFTP home fallback |
+| `dirs` | 只用于 platform adapters 的 legacy path 与 local SFTP home fallback |
 | filesystem/temp path | desktop adapter 已隔离；SFTP staging 使用进程 temp sandbox |
 | process/shell | 不启动本地业务进程；ServerDetail 命令在远端 SSH 执行 |
 | keyring | 当前未依赖；未来 secure storage 通过 platform adapter 引入 |
@@ -423,6 +425,7 @@ Cargo target dependency、composition 分支和 feature port 处理，不复制�
 | 8 | `1428c3a` | Sync service/repository/scheduler/coordinator |
 | 9-10 | `5e93ea8` | typed errors、desktop platform adapters、mobile capability |
 | 11 | `12ea2bf` | Tauri event ports 与 visibility 收口 |
+| 12 | `6a26f34` | 本地文件路径与权限语义收敛到 platform adapter |
 
 所有移动均保持 command 名称、JSON 字段、binary IPC、SQLite schema、数据目录、密文与备份格式。
 
@@ -444,7 +447,7 @@ npm --prefix web run build
 
 2026-09-09 最终结果：
 
-- Rust `fmt/check/clippy -D warnings/test` 全部通过，59 passed，0 failed；
+- Rust `fmt/check/clippy -D warnings/test` 全部通过，60 passed，0 failed；
 - Web unit tests 82 passed，lint 通过，production build 通过；
 - 重构前后 command 集合均为 94 个，名称集合无差异；
 - Android 与 iOS Cargo 一级依赖树均能解析，且不包含 single-instance、dialog、opener、

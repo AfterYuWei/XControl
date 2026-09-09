@@ -1,6 +1,6 @@
 //! Tauri application composition root.
 
-use crate::{backup, commands, profile, server_detail, sftp, ssh, sync, vault};
+use crate::{backup, commands, profile, sftp, ssh, sync, vault};
 
 #[cfg(desktop)]
 use crate::{drag_out, runtime};
@@ -37,46 +37,46 @@ pub(crate) fn run() {
                 commands::profile_create,
                 commands::profile_update,
                 commands::profile_delete,
-                ssh::profile_test::profile_test_new,
-                ssh::profile_test::profile_test_existing,
-                ssh::profile_test::profile_confirm_host_key,
-                ssh::session::session_create,
-                ssh::session::session_list,
-                ssh::session::session_attach,
-                ssh::session::session_confirm_host_key,
-                ssh::session::session_input,
-                ssh::session::session_resize,
-                ssh::session::session_ping,
-                ssh::session::session_complete,
-                ssh::session::session_close,
-                sftp::sftp_create_session,
-                sftp::sftp_get_session,
-                sftp::sftp_list_sessions,
-                sftp::sftp_close_session,
-                sftp::sftp_list,
-                sftp::sftp_stat,
-                sftp::sftp_tree,
-                sftp::sftp_mkdir,
-                sftp::sftp_rename,
-                sftp::sftp_delete,
-                sftp::sftp_read_file,
-                sftp::sftp_write_file,
-                sftp::sftp_upload_begin,
-                sftp::sftp_upload_chunk,
-                sftp::sftp_upload_chunk_base64,
-                sftp::sftp_upload_finish,
-                sftp::sftp_upload_abort,
-                sftp::sftp_download,
-                sftp::sftp_download_chunk,
-                sftp::sftp_download_chunk_base64,
-                sftp::sftp_download_close,
-                sftp::sftp_list_transfers,
-                sftp::sftp_cancel_transfer,
-                sftp::sftp_clear_completed_transfers,
-                sftp::sftp_transfer,
-                sftp::sftp_move,
-                server_detail::server_get_info,
-                server_detail::server_get_metrics,
+                commands::profile_test_new,
+                commands::profile_test_existing,
+                commands::profile_confirm_host_key,
+                commands::session_create,
+                commands::session_list,
+                commands::session_attach,
+                commands::session_confirm_host_key,
+                commands::session_input,
+                commands::session_resize,
+                commands::session_ping,
+                commands::session_complete,
+                commands::session_close,
+                commands::sftp_create_session,
+                commands::sftp_get_session,
+                commands::sftp_list_sessions,
+                commands::sftp_close_session,
+                commands::sftp_list,
+                commands::sftp_stat,
+                commands::sftp_tree,
+                commands::sftp_mkdir,
+                commands::sftp_rename,
+                commands::sftp_delete,
+                commands::sftp_read_file,
+                commands::sftp_write_file,
+                commands::sftp_upload_begin,
+                commands::sftp_upload_chunk,
+                commands::sftp_upload_chunk_base64,
+                commands::sftp_upload_finish,
+                commands::sftp_upload_abort,
+                commands::sftp_download,
+                commands::sftp_download_chunk,
+                commands::sftp_download_chunk_base64,
+                commands::sftp_download_close,
+                commands::sftp_list_transfers,
+                commands::sftp_cancel_transfer,
+                commands::sftp_clear_completed_transfers,
+                commands::sftp_transfer,
+                commands::sftp_move,
+                commands::server_get_info,
+                commands::server_get_metrics,
                 commands::backup_preview,
                 commands::backup_import,
                 sync::sync_status,
@@ -133,9 +133,9 @@ pub(crate) fn run() {
                 sync.start_scheduler()?;
                 install_oauth_deep_links(app, &sync)?;
                 let sessions =
-                    ssh::SessionState::new(profiles.clone(), audit.clone(), app.handle().clone());
+                    ssh::SshService::new(profiles.clone(), audit.clone(), app.handle().clone());
                 let sftp =
-                    sftp::SftpState::new(profiles.clone(), audit.clone(), app.handle().clone());
+                    sftp::SftpService::new(profiles.clone(), audit.clone(), app.handle().clone());
                 app.manage(crate::snippet::SnippetService::new(database.clone()));
                 app.manage(groups);
                 app.manage(vault);
@@ -212,46 +212,46 @@ fn desktop_run() {
             commands::profile_create,
             commands::profile_update,
             commands::profile_delete,
-            ssh::profile_test::profile_test_new,
-            ssh::profile_test::profile_test_existing,
-            ssh::profile_test::profile_confirm_host_key,
-            ssh::session::session_create,
-            ssh::session::session_list,
-            ssh::session::session_attach,
-            ssh::session::session_confirm_host_key,
-            ssh::session::session_input,
-            ssh::session::session_resize,
-            ssh::session::session_ping,
-            ssh::session::session_complete,
-            ssh::session::session_close,
-            sftp::sftp_create_session,
-            sftp::sftp_get_session,
-            sftp::sftp_list_sessions,
-            sftp::sftp_close_session,
-            sftp::sftp_list,
-            sftp::sftp_stat,
-            sftp::sftp_tree,
-            sftp::sftp_mkdir,
-            sftp::sftp_rename,
-            sftp::sftp_delete,
-            sftp::sftp_read_file,
-            sftp::sftp_write_file,
-            sftp::sftp_upload_begin,
-            sftp::sftp_upload_chunk,
-            sftp::sftp_upload_chunk_base64,
-            sftp::sftp_upload_finish,
-            sftp::sftp_upload_abort,
-            sftp::sftp_download,
-            sftp::sftp_download_chunk,
-            sftp::sftp_download_chunk_base64,
-            sftp::sftp_download_close,
-            sftp::sftp_list_transfers,
-            sftp::sftp_cancel_transfer,
-            sftp::sftp_clear_completed_transfers,
-            sftp::sftp_transfer,
-            sftp::sftp_move,
-            server_detail::server_get_info,
-            server_detail::server_get_metrics,
+            commands::profile_test_new,
+            commands::profile_test_existing,
+            commands::profile_confirm_host_key,
+            commands::session_create,
+            commands::session_list,
+            commands::session_attach,
+            commands::session_confirm_host_key,
+            commands::session_input,
+            commands::session_resize,
+            commands::session_ping,
+            commands::session_complete,
+            commands::session_close,
+            commands::sftp_create_session,
+            commands::sftp_get_session,
+            commands::sftp_list_sessions,
+            commands::sftp_close_session,
+            commands::sftp_list,
+            commands::sftp_stat,
+            commands::sftp_tree,
+            commands::sftp_mkdir,
+            commands::sftp_rename,
+            commands::sftp_delete,
+            commands::sftp_read_file,
+            commands::sftp_write_file,
+            commands::sftp_upload_begin,
+            commands::sftp_upload_chunk,
+            commands::sftp_upload_chunk_base64,
+            commands::sftp_upload_finish,
+            commands::sftp_upload_abort,
+            commands::sftp_download,
+            commands::sftp_download_chunk,
+            commands::sftp_download_chunk_base64,
+            commands::sftp_download_close,
+            commands::sftp_list_transfers,
+            commands::sftp_cancel_transfer,
+            commands::sftp_clear_completed_transfers,
+            commands::sftp_transfer,
+            commands::sftp_move,
+            commands::server_get_info,
+            commands::server_get_metrics,
             sync::sync_status,
             sync::sync_backup_now,
             sync::sync_versions,
@@ -305,8 +305,9 @@ fn desktop_run() {
             sync.start_scheduler()?;
             install_oauth_deep_links(app, &sync)?;
             let sessions =
-                ssh::SessionState::new(profiles.clone(), audit.clone(), app.handle().clone());
-            let sftp = sftp::SftpState::new(profiles.clone(), audit.clone(), app.handle().clone());
+                ssh::SshService::new(profiles.clone(), audit.clone(), app.handle().clone());
+            let sftp =
+                sftp::SftpService::new(profiles.clone(), audit.clone(), app.handle().clone());
             app.manage(crate::snippet::SnippetService::new(database.clone()));
             app.manage(groups);
             app.manage(vault);
@@ -335,8 +336,8 @@ fn desktop_run() {
         .run(|app_handle, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 let sync = app_handle.state::<sync::SyncState>().inner().clone();
-                let sessions = app_handle.state::<ssh::SessionState>().inner().clone();
-                let sftp = app_handle.state::<sftp::SftpState>().inner().clone();
+                let sessions = app_handle.state::<ssh::SshService>().inner().clone();
+                let sftp = app_handle.state::<sftp::SftpService>().inner().clone();
                 tauri::async_runtime::block_on(async {
                     sessions.shutdown().await;
                     sftp.shutdown().await;

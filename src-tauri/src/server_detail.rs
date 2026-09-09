@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 
 use serde::Serialize;
-use tauri::State;
 
-use crate::{error::CommandError, sftp::SftpState};
+use crate::{error::CommandError, sftp::SftpService};
 
 const INFO_COMMAND: &str = r#"
 printf '===HOSTNAME===\n'; (hostname -f 2>/dev/null || hostname)
@@ -30,7 +29,7 @@ awk '/cpu MHz/{s+=$4;c++} END{if(c) printf "CM %.2f\n",s/c;else print "CM 0"}' /
 "#;
 
 #[derive(Debug, Default, PartialEq, Serialize)]
-pub struct ServerInfo {
+pub(crate) struct ServerInfo {
     hostname: String,
     os: String,
     kernel: String,
@@ -43,21 +42,21 @@ pub struct ServerInfo {
 }
 
 #[derive(Debug, Default, PartialEq, Serialize)]
-pub struct NetIfStat {
+struct NetIfStat {
     name: String,
     rx: i64,
     tx: i64,
 }
 
 #[derive(Debug, Default, PartialEq, Serialize)]
-pub struct ProcMem {
+struct ProcMem {
     name: String,
     percent: f64,
     rss: i64,
 }
 
 #[derive(Debug, Default, PartialEq, Serialize)]
-pub struct ServerMetrics {
+pub(crate) struct ServerMetrics {
     cpu: f64,
     cpu_detail: Vec<f64>,
     mem_used: i64,
@@ -256,12 +255,11 @@ fn parse_i64(values: &[&str], index: usize) -> i64 {
         .unwrap_or_default()
 }
 
-#[tauri::command]
-pub async fn server_get_info(
-    state: State<'_, SftpState>,
+pub(crate) async fn get_info(
+    service: &SftpService,
     session_id: String,
 ) -> Result<ServerInfo, CommandError> {
-    let (output, code) = state.exec(&session_id, INFO_COMMAND).await?;
+    let (output, code) = service.exec(&session_id, INFO_COMMAND).await?;
     if code != 0 {
         return Err(CommandError::new(
             "EXEC_FAILED",
@@ -271,12 +269,11 @@ pub async fn server_get_info(
     Ok(parse_info(&output))
 }
 
-#[tauri::command]
-pub async fn server_get_metrics(
-    state: State<'_, SftpState>,
+pub(crate) async fn get_metrics(
+    service: &SftpService,
     session_id: String,
 ) -> Result<ServerMetrics, CommandError> {
-    let (output, code) = state.exec(&session_id, METRICS_COMMAND).await?;
+    let (output, code) = service.exec(&session_id, METRICS_COMMAND).await?;
     if code != 0 {
         return Err(CommandError::new(
             "EXEC_FAILED",

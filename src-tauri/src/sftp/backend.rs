@@ -1,7 +1,6 @@
 use std::{path::PathBuf, sync::Arc, time::SystemTime};
 
 use chrono::{DateTime, Utc};
-use russh::ChannelMsg;
 use russh_sftp::client::SftpSession;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -39,27 +38,7 @@ impl FileBackend {
         let Self::Remote { _route: route, .. } = self else {
             return Err("command execution is unavailable for local sessions".into());
         };
-        let mut channel = route
-            .handle
-            .channel_open_session()
-            .await
-            .map_err(|error| error.to_string())?;
-        channel
-            .exec(true, command)
-            .await
-            .map_err(|error| error.to_string())?;
-        let mut output = Vec::new();
-        let mut exit_code = 0;
-        while let Some(message) = channel.wait().await {
-            match message {
-                ChannelMsg::Data { data } | ChannelMsg::ExtendedData { data, .. } => {
-                    output.extend_from_slice(&data);
-                }
-                ChannelMsg::ExitStatus { exit_status } => exit_code = exit_status as i32,
-                _ => {}
-            }
-        }
-        Ok((String::from_utf8_lossy(&output).into_owned(), exit_code))
+        route.exec(command).await
     }
 
     pub async fn list(&self, path: &str) -> Result<Vec<FileInfo>, String> {

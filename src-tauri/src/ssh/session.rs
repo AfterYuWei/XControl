@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     future::Future,
     pin::Pin,
     sync::{Arc, Mutex as StdMutex},
@@ -9,13 +8,14 @@ use chrono::{Local, SecondsFormat};
 use russh::{client, ChannelMsg, Disconnect, Pty};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter};
 use tokio::{
-    sync::{mpsc, Mutex, Notify, RwLock},
+    sync::{mpsc, Mutex, Notify},
     time::{timeout, Duration},
 };
 use tokio_util::sync::CancellationToken;
 
+use super::session_manager::SessionManager;
 use super::transport::{connect_route, ClientHandler, ConnectedRoute, HostKeyVerifier};
 use crate::{
     audit::AuditRepository,
@@ -101,7 +101,7 @@ enum SessionCommand {
     },
 }
 
-struct Session {
+pub(super) struct Session {
     id: String,
     profile_id: String,
     host: String,
@@ -166,6 +166,24 @@ impl Session {
             .lock()
             .expect("session mutex poisoned")
             .clone()
+    }
+
+    pub(super) fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub(super) fn info(&self) -> SessionInfo {
+        SessionInfo {
+            id: self.id.clone(),
+            profile_id: self.profile_id.clone(),
+            status: self.snapshot().status,
+            created_at: self.created_at.clone(),
+        }
+    }
+
+    pub(super) fn cancel(&self) {
+        self.cancel.cancel();
+        self.host_key_notify.notify_waiters();
     }
 
     fn stage(&self, stage: &str, level: &str, message: impl Into<String>) {
@@ -383,24 +401,24 @@ impl HostKeyVerifier for SessionHostKeyVerifier {
 }
 
 #[derive(Clone)]
-pub struct SessionState {
-    sessions: Arc<RwLock<HashMap<String, Arc<Session>>>>,
+pub(crate) struct SshService {
+    manager: SessionManager,
     profiles: ProfileService,
     audit: AuditRepository,
     app: AppHandle,
 }
 
-impl SessionState {
-    pub fn new(profiles: ProfileService, audit: AuditRepository, app: AppHandle) -> Self {
+impl SshService {
+    pub(crate) fn new(profiles: ProfileService, audit: AuditRepository, app: AppHandle) -> Self {
         Self {
-            sessions: Arc::new(RwLock::new(HashMap::new())),
+            manager: SessionManager::default(),
             profiles,
             audit,
             app,
         }
     }
 
-    async fn create(
+    pub(crate) async fn create(
         &self,
         request: SessionCreateRequest,
     ) -> Result<SessionCreateResponse, CommandError> {
@@ -413,17 +431,15 @@ impl SessionState {
             session_id: session.id.clone(),
             status: "connecting".into(),
         };
-        self.sessions
-            .write()
-            .await
-            .insert(session.id.clone(), session.clone());
+        self.manager.register(session.clone()).await;
         session.stage("preparing", "info", "已读取连接配置，准备建立 SSH 会话");
         let state = self.clone();
         let cols = request.cols.filter(|value| *value > 0).unwrap_or(80);
         let rows = request.rows.filter(|value| *value > 0).unwrap_or(24);
-        tauri::async_runtime::spawn(async move {
+        let task = tokio::spawn(async move {
             state.run_session(session, resolved, cols, rows).await;
         });
+        self.manager.track(response.session_id.clone(), task).await;
         Ok(response)
     }
 
@@ -617,28 +633,109 @@ impl SessionState {
         Ok(())
     }
 
-    async fn get(&self, id: &str) -> Result<Arc<Session>, CommandError> {
-        self.sessions
-            .read()
-            .await
-            .get(id)
-            .cloned()
-            .ok_or_else(|| CommandError::new("NOT_FOUND", "session not found"))
+    pub(crate) async fn list(&self) -> Result<Vec<SessionInfo>, CommandError> {
+        Ok(self.manager.list().await)
     }
 
-    pub async fn shutdown(&self) {
-        let sessions = self
-            .sessions
-            .read()
-            .await
-            .values()
-            .cloned()
-            .collect::<Vec<_>>();
-        for session in sessions {
-            session.cancel.cancel();
-            session.host_key_notify.notify_waiters();
+    pub(crate) async fn attach(&self, id: &str) -> Result<Vec<ClientMessage>, CommandError> {
+        Ok(self.manager.get(id).await?.attach_messages())
+    }
+
+    pub(crate) async fn confirm_host_key(
+        &self,
+        id: &str,
+        fingerprint: Option<String>,
+    ) -> Result<Value, CommandError> {
+        let session = self.manager.get(id).await?;
+        let snapshot = session.snapshot();
+        if !snapshot.waiting_for_host_key {
+            return Err(CommandError::new(
+                "HOST_KEY_CONFIRM_FAILED",
+                "session is not waiting for host key confirmation",
+            ));
         }
-        self.sessions.write().await.clear();
+        let fingerprint = fingerprint.unwrap_or(snapshot.host_key_fingerprint.clone());
+        if fingerprint != snapshot.host_key_fingerprint {
+            return Err(CommandError::new(
+                "HOST_KEY_CONFIRM_FAILED",
+                "host key fingerprint mismatch",
+            ));
+        }
+        *session
+            .host_key_decision
+            .lock()
+            .expect("host key decision mutex poisoned") = Some(fingerprint);
+        session.host_key_notify.notify_waiters();
+        Ok(json!({"status":"accepted"}))
+    }
+
+    pub(crate) async fn input(&self, id: &str, data: String) -> Result<(), CommandError> {
+        self.send_command(id, SessionCommand::Input(data)).await
+    }
+
+    pub(crate) async fn resize(&self, id: &str, cols: u32, rows: u32) -> Result<(), CommandError> {
+        if cols == 0 || rows == 0 {
+            return Ok(());
+        }
+        let session = self.manager.get(id).await?;
+        let sender = session.commands.lock().await.clone();
+        if let Some(sender) = sender {
+            sender
+                .send(SessionCommand::Resize(cols, rows))
+                .await
+                .map_err(|_| CommandError::new("SESSION_CLOSED", "session is closed"))?;
+        } else {
+            *session
+                .pending_resize
+                .lock()
+                .expect("resize mutex poisoned") = Some((cols, rows));
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn ping(&self, id: &str) -> Result<(), CommandError> {
+        self.send_command(id, SessionCommand::Ping).await
+    }
+
+    pub(crate) async fn complete(
+        &self,
+        id: &str,
+        request_id: String,
+        script: String,
+        cwd: Option<String>,
+    ) -> Result<(), CommandError> {
+        if request_id.is_empty() || script.is_empty() {
+            return Ok(());
+        }
+        self.send_command(
+            id,
+            SessionCommand::Complete {
+                request_id,
+                script,
+                cwd,
+            },
+        )
+        .await
+    }
+
+    pub(crate) async fn close(&self, id: &str) -> Result<(), CommandError> {
+        self.manager.close(id).await
+    }
+
+    async fn send_command(&self, id: &str, command: SessionCommand) -> Result<(), CommandError> {
+        let session = self.manager.get(id).await?;
+        let sender =
+            session.commands.lock().await.clone().ok_or_else(|| {
+                CommandError::new("SESSION_NOT_READY", "remote shell is not ready")
+            })?;
+        sender
+            .send(command)
+            .await
+            .map_err(|_| CommandError::new("SESSION_CLOSED", "session is closed"))
+    }
+
+    pub(crate) async fn shutdown(&self) {
+        self.manager.shutdown().await;
     }
 }
 
@@ -780,157 +877,6 @@ fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack
         .windows(needle.len())
         .position(|window| window == needle)
-}
-
-async fn send_command(
-    state: &SessionState,
-    id: &str,
-    command: SessionCommand,
-) -> Result<(), CommandError> {
-    let session = state.get(id).await?;
-    let sender = session
-        .commands
-        .lock()
-        .await
-        .clone()
-        .ok_or_else(|| CommandError::new("SESSION_NOT_READY", "remote shell is not ready"))?;
-    sender
-        .send(command)
-        .await
-        .map_err(|_| CommandError::new("SESSION_CLOSED", "session is closed"))
-}
-
-#[tauri::command]
-pub async fn session_create(
-    state: State<'_, SessionState>,
-    request: SessionCreateRequest,
-) -> Result<SessionCreateResponse, CommandError> {
-    state.create(request).await
-}
-
-#[tauri::command]
-pub async fn session_list(
-    state: State<'_, SessionState>,
-) -> Result<Vec<SessionInfo>, CommandError> {
-    let sessions = state.sessions.read().await;
-    Ok(sessions
-        .values()
-        .map(|session| SessionInfo {
-            id: session.id.clone(),
-            profile_id: session.profile_id.clone(),
-            status: session.snapshot().status,
-            created_at: session.created_at.clone(),
-        })
-        .collect())
-}
-
-#[tauri::command]
-pub async fn session_attach(
-    state: State<'_, SessionState>,
-    id: String,
-) -> Result<Vec<ClientMessage>, CommandError> {
-    Ok(state.get(&id).await?.attach_messages())
-}
-
-#[tauri::command]
-pub async fn session_confirm_host_key(
-    state: State<'_, SessionState>,
-    id: String,
-    fingerprint: Option<String>,
-) -> Result<Value, CommandError> {
-    let session = state.get(&id).await?;
-    let snapshot = session.snapshot();
-    if !snapshot.waiting_for_host_key {
-        return Err(CommandError::new(
-            "HOST_KEY_CONFIRM_FAILED",
-            "session is not waiting for host key confirmation",
-        ));
-    }
-    let fingerprint = fingerprint.unwrap_or(snapshot.host_key_fingerprint.clone());
-    if fingerprint != snapshot.host_key_fingerprint {
-        return Err(CommandError::new(
-            "HOST_KEY_CONFIRM_FAILED",
-            "host key fingerprint mismatch",
-        ));
-    }
-    *session
-        .host_key_decision
-        .lock()
-        .expect("host key decision mutex poisoned") = Some(fingerprint);
-    session.host_key_notify.notify_waiters();
-    Ok(json!({"status":"accepted"}))
-}
-
-#[tauri::command]
-pub async fn session_input(
-    state: State<'_, SessionState>,
-    id: String,
-    data: String,
-) -> Result<(), CommandError> {
-    send_command(&state, &id, SessionCommand::Input(data)).await
-}
-
-#[tauri::command]
-pub async fn session_resize(
-    state: State<'_, SessionState>,
-    id: String,
-    cols: u32,
-    rows: u32,
-) -> Result<(), CommandError> {
-    if cols == 0 || rows == 0 {
-        return Ok(());
-    }
-    let session = state.get(&id).await?;
-    let sender = session.commands.lock().await.clone();
-    if let Some(sender) = sender {
-        sender
-            .send(SessionCommand::Resize(cols, rows))
-            .await
-            .map_err(|_| CommandError::new("SESSION_CLOSED", "session is closed"))?;
-    } else {
-        *session
-            .pending_resize
-            .lock()
-            .expect("resize mutex poisoned") = Some((cols, rows));
-    }
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn session_ping(state: State<'_, SessionState>, id: String) -> Result<(), CommandError> {
-    send_command(&state, &id, SessionCommand::Ping).await
-}
-
-#[tauri::command]
-pub async fn session_complete(
-    state: State<'_, SessionState>,
-    id: String,
-    request_id: String,
-    script: String,
-    cwd: Option<String>,
-) -> Result<(), CommandError> {
-    if request_id.is_empty() || script.is_empty() {
-        return Ok(());
-    }
-    send_command(
-        &state,
-        &id,
-        SessionCommand::Complete {
-            request_id,
-            script,
-            cwd,
-        },
-    )
-    .await
-}
-
-#[tauri::command]
-pub async fn session_close(state: State<'_, SessionState>, id: String) -> Result<(), CommandError> {
-    let session = state.get(&id).await?;
-    session.cancel.cancel();
-    session.host_key_notify.notify_waiters();
-    state.sessions.write().await.remove(&id);
-    Ok(())
 }
 
 fn is_false(value: &bool) -> bool {

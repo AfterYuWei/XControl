@@ -7,7 +7,6 @@ use std::{
 
 use russh::Disconnect;
 use serde::Serialize;
-use tauri::State;
 
 use super::transport::{connect_route, HostKeyVerifier};
 use crate::{
@@ -169,33 +168,30 @@ async fn run_test(node: ResolvedProfileNode) -> ProfileTestResult {
     }
 }
 
-#[tauri::command]
-pub async fn profile_test_new(
-    state: State<'_, ProfileService>,
+pub(crate) async fn test_new_profile(
+    profiles: &ProfileService,
     request: ProfileCreateRequest,
 ) -> Result<ProfileTestResult, CommandError> {
-    Ok(run_test(state.resolve_connection_draft_create(request)?).await)
+    Ok(run_test(profiles.resolve_connection_draft_create(request)?).await)
 }
 
-#[tauri::command]
-pub async fn profile_test_existing(
-    state: State<'_, ProfileService>,
+pub(crate) async fn test_existing_profile(
+    profiles: &ProfileService,
     id: String,
     request: ProfileUpdateRequest,
 ) -> Result<ProfileTestResult, CommandError> {
-    Ok(run_test(state.resolve_connection_draft_update(&id, request)?).await)
+    Ok(run_test(profiles.resolve_connection_draft_update(&id, request)?).await)
 }
 
-#[tauri::command]
-pub async fn profile_confirm_host_key(
-    state: State<'_, ProfileService>,
+pub(crate) async fn confirm_profile_host_key(
+    profiles: &ProfileService,
     id: String,
     fingerprint: String,
 ) -> Result<serde_json::Value, CommandError> {
     if fingerprint.is_empty() {
         return Err(CommandError::new("VALIDATION", "fingerprint is required"));
     }
-    let node = state.resolve_connection(&id)?;
+    let node = profiles.resolve_connection(&id)?;
     let verifier = Arc::new(ConfirmVerifier {
         target_id: id.clone(),
         expected: fingerprint,
@@ -212,7 +208,7 @@ pub async fn profile_confirm_host_key(
         .find(|(profile_id, _)| profile_id == &id)
         .map(|(_, current)| current.clone())
         .ok_or_else(|| CommandError::new("HOST_KEY_CHECK_FAILED", "未获取到服务器主机指纹"))?;
-    state.persist_host_key(&id, &current)?;
+    profiles.persist_host_key(&id, &current)?;
     let _ = route
         .handle
         .disconnect(Disconnect::ByApplication, "host key confirmed", "zh-CN")

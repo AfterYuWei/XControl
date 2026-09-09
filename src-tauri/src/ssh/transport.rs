@@ -10,6 +10,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use russh::{
     client,
     keys::{self, ssh_key::HashAlg},
+    ChannelMsg,
 };
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
@@ -23,7 +24,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub(crate) trait AsyncStream: AsyncRead + AsyncWrite + Unpin + Send {}
 impl<T: AsyncRead + AsyncWrite + Unpin + Send> AsyncStream for T {}
-type BoxStream = Box<dyn AsyncStream>;
+pub(crate) type BoxStream = Box<dyn AsyncStream>;
 
 pub(crate) trait HostKeyVerifier: Send + Sync {
     fn verify<'a>(
@@ -65,9 +66,52 @@ impl client::Handler for ClientHandler {
 }
 
 pub(crate) struct ConnectedRoute {
-    pub handle: client::Handle<ClientHandler>,
-    pub host_keys: Vec<(String, String)>,
+    pub(super) handle: client::Handle<ClientHandler>,
+    pub(super) host_keys: Vec<(String, String)>,
     _jump_handles: Vec<client::Handle<ClientHandler>>,
+}
+
+impl ConnectedRoute {
+    pub(crate) fn host_keys(&self) -> &[(String, String)] {
+        &self.host_keys
+    }
+
+    pub(crate) async fn open_subsystem(&self, name: &str) -> Result<BoxStream, String> {
+        let channel = self
+            .handle
+            .channel_open_session()
+            .await
+            .map_err(|error| error.to_string())?;
+        channel
+            .request_subsystem(true, name)
+            .await
+            .map_err(|error| error.to_string())?;
+        Ok(Box::new(channel.into_stream()))
+    }
+
+    pub(crate) async fn exec(&self, command: &str) -> Result<(String, i32), String> {
+        let mut channel = self
+            .handle
+            .channel_open_session()
+            .await
+            .map_err(|error| error.to_string())?;
+        channel
+            .exec(true, command)
+            .await
+            .map_err(|error| error.to_string())?;
+        let mut output = Vec::new();
+        let mut exit_code = 0;
+        while let Some(message) = channel.wait().await {
+            match message {
+                ChannelMsg::Data { data } | ChannelMsg::ExtendedData { data, .. } => {
+                    output.extend_from_slice(&data);
+                }
+                ChannelMsg::ExitStatus { exit_status } => exit_code = exit_status as i32,
+                _ => {}
+            }
+        }
+        Ok((String::from_utf8_lossy(&output).into_owned(), exit_code))
+    }
 }
 
 pub(crate) async fn connect_route(

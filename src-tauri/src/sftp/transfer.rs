@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    io::{Cursor, Read, Write},
+    io::{Read, Write},
     path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -8,25 +8,19 @@ use std::{
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Serialize;
-use tauri::{ipc::InvokeBody, AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter};
 use tokio::{
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
     sync::{Mutex, OwnedSemaphorePermit, RwLock, Semaphore},
+    task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    backend::{
-        base_name, clean_path, join_path, local_path_to_api, BackendWriter, FileBackend, FileInfo,
-    },
-    state::SftpState,
+    backend::{base_name, clean_path, join_path, local_path_to_api, BackendWriter, FileBackend},
+    state::SftpService,
 };
 use crate::error::CommandError;
-
-type CollectedFile = (String, FileInfo, Vec<u8>);
-type CollectFuture<'a> = std::pin::Pin<
-    Box<dyn std::future::Future<Output = Result<Vec<CollectedFile>, String>> + Send + 'a>,
->;
 
 const DOWNLOAD_TEMP_PREFIX: &str = "xcontrol-dl-";
 const DOWNLOAD_STAGE_PREFIX: &str = "xcontrol-dl-stage-";
@@ -72,6 +66,7 @@ struct UploadIngress {
 pub(super) struct TransferManager {
     tasks: Arc<RwLock<HashMap<String, Arc<TransferEntry>>>>,
     uploads: Arc<RwLock<HashMap<String, Arc<UploadIngress>>>>,
+    workers: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
     semaphore: Arc<Semaphore>,
 }
 
@@ -147,6 +142,7 @@ impl TransferManager {
         Self {
             tasks: Arc::new(RwLock::new(HashMap::new())),
             uploads: Arc::new(RwLock::new(HashMap::new())),
+            workers: Arc::new(Mutex::new(HashMap::new())),
             semaphore: Arc::new(Semaphore::new(5)),
         }
     }
@@ -158,6 +154,7 @@ impl TransferManager {
         direction: &str,
         size: u64,
     ) -> Arc<TransferEntry> {
+        self.reap_finished_workers().await;
         let id = format!(
             "tx-{}-{}",
             SystemTime::now()
@@ -185,6 +182,25 @@ impl TransferManager {
         });
         self.tasks.write().await.insert(id, entry.clone());
         entry
+    }
+
+    async fn track_worker(&self, id: String, worker: JoinHandle<()>) {
+        self.workers.lock().await.insert(id, worker);
+    }
+
+    async fn abort_worker(&self, id: &str) {
+        let worker = self.workers.lock().await.remove(id);
+        if let Some(worker) = worker {
+            worker.abort();
+            let _ = worker.await;
+        }
+    }
+
+    async fn reap_finished_workers(&self) {
+        self.workers
+            .lock()
+            .await
+            .retain(|_, worker| !worker.is_finished());
     }
 
     async fn snapshot(entry: &TransferEntry) -> TransferTask {
@@ -253,6 +269,19 @@ impl TransferManager {
                 let _ = tokio::fs::remove_file(path).await;
             }
         }
+        let workers = self
+            .workers
+            .lock()
+            .await
+            .drain()
+            .map(|(_, worker)| worker)
+            .collect::<Vec<_>>();
+        for worker in &workers {
+            worker.abort();
+        }
+        for worker in workers {
+            let _ = worker.await;
+        }
         self.remove_uploads(None).await;
     }
 
@@ -265,8 +294,15 @@ impl TransferManager {
             .filter(|entry| entry.session_id == session_id)
             .cloned()
             .collect::<Vec<_>>();
+        let mut ids = Vec::with_capacity(entries.len());
+        for entry in &entries {
+            ids.push(entry.task.lock().await.id.clone());
+        }
         for entry in entries {
             entry.cancel.cancel();
+        }
+        for id in ids {
+            self.abort_worker(&id).await;
         }
         self.remove_uploads(Some(session_id)).await;
     }
@@ -383,39 +419,6 @@ async fn copy_with_progress(
     writer.shutdown().await.map_err(|error| error.to_string())
 }
 
-async fn write_bytes(
-    backend: &FileBackend,
-    path: &str,
-    bytes: &[u8],
-    entry: &TransferEntry,
-    app: &AppHandle,
-) -> Result<(), String> {
-    let mut writer = backend.open_write(path).await?;
-    let started = Instant::now();
-    for chunk in bytes.chunks(128 * 1024) {
-        tokio::select! {
-            _ = entry.cancel.cancelled() => return Err("transfer cancelled".into()),
-            result = writer.write_all(chunk) => result.map_err(|error| error.to_string())?,
-        }
-        let snapshot = {
-            let mut task = entry.task.lock().await;
-            task.transferred += chunk.len() as u64;
-            task.speed =
-                (task.transferred as f64 / started.elapsed().as_secs_f64().max(0.001)) as u64;
-            task.clone()
-        };
-        emit(
-            app,
-            "transfer_progress",
-            serde_json::json!({
-                "task_id":snapshot.id,"transferred":snapshot.transferred,"size":snapshot.size,
-                "speed":snapshot.speed,"status":snapshot.status
-            }),
-        );
-    }
-    writer.shutdown().await.map_err(|error| error.to_string())
-}
-
 fn validate_upload_name(name: &str) -> Result<(), CommandError> {
     if name.is_empty() || matches!(name, "." | "..") || name.contains(['/', '\\']) {
         return Err(CommandError::new(
@@ -426,9 +429,8 @@ fn validate_upload_name(name: &str) -> Result<(), CommandError> {
     Ok(())
 }
 
-#[tauri::command]
-pub async fn sftp_upload_begin(
-    state: State<'_, SftpState>,
+pub(crate) async fn sftp_upload_begin(
+    state: &SftpService,
     session_id: String,
     name: String,
     dest_dir: String,
@@ -485,31 +487,16 @@ pub async fn sftp_upload_begin(
     })
 }
 
-#[tauri::command]
-pub async fn sftp_upload_chunk(
-    state: State<'_, SftpState>,
-    request: tauri::ipc::Request<'_>,
+pub(crate) async fn upload_chunk(
+    state: &SftpService,
+    upload_id: &str,
+    bytes: &[u8],
 ) -> Result<SftpUploadChunkResponse, CommandError> {
-    let upload_id = request
-        .headers()
-        .get("x-xcontrol-upload-id")
-        .and_then(|value| value.to_str().ok())
-        .ok_or_else(|| CommandError::new("VALIDATION", "upload id is required"))?;
-    let bytes = match request.body() {
-        InvokeBody::Raw(bytes) => bytes,
-        _ => {
-            return Err(CommandError::new(
-                "INVALID_FORM",
-                "raw upload chunk is required",
-            ))
-        }
-    };
-    write_upload_chunk(&state, upload_id, bytes).await
+    write_upload_chunk(state, upload_id, bytes).await
 }
 
-#[tauri::command]
-pub async fn sftp_upload_chunk_base64(
-    state: State<'_, SftpState>,
+pub(crate) async fn sftp_upload_chunk_base64(
+    state: &SftpService,
     upload_id: String,
     data: String,
 ) -> Result<SftpUploadChunkResponse, CommandError> {
@@ -522,11 +509,11 @@ pub async fn sftp_upload_chunk_base64(
     let bytes = STANDARD
         .decode(data)
         .map_err(|error| CommandError::new("INVALID_FORM", error.to_string()))?;
-    write_upload_chunk(&state, &upload_id, &bytes).await
+    write_upload_chunk(state, &upload_id, &bytes).await
 }
 
 async fn write_upload_chunk(
-    state: &SftpState,
+    state: &SftpService,
     upload_id: &str,
     bytes: &[u8],
 ) -> Result<SftpUploadChunkResponse, CommandError> {
@@ -585,9 +572,8 @@ async fn write_upload_chunk(
     Ok(SftpUploadChunkResponse { received: next })
 }
 
-#[tauri::command]
-pub async fn sftp_upload_finish(
-    state: State<'_, SftpState>,
+pub(crate) async fn sftp_upload_finish(
+    state: &SftpService,
     upload_id: String,
 ) -> Result<SftpUploadResponse, CommandError> {
     let upload = state
@@ -642,9 +628,8 @@ pub async fn sftp_upload_finish(
     })
 }
 
-#[tauri::command]
-pub async fn sftp_upload_abort(
-    state: State<'_, SftpState>,
+pub(crate) async fn sftp_upload_abort(
+    state: &SftpService,
     upload_id: String,
 ) -> Result<(), CommandError> {
     if let Some(upload) = state.transfers.uploads.write().await.remove(&upload_id) {
@@ -668,9 +653,8 @@ pub async fn sftp_upload_abort(
     Ok(())
 }
 
-#[tauri::command]
-pub async fn sftp_list_transfers(
-    state: State<'_, SftpState>,
+pub(crate) async fn sftp_list_transfers(
+    state: &SftpService,
     session_id: Option<String>,
     status: Option<String>,
 ) -> Result<Vec<TransferTask>, CommandError> {
@@ -700,9 +684,8 @@ pub async fn sftp_list_transfers(
     Ok(result)
 }
 
-#[tauri::command]
-pub async fn sftp_cancel_transfer(
-    state: State<'_, SftpState>,
+pub(crate) async fn sftp_cancel_transfer(
+    state: &SftpService,
     task_id: String,
 ) -> Result<serde_json::Value, CommandError> {
     let entry = state
@@ -714,6 +697,7 @@ pub async fn sftp_cancel_transfer(
         .cloned()
         .ok_or_else(|| CommandError::new("NOT_FOUND", "transfer task not found"))?;
     entry.cancel.cancel();
+    state.transfers.abort_worker(&task_id).await;
     let status = {
         let mut task = entry.task.lock().await;
         if task.status == "queued" || task.status == "transferring" {
@@ -730,9 +714,8 @@ pub async fn sftp_cancel_transfer(
     Ok(serde_json::json!({"id":task_id,"status":status}))
 }
 
-#[tauri::command]
-pub async fn sftp_clear_completed_transfers(
-    state: State<'_, SftpState>,
+pub(crate) async fn sftp_clear_completed_transfers(
+    state: &SftpService,
 ) -> Result<(), CommandError> {
     let entries = state
         .transfers
@@ -753,8 +736,12 @@ pub async fn sftp_clear_completed_transfers(
         }
     }
     let mut tasks = state.transfers.tasks.write().await;
+    for id in &remove {
+        tasks.remove(id);
+    }
+    drop(tasks);
     for id in remove {
-        tasks.remove(&id);
+        state.transfers.abort_worker(&id).await;
     }
     Ok(())
 }
@@ -775,58 +762,103 @@ fn archive_name(path: &str) -> String {
     )
 }
 
-fn make_tar_gz(root: &str, files: Vec<(String, FileInfo, Vec<u8>)>) -> Result<Vec<u8>, String> {
-    let mut output = Vec::new();
-    {
-        let encoder = flate2::write::GzEncoder::new(&mut output, flate2::Compression::default());
-        let mut archive = tar::Builder::new(encoder);
-        let root_name = base_name(root);
-        for (path, info, bytes) in files {
-            let suffix = path
-                .strip_prefix(root)
-                .unwrap_or(&path)
-                .trim_start_matches('/');
-            let archive_path = if suffix.is_empty() {
-                root_name.clone()
-            } else {
-                format!("{root_name}/{suffix}")
-            };
-            let mut header = tar::Header::new_gnu();
-            header.set_mtime(
-                info.modified
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs(),
-            );
-            if info.is_dir {
-                header.set_entry_type(tar::EntryType::Directory);
-                header.set_mode(0o755);
-                header.set_size(0);
-                header.set_cksum();
-                archive
-                    .append_data(
-                        &mut header,
-                        format!("{archive_path}/"),
-                        Cursor::new(Vec::new()),
-                    )
-                    .map_err(|error| error.to_string())?;
-            } else {
-                header.set_entry_type(tar::EntryType::Regular);
-                header.set_mode(0o644);
-                header.set_size(bytes.len() as u64);
-                header.set_cksum();
-                archive
-                    .append_data(&mut header, archive_path, Cursor::new(bytes))
-                    .map_err(|error| error.to_string())?;
-            }
+struct CancelReader {
+    file: std::fs::File,
+    cancel: CancellationToken,
+}
+
+impl Read for CancelReader {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        if self.cancel.is_cancelled() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "transfer cancelled",
+            ));
         }
-        archive
-            .into_inner()
+        self.file.read(buffer)
+    }
+}
+
+fn append_tar_directory(
+    archive: &mut tar::Builder<flate2::write::GzEncoder<std::fs::File>>,
+    source_root: &Path,
+    directory: &Path,
+    archive_root: &str,
+    cancel: &CancellationToken,
+) -> Result<(), String> {
+    if cancel.is_cancelled() {
+        return Err("transfer cancelled".into());
+    }
+    for entry in std::fs::read_dir(directory).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let path = entry.path();
+        let relative = path
+            .strip_prefix(source_root)
             .map_err(|error| error.to_string())?
-            .finish()
+            .to_string_lossy()
+            .replace('\\', "/");
+        let archive_path = format!("{archive_root}/{relative}");
+        let metadata = entry.metadata().map_err(|error| error.to_string())?;
+        if metadata.is_dir() {
+            archive
+                .append_dir(format!("{archive_path}/"), &path)
+                .map_err(|error| error.to_string())?;
+            append_tar_directory(archive, source_root, &path, archive_root, cancel)?;
+            continue;
+        }
+        let mut header = tar::Header::new_gnu();
+        header.set_entry_type(tar::EntryType::Regular);
+        header.set_mode(0o644);
+        header.set_size(metadata.len());
+        header.set_mtime(
+            metadata
+                .modified()
+                .unwrap_or(SystemTime::UNIX_EPOCH)
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+        );
+        header.set_cksum();
+        archive
+            .append_data(
+                &mut header,
+                archive_path,
+                CancelReader {
+                    file: std::fs::File::open(&path).map_err(|error| error.to_string())?,
+                    cancel: cancel.clone(),
+                },
+            )
             .map_err(|error| error.to_string())?;
     }
-    Ok(output)
+    Ok(())
+}
+
+fn make_tar_gz_from_directory(
+    source: &Path,
+    output: &Path,
+    cancel: &CancellationToken,
+) -> Result<(), String> {
+    if cancel.is_cancelled() {
+        return Err("transfer cancelled".into());
+    }
+    let file = std::fs::File::create(output).map_err(|error| error.to_string())?;
+    let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+    let mut archive = tar::Builder::new(encoder);
+    let root_name = source
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("archive");
+    archive
+        .append_dir(format!("{root_name}/"), source)
+        .map_err(|error| error.to_string())?;
+    append_tar_directory(&mut archive, source, source, root_name, cancel)?;
+    archive
+        .into_inner()
+        .map_err(|error| error.to_string())?
+        .finish()
+        .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 fn append_zip_directory(
@@ -888,49 +920,6 @@ fn make_zip_from_directory(
     Ok(())
 }
 
-async fn read_with_cancel(
-    backend: &FileBackend,
-    path: &str,
-    cancel: &CancellationToken,
-) -> Result<Vec<u8>, String> {
-    let mut reader = backend.open_read(path).await?;
-    let mut output = Vec::new();
-    let mut buffer = vec![0_u8; 128 * 1024];
-    loop {
-        let read = tokio::select! {
-            _ = cancel.cancelled() => return Err("transfer cancelled".into()),
-            result = reader.read(&mut buffer) => result.map_err(|error| error.to_string())?,
-        };
-        if read == 0 {
-            break;
-        }
-        output.extend_from_slice(&buffer[..read]);
-    }
-    Ok(output)
-}
-
-fn collect_files<'a>(
-    backend: &'a FileBackend,
-    path: &'a str,
-    cancel: &'a CancellationToken,
-) -> CollectFuture<'a> {
-    Box::pin(async move {
-        if cancel.is_cancelled() {
-            return Err("transfer cancelled".into());
-        }
-        let info = backend.stat(path).await?;
-        let mut result = vec![(path.to_owned(), info.clone(), Vec::new())];
-        if info.is_dir {
-            for child in backend.list(path).await? {
-                result.extend(collect_files(backend, &child.path, cancel).await?);
-            }
-        } else {
-            result[0].2 = read_with_cancel(backend, path, cancel).await?;
-        }
-        Ok(result)
-    })
-}
-
 fn tree_size<'a>(
     backend: &'a FileBackend,
     path: &'a str,
@@ -948,9 +937,8 @@ fn tree_size<'a>(
     })
 }
 
-#[tauri::command]
-pub async fn sftp_download(
-    state: State<'_, SftpState>,
+pub(crate) async fn sftp_download(
+    state: &SftpService,
     session_id: String,
     paths: Vec<String>,
 ) -> Result<SftpDownloadResponse, CommandError> {
@@ -986,16 +974,18 @@ pub async fn sftp_download(
         .transfers
         .create(session_id, file_name.clone(), "download", size)
         .await;
+    let task_id = transfer.task.lock().await.id.clone();
     let response = SftpDownloadResponse {
         tasks: vec![TransferManager::snapshot(&transfer).await],
-        download_url: transfer.task.lock().await.id.clone(),
+        download_url: task_id.clone(),
     };
     let manager = state.transfers.clone();
+    let worker_manager = manager.clone();
     let app = state.app.clone();
     let audit = state.audit.clone();
     let profile_id = session.profile_id.clone();
-    tauri::async_runtime::spawn(async move {
-        let permit = manager.semaphore.acquire().await;
+    let worker = tokio::spawn(async move {
+        let permit = worker_manager.semaphore.acquire().await;
         if permit.is_err() {
             TransferManager::fail(&transfer, &app, "transfer manager stopped").await;
             return;
@@ -1041,7 +1031,7 @@ pub async fn sftp_download(
                 let stage = stage_path.clone();
                 let output = temp_path.clone();
                 let cancel = transfer.cancel.clone();
-                tauri::async_runtime::spawn_blocking(move || {
+                tokio::task::spawn_blocking(move || {
                     make_zip_from_directory(&stage, &output, &cancel)
                 })
                 .await
@@ -1080,16 +1070,16 @@ pub async fn sftp_download(
             }
         }
     });
+    manager.track_worker(task_id, worker).await;
     Ok(response)
 }
 
-#[tauri::command]
-pub async fn sftp_download_chunk(
-    state: State<'_, SftpState>,
+pub(crate) async fn sftp_download_chunk(
+    state: &SftpService,
     task_id: String,
     offset: u64,
     max_bytes: u32,
-) -> Result<tauri::ipc::Response, CommandError> {
+) -> Result<Vec<u8>, CommandError> {
     if max_bytes == 0 || max_bytes as usize > MAX_IPC_CHUNK_SIZE {
         return Err(CommandError::new(
             "VALIDATION",
@@ -1116,12 +1106,11 @@ pub async fn sftp_download_chunk(
     let bytes = read_file_chunk(&path, offset, max_bytes as usize)
         .await
         .map_err(|error| CommandError::new("INTERNAL", error))?;
-    Ok(tauri::ipc::Response::new(bytes))
+    Ok(bytes)
 }
 
-#[tauri::command]
-pub async fn sftp_download_chunk_base64(
-    state: State<'_, SftpState>,
+pub(crate) async fn sftp_download_chunk_base64(
+    state: &SftpService,
     task_id: String,
     offset: u64,
     max_bytes: u32,
@@ -1171,13 +1160,13 @@ async fn read_file_chunk(path: &Path, offset: u64, max_bytes: usize) -> Result<V
     Ok(bytes)
 }
 
-#[tauri::command]
-pub async fn sftp_download_close(
-    state: State<'_, SftpState>,
+pub(crate) async fn sftp_download_close(
+    state: &SftpService,
     task_id: String,
 ) -> Result<(), CommandError> {
     if let Some(entry) = state.transfers.tasks.write().await.remove(&task_id) {
         entry.cancel.cancel();
+        state.transfers.abort_worker(&task_id).await;
         if let Some(path) = entry.download_path.lock().await.take() {
             let _ = tokio::fs::remove_file(path).await;
         }
@@ -1306,7 +1295,7 @@ fn copy_directory_plain<'a>(
     })
 }
 
-impl SftpState {
+impl SftpService {
     pub(crate) async fn materialize_paths(
         &self,
         source_session_id: &str,
@@ -1338,10 +1327,9 @@ impl SftpState {
     }
 }
 
-#[tauri::command]
 #[allow(clippy::too_many_arguments)]
-pub async fn sftp_transfer(
-    state: State<'_, SftpState>,
+pub(crate) async fn sftp_transfer(
+    state: &SftpService,
     source_session_id: String,
     target_session_id: String,
     paths: Vec<String>,
@@ -1431,16 +1419,19 @@ pub async fn sftp_transfer(
             size,
         )
         .await;
+    let task_id = transfer.task.lock().await.id.clone();
     let response = SftpTransferResponse {
-        task_id: transfer.task.lock().await.id.clone(),
+        task_id: task_id.clone(),
         method: "relay".into(),
         tasks: vec![TransferManager::snapshot(&transfer).await],
         conflicts: Vec::new(),
     };
     let manager = state.transfers.clone();
+    let worker_manager = manager.clone();
+    let worker_task_id = task_id.clone();
     let app = state.app.clone();
-    tauri::async_runtime::spawn(async move {
-        let permit = manager.semaphore.acquire().await;
+    let worker = tokio::spawn(async move {
+        let permit = worker_manager.semaphore.acquire().await;
         if permit.is_err() {
             TransferManager::fail(&transfer, &app, "transfer manager stopped").await;
             return;
@@ -1468,13 +1459,51 @@ pub async fn sftp_transfer(
                     if info.is_dir && directory_mode == "preserve" {
                         copy_directory(&source, path, &target, &destination, &transfer, &app).await
                     } else if info.is_dir {
-                        let items = collect_files(&source, path, &transfer.cancel).await?;
-                        let root = path.clone();
-                        let bytes =
-                            tauri::async_runtime::spawn_blocking(move || make_tar_gz(&root, items))
-                                .await
-                                .map_err(|error| error.to_string())??;
-                        write_bytes(&target, &destination, &bytes, &transfer, &app).await
+                        let staging = std::env::temp_dir().join(format!(
+                            "xcontrol-tx-stage-{worker_task_id}-{}",
+                            uuid::Uuid::new_v4()
+                        ));
+                        let archive_path = std::env::temp_dir().join(format!(
+                            "xcontrol-tx-archive-{worker_task_id}-{}.tar.gz",
+                            uuid::Uuid::new_v4()
+                        ));
+                        let local = FileBackend::Local;
+                        let staged_source = staging.join(base_name(path));
+                        let staged_source_api = local_path_to_api(&staged_source);
+                        let archive_api = local_path_to_api(&archive_path);
+                        let archive_result = async {
+                            local.mkdir_all(&local_path_to_api(&staging)).await?;
+                            copy_directory(
+                                &source,
+                                path,
+                                &local,
+                                &staged_source_api,
+                                &transfer,
+                                &app,
+                            )
+                            .await?;
+                            let source_path = staged_source.clone();
+                            let output_path = archive_path.clone();
+                            let cancel = transfer.cancel.clone();
+                            tokio::task::spawn_blocking(move || {
+                                make_tar_gz_from_directory(&source_path, &output_path, &cancel)
+                            })
+                            .await
+                            .map_err(|error| error.to_string())??;
+                            copy_with_progress(
+                                &local,
+                                &archive_api,
+                                &target,
+                                &destination,
+                                &transfer,
+                                &app,
+                            )
+                            .await
+                        }
+                        .await;
+                        let _ = tokio::fs::remove_dir_all(&staging).await;
+                        let _ = tokio::fs::remove_file(&archive_path).await;
+                        archive_result
                     } else {
                         copy_with_progress(&source, path, &target, &destination, &transfer, &app)
                             .await
@@ -1500,12 +1529,12 @@ pub async fn sftp_transfer(
             Err(error) => TransferManager::fail(&transfer, &app, error).await,
         }
     });
+    manager.track_worker(task_id, worker).await;
     Ok(response)
 }
 
-#[tauri::command]
-pub async fn sftp_move(
-    state: State<'_, SftpState>,
+pub(crate) async fn sftp_move(
+    state: &SftpService,
     session_id: String,
     paths: Vec<String>,
     dest_dir: String,
@@ -1598,31 +1627,19 @@ mod tests {
 
     use super::*;
 
-    fn file_info(path: &str, size: u64) -> FileInfo {
-        FileInfo {
-            name: base_name(path),
-            path: path.into(),
-            is_dir: false,
-            size,
-            modified: SystemTime::UNIX_EPOCH,
-            mode: "644".into(),
-        }
-    }
-
     #[test]
     fn tar_builder_preserves_paths_and_content() {
-        let tar = make_tar_gz(
-            "/root",
-            vec![(
-                "/root/a.txt".into(),
-                file_info("/root/a.txt", 8),
-                b"tar-data".to_vec(),
-            )],
-        )
-        .unwrap();
-        let decoder = flate2::read::GzDecoder::new(Cursor::new(tar));
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("root");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::write(source.join("a.txt"), b"tar-data").unwrap();
+        let output = directory.path().join("archive.tar.gz");
+        make_tar_gz_from_directory(&source, &output, &CancellationToken::new()).unwrap();
+        let decoder = flate2::read::GzDecoder::new(std::fs::File::open(output).unwrap());
         let mut archive = tar::Archive::new(decoder);
-        let mut entry = archive.entries().unwrap().next().unwrap().unwrap();
+        let mut entries = archive.entries().unwrap();
+        let _root = entries.next().unwrap().unwrap();
+        let mut entry = entries.next().unwrap().unwrap();
         assert_eq!(
             entry.path().unwrap().as_ref(),
             std::path::Path::new("root/a.txt")
@@ -1687,18 +1704,16 @@ mod tests {
     }
 
     #[cfg(unix)]
-    #[tokio::test]
-    async fn collection_honors_pre_cancelled_transfer() {
+    #[test]
+    fn tar_builder_honors_pre_cancelled_transfer() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("large");
-        tokio::fs::write(&path, vec![7_u8; 256 * 1024])
-            .await
-            .unwrap();
+        std::fs::create_dir(&path).unwrap();
+        std::fs::write(path.join("data"), vec![7_u8; 256 * 1024]).unwrap();
         let cancel = CancellationToken::new();
         cancel.cancel();
-        let error = collect_files(&FileBackend::Local, &path.to_string_lossy(), &cancel)
-            .await
-            .unwrap_err();
+        let error =
+            make_tar_gz_from_directory(&path, &directory.path().join("out"), &cancel).unwrap_err();
         assert_eq!(error, "transfer cancelled");
     }
 }

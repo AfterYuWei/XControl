@@ -12,7 +12,7 @@ use std::{
 use serde::Serialize;
 use tauri::State;
 
-use crate::sftp::SftpState;
+use crate::sftp::SftpService;
 
 /// 拖出临时目录前缀（与 Electron 保持一致，便于清扫历史残留）。
 const DRAG_TEMP_PREFIX: &str = "xcontrol-drag-";
@@ -30,7 +30,7 @@ pub struct DragOutFiles {
 /// 前端命令入口：物化远程文件，返回本机路径 + 图标路径。
 #[tauri::command]
 pub async fn sftp_drag_out(
-    state: State<'_, SftpState>,
+    state: State<'_, SftpService>,
     source_session_id: String,
     _local_session_id: String,
     paths: Vec<String>,

@@ -4,8 +4,11 @@ use std::{
 
 use chrono::{DateTime, Local, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
-use tokio::sync::RwLock;
+use tauri::{AppHandle, Emitter};
+use tokio::{
+    sync::{Mutex, RwLock},
+    task::JoinHandle,
+};
 
 #[cfg(test)]
 use super::backend::join_path;
@@ -127,8 +130,9 @@ pub(super) struct SftpSession {
 }
 
 #[derive(Clone)]
-pub struct SftpState {
+pub(crate) struct SftpService {
     pub(super) sessions: Arc<RwLock<HashMap<String, Arc<SftpSession>>>>,
+    connection_tasks: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
     pub(super) profiles: ProfileService,
     pub(super) audit: AuditRepository,
     pub(super) app: AppHandle,
@@ -149,10 +153,11 @@ impl HostKeyVerifier for StrictHostKeyVerifier {
     }
 }
 
-impl SftpState {
-    pub fn new(profiles: ProfileService, audit: AuditRepository, app: AppHandle) -> Self {
+impl SftpService {
+    pub(crate) fn new(profiles: ProfileService, audit: AuditRepository, app: AppHandle) -> Self {
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
+            connection_tasks: Arc::new(Mutex::new(HashMap::new())),
             profiles,
             audit,
             app,
@@ -204,9 +209,15 @@ impl SftpState {
 
         let state = self.clone();
         let session_for_task = session.clone();
-        tauri::async_runtime::spawn(async move {
+        let session_id = session.id.clone();
+        let task = tokio::spawn(async move {
             state.connect_remote(session_for_task).await;
+            state.connection_tasks.lock().await.remove(&session_id);
         });
+        self.connection_tasks
+            .lock()
+            .await
+            .insert(session.id.clone(), task);
         Ok(SftpCreateSessionResponse {
             session_id: session.id.clone(),
             status: "connecting".into(),
@@ -215,33 +226,27 @@ impl SftpState {
     }
 
     async fn connect_remote(&self, session: Arc<SftpSession>) {
-        let result = async {
-            let resolved = self.profiles.resolve_connection(&session.profile_id)?;
-            let route = connect_route(resolved, Arc::new(StrictHostKeyVerifier))
-                .await
-                .map_err(|error| CommandError::new("SFTP_CONNECT_FAILED", error))?;
-            let channel = route
-                .handle
-                .channel_open_session()
-                .await
-                .map_err(|error| CommandError::new("SFTP_CONNECT_FAILED", error.to_string()))?;
-            channel
-                .request_subsystem(true, "sftp")
-                .await
-                .map_err(|error| CommandError::new("SFTP_CONNECT_FAILED", error.to_string()))?;
-            let sftp = Arc::new(
-                russh_sftp::client::SftpSession::new(channel.into_stream())
+        let result =
+            async {
+                let resolved = self.profiles.resolve_connection(&session.profile_id)?;
+                let route = connect_route(resolved, Arc::new(StrictHostKeyVerifier))
                     .await
-                    .map_err(|error| CommandError::new("SFTP_CONNECT_FAILED", error.to_string()))?,
-            );
-            let home_dir = sftp.canonicalize(".").await.unwrap_or_else(|_| "/".into());
-            Ok::<_, CommandError>((route, sftp, clean_path(&home_dir)))
-        }
-        .await;
+                    .map_err(|error| CommandError::new("SFTP_CONNECT_FAILED", error))?;
+                let stream = route
+                    .open_subsystem("sftp")
+                    .await
+                    .map_err(|error| CommandError::new("SFTP_CONNECT_FAILED", error))?;
+                let sftp = Arc::new(russh_sftp::client::SftpSession::new(stream).await.map_err(
+                    |error| CommandError::new("SFTP_CONNECT_FAILED", error.to_string()),
+                )?);
+                let home_dir = sftp.canonicalize(".").await.unwrap_or_else(|_| "/".into());
+                Ok::<_, CommandError>((route, sftp, clean_path(&home_dir)))
+            }
+            .await;
 
         match result {
             Ok((route, sftp, home_dir)) => {
-                for (profile_id, fingerprint) in &route.host_keys {
+                for (profile_id, fingerprint) in route.host_keys() {
                     if let Err(error) = self.profiles.persist_host_key(profile_id, fingerprint) {
                         eprintln!("persist SFTP host key failed: {error}");
                     }
@@ -332,6 +337,19 @@ impl SftpState {
     }
 
     pub async fn shutdown(&self) {
+        let connection_tasks = self
+            .connection_tasks
+            .lock()
+            .await
+            .drain()
+            .map(|(_, task)| task)
+            .collect::<Vec<_>>();
+        for task in &connection_tasks {
+            task.abort();
+        }
+        for task in connection_tasks {
+            let _ = task.await;
+        }
         let sessions = self
             .sessions
             .write()
@@ -431,26 +449,23 @@ fn backend_error(error: String) -> CommandError {
     CommandError::new(code, error)
 }
 
-#[tauri::command]
-pub async fn sftp_create_session(
-    state: State<'_, SftpState>,
+pub(crate) async fn create_session(
+    state: &SftpService,
     profile_id: String,
 ) -> Result<SftpCreateSessionResponse, CommandError> {
     state.create_session(profile_id).await
 }
 
-#[tauri::command]
-pub async fn sftp_get_session(
-    state: State<'_, SftpState>,
+pub(crate) async fn get_session(
+    state: &SftpService,
     id: String,
 ) -> Result<SftpSessionInfo, CommandError> {
     let session = state.session(&id).await?;
-    Ok(SftpState::info(&session).await)
+    Ok(SftpService::info(&session).await)
 }
 
-#[tauri::command]
-pub async fn sftp_list_sessions(
-    state: State<'_, SftpState>,
+pub(crate) async fn list_sessions(
+    state: &SftpService,
 ) -> Result<Vec<SftpSessionInfo>, CommandError> {
     let sessions = state
         .sessions
@@ -461,22 +476,23 @@ pub async fn sftp_list_sessions(
         .collect::<Vec<_>>();
     let mut result = Vec::with_capacity(sessions.len());
     for session in sessions {
-        result.push(SftpState::info(&session).await);
+        result.push(SftpService::info(&session).await);
     }
     Ok(result)
 }
 
-#[tauri::command]
-pub async fn sftp_close_session(
-    state: State<'_, SftpState>,
-    id: String,
-) -> Result<(), CommandError> {
+pub(crate) async fn close_session(state: &SftpService, id: String) -> Result<(), CommandError> {
     let session = state
         .sessions
         .write()
         .await
         .remove(&id)
         .ok_or_else(|| CommandError::new("NOT_FOUND", "session not found"))?;
+    let connection_task = state.connection_tasks.lock().await.remove(&id);
+    if let Some(task) = connection_task {
+        task.abort();
+        let _ = task.await;
+    }
     state.transfers.cancel_session(&id).await;
     if let Some(backend) = session.data.write().await.backend.take() {
         backend.close().await;
@@ -487,9 +503,8 @@ pub async fn sftp_close_session(
     Ok(())
 }
 
-#[tauri::command]
-pub async fn sftp_list(
-    state: State<'_, SftpState>,
+pub(crate) async fn list(
+    state: &SftpService,
     session_id: String,
     path: String,
     show_hidden: Option<bool>,
@@ -515,9 +530,8 @@ pub async fn sftp_list(
     })
 }
 
-#[tauri::command]
-pub async fn sftp_stat(
-    state: State<'_, SftpState>,
+pub(crate) async fn stat(
+    state: &SftpService,
     session_id: String,
     path: String,
 ) -> Result<SftpEntry, CommandError> {
@@ -529,9 +543,8 @@ pub async fn sftp_stat(
         .map_err(backend_error)
 }
 
-#[tauri::command]
-pub async fn sftp_tree(
-    state: State<'_, SftpState>,
+pub(crate) async fn tree_entries(
+    state: &SftpService,
     session_id: String,
     path: String,
     depth: Option<u32>,
@@ -544,9 +557,8 @@ pub async fn sftp_tree(
     Ok(SftpTreeResponse { path, entries })
 }
 
-#[tauri::command]
-pub async fn sftp_mkdir(
-    state: State<'_, SftpState>,
+pub(crate) async fn mkdir(
+    state: &SftpService,
     session_id: String,
     path: String,
 ) -> Result<SftpEntry, CommandError> {
@@ -567,9 +579,8 @@ pub async fn sftp_mkdir(
     Ok(result)
 }
 
-#[tauri::command]
-pub async fn sftp_rename(
-    state: State<'_, SftpState>,
+pub(crate) async fn rename(
+    state: &SftpService,
     session_id: String,
     old_path: String,
     new_path: String,
@@ -594,9 +605,8 @@ pub async fn sftp_rename(
     Ok(result)
 }
 
-#[tauri::command]
-pub async fn sftp_delete(
-    state: State<'_, SftpState>,
+pub(crate) async fn delete(
+    state: &SftpService,
     session_id: String,
     paths: Vec<String>,
 ) -> Result<SftpDeleteResponse, CommandError> {
@@ -621,9 +631,8 @@ pub async fn sftp_delete(
     Ok(SftpDeleteResponse { deleted, failed })
 }
 
-#[tauri::command]
-pub async fn sftp_read_file(
-    state: State<'_, SftpState>,
+pub(crate) async fn read_file(
+    state: &SftpService,
     session_id: String,
     path: String,
 ) -> Result<SftpFileReadResponse, CommandError> {
@@ -681,9 +690,8 @@ pub async fn sftp_read_file(
     })
 }
 
-#[tauri::command]
-pub async fn sftp_write_file(
-    state: State<'_, SftpState>,
+pub(crate) async fn write_file(
+    state: &SftpService,
     session_id: String,
     path: String,
     request: SftpFileWriteRequest,

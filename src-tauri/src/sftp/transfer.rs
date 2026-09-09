@@ -8,7 +8,6 @@ use std::{
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
 use tokio::{
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
     sync::{Mutex, OwnedSemaphorePermit, RwLock, Semaphore},
@@ -19,6 +18,7 @@ use tokio_util::sync::CancellationToken;
 use super::{
     backend::{base_name, clean_path, join_path, local_path_to_api, BackendWriter, FileBackend},
     error::SftpError,
+    events::SftpEventSink,
     state::SftpService,
 };
 use crate::error::CommandError;
@@ -28,7 +28,7 @@ const DOWNLOAD_STAGE_PREFIX: &str = "xcontrol-dl-stage-";
 const MAX_IPC_CHUNK_SIZE: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize)]
-pub struct TransferTask {
+pub(crate) struct TransferTask {
     id: String,
     file_name: String,
     direction: String,
@@ -72,29 +72,29 @@ pub(super) struct TransferManager {
 }
 
 #[derive(Debug, Serialize)]
-pub struct SftpUploadResponse {
+pub(crate) struct SftpUploadResponse {
     tasks: Vec<TransferTask>,
 }
 
 #[derive(Debug, Serialize)]
-pub struct SftpUploadBeginResponse {
+pub(crate) struct SftpUploadBeginResponse {
     upload_id: String,
     tasks: Vec<TransferTask>,
 }
 
 #[derive(Debug, Serialize)]
-pub struct SftpUploadChunkResponse {
+pub(crate) struct SftpUploadChunkResponse {
     received: u64,
 }
 
 #[derive(Debug, Serialize)]
-pub struct SftpDownloadResponse {
+pub(crate) struct SftpDownloadResponse {
     tasks: Vec<TransferTask>,
     download_url: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct SftpConflictInfo {
+pub(crate) struct SftpConflictInfo {
     source_path: String,
     dest_path: String,
     source_size: u64,
@@ -104,7 +104,7 @@ pub struct SftpConflictInfo {
 }
 
 #[derive(Debug, Serialize)]
-pub struct SftpTransferResponse {
+pub(crate) struct SftpTransferResponse {
     #[serde(skip_serializing_if = "String::is_empty")]
     task_id: String,
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -116,25 +116,18 @@ pub struct SftpTransferResponse {
 }
 
 #[derive(Debug, Serialize)]
-pub struct SftpMoveFailure {
+pub(crate) struct SftpMoveFailure {
     path: String,
     message: String,
 }
 
 #[derive(Debug, Serialize)]
-pub struct SftpMoveResponse {
+pub(crate) struct SftpMoveResponse {
     moved: Vec<String>,
     skipped: Vec<String>,
     failures: Vec<SftpMoveFailure>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     conflicts: Vec<SftpConflictInfo>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct TransferEvent {
-    #[serde(rename = "type")]
-    event_type: &'static str,
-    payload: serde_json::Value,
 }
 
 impl TransferManager {
@@ -217,7 +210,7 @@ impl TransferManager {
         true
     }
 
-    async fn complete(entry: &TransferEntry, app: &AppHandle) {
+    async fn complete(entry: &TransferEntry, events: &dyn SftpEventSink) {
         let task = {
             let mut task = entry.task.lock().await;
             task.status = "completed".into();
@@ -227,7 +220,7 @@ impl TransferManager {
             task.clone()
         };
         emit(
-            app,
+            events,
             "transfer_complete",
             serde_json::json!({
                 "task_id":task.id,"status":task.status,"finished_at":task.finished_at
@@ -235,7 +228,7 @@ impl TransferManager {
         );
     }
 
-    async fn fail(entry: &TransferEntry, app: &AppHandle, message: impl Into<String>) {
+    async fn fail(entry: &TransferEntry, events: &dyn SftpEventSink, message: impl Into<String>) {
         let task = {
             let mut task = entry.task.lock().await;
             if task.status == "cancelled" {
@@ -248,7 +241,7 @@ impl TransferManager {
             task.clone()
         };
         emit(
-            app,
+            events,
             "transfer_failed",
             serde_json::json!({
                 "task_id":task.id,"status":task.status,"error_message":task.error_message
@@ -363,14 +356,8 @@ fn sweep_stale_transfers() {
     }
 }
 
-fn emit(app: &AppHandle, event_type: &'static str, payload: serde_json::Value) {
-    let _ = app.emit(
-        "xcontrol-sftp-message",
-        TransferEvent {
-            event_type,
-            payload,
-        },
-    );
+fn emit(events: &dyn SftpEventSink, event_type: &'static str, payload: serde_json::Value) {
+    events.emit_sftp(event_type, payload);
 }
 
 fn now_millis() -> i64 {
@@ -383,7 +370,7 @@ async fn copy_with_progress(
     target: &FileBackend,
     target_path: &str,
     entry: &TransferEntry,
-    app: &AppHandle,
+    events: &dyn SftpEventSink,
 ) -> Result<(), SftpError> {
     let mut reader = source.open_read(source_path).await?;
     let mut writer = target.open_write(target_path).await?;
@@ -409,7 +396,7 @@ async fn copy_with_progress(
             task.clone()
         };
         emit(
-            app,
+            events,
             "transfer_progress",
             serde_json::json!({
                 "task_id":snapshot.id,"transferred":snapshot.transferred,"size":snapshot.size,
@@ -563,7 +550,7 @@ async fn write_upload_chunk(
         task.clone()
     };
     emit(
-        &state.app,
+        state.events.as_ref(),
         "transfer_progress",
         serde_json::json!({
             "task_id":snapshot.id,"transferred":snapshot.transferred,"size":snapshot.size,
@@ -597,7 +584,12 @@ pub(crate) async fn sftp_upload_finish(
             let _ = writer.shutdown().await;
         }
         let _ = upload.backend.remove_file(&upload.destination).await;
-        TransferManager::fail(&upload.transfer, &state.app, "upload size mismatch").await;
+        TransferManager::fail(
+            &upload.transfer,
+            state.events.as_ref(),
+            "upload size mismatch",
+        )
+        .await;
         return Err(CommandError::new(
             "INVALID_SIZE",
             format!(
@@ -614,11 +606,11 @@ pub(crate) async fn sftp_upload_finish(
         .await
         {
             let _ = upload.backend.remove_file(&upload.destination).await;
-            TransferManager::fail(&upload.transfer, &state.app, error.to_string()).await;
+            TransferManager::fail(&upload.transfer, state.events.as_ref(), error.to_string()).await;
             return Err(CommandError::new("INTERNAL", error.to_string()));
         }
     }
-    TransferManager::complete(&upload.transfer, &state.app).await;
+    TransferManager::complete(&upload.transfer, state.events.as_ref()).await;
     let _ = state.audit.record(
         &upload.profile_id,
         "sftp_upload",
@@ -646,7 +638,7 @@ pub(crate) async fn sftp_upload_abort(
             task.status.clone()
         };
         emit(
-            &state.app,
+            state.events.as_ref(),
             "transfer_complete",
             serde_json::json!({"task_id":upload.transfer.task.lock().await.id,"status":status,"finished_at":now_millis()}),
         );
@@ -708,7 +700,7 @@ pub(crate) async fn sftp_cancel_transfer(
         task.status.clone()
     };
     emit(
-        &state.app,
+        state.events.as_ref(),
         "transfer_complete",
         serde_json::json!({"task_id":task_id,"status":status,"finished_at":now_millis()}),
     );
@@ -983,13 +975,13 @@ pub(crate) async fn sftp_download(
     };
     let manager = state.transfers.clone();
     let worker_manager = manager.clone();
-    let app = state.app.clone();
+    let events = state.events.clone();
     let audit = state.audit.clone();
     let profile_id = session.profile_id.clone();
     let worker = tokio::spawn(async move {
         let permit = worker_manager.semaphore.acquire().await;
         if permit.is_err() {
-            TransferManager::fail(&transfer, &app, "transfer manager stopped").await;
+            TransferManager::fail(&transfer, events.as_ref(), "transfer manager stopped").await;
             return;
         }
         if !TransferManager::set_transferring(&transfer).await {
@@ -1021,13 +1013,27 @@ pub(crate) async fn sftp_download(
                         join_path(&stage_root, &relative)
                     };
                     if info.is_dir {
-                        copy_directory(&backend, path, &local, &destination, &transfer, &app)
-                            .await?;
+                        copy_directory(
+                            &backend,
+                            path,
+                            &local,
+                            &destination,
+                            &transfer,
+                            events.as_ref(),
+                        )
+                        .await?;
                     } else {
                         let parent = parent_path(&destination);
                         local.mkdir_all(&parent).await?;
-                        copy_with_progress(&backend, path, &local, &destination, &transfer, &app)
-                            .await?;
+                        copy_with_progress(
+                            &backend,
+                            path,
+                            &local,
+                            &destination,
+                            &transfer,
+                            events.as_ref(),
+                        )
+                        .await?;
                     }
                 }
                 let stage = stage_path.clone();
@@ -1045,7 +1051,7 @@ pub(crate) async fn sftp_download(
                     &FileBackend::Local,
                     &local_path_to_api(&temp_path),
                     &transfer,
-                    &app,
+                    events.as_ref(),
                 )
                 .await?;
             }
@@ -1057,7 +1063,7 @@ pub(crate) async fn sftp_download(
         }
         match result {
             Ok(()) => {
-                TransferManager::complete(&transfer, &app).await;
+                TransferManager::complete(&transfer, events.as_ref()).await;
                 let _ = audit.record(
                     profile_id,
                     "sftp_download",
@@ -1068,7 +1074,7 @@ pub(crate) async fn sftp_download(
                 if let Some(path) = transfer.download_path.lock().await.take() {
                     let _ = tokio::fs::remove_file(path).await;
                 }
-                TransferManager::fail(&transfer, &app, error.to_string()).await;
+                TransferManager::fail(&transfer, events.as_ref(), error.to_string()).await;
             }
         }
     });
@@ -1246,16 +1252,16 @@ fn copy_directory<'a>(
     target: &'a FileBackend,
     target_root: &'a str,
     transfer: &'a TransferEntry,
-    app: &'a AppHandle,
+    events: &'a dyn SftpEventSink,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), SftpError>> + Send + 'a>> {
     Box::pin(async move {
         target.mkdir_all(target_root).await?;
         for child in source.list(source_root).await? {
             let destination = join_path(target_root, &child.name);
             if child.is_dir {
-                copy_directory(source, &child.path, target, &destination, transfer, app).await?;
+                copy_directory(source, &child.path, target, &destination, transfer, events).await?;
             } else {
-                copy_with_progress(source, &child.path, target, &destination, transfer, app)
+                copy_with_progress(source, &child.path, target, &destination, transfer, events)
                     .await?;
             }
         }
@@ -1431,11 +1437,11 @@ pub(crate) async fn sftp_transfer(
     let manager = state.transfers.clone();
     let worker_manager = manager.clone();
     let worker_task_id = task_id.clone();
-    let app = state.app.clone();
+    let events = state.events.clone();
     let worker = tokio::spawn(async move {
         let permit = worker_manager.semaphore.acquire().await;
         if permit.is_err() {
-            TransferManager::fail(&transfer, &app, "transfer manager stopped").await;
+            TransferManager::fail(&transfer, events.as_ref(), "transfer manager stopped").await;
             return;
         }
         if !TransferManager::set_transferring(&transfer).await {
@@ -1459,7 +1465,15 @@ pub(crate) async fn sftp_transfer(
                         return Ok::<(), SftpError>(());
                     };
                     if info.is_dir && directory_mode == "preserve" {
-                        copy_directory(&source, path, &target, &destination, &transfer, &app).await
+                        copy_directory(
+                            &source,
+                            path,
+                            &target,
+                            &destination,
+                            &transfer,
+                            events.as_ref(),
+                        )
+                        .await
                     } else if info.is_dir {
                         let staging = std::env::temp_dir().join(format!(
                             "xcontrol-tx-stage-{worker_task_id}-{}",
@@ -1481,7 +1495,7 @@ pub(crate) async fn sftp_transfer(
                                 &local,
                                 &staged_source_api,
                                 &transfer,
-                                &app,
+                                events.as_ref(),
                             )
                             .await?;
                             let source_path = staged_source.clone();
@@ -1498,7 +1512,7 @@ pub(crate) async fn sftp_transfer(
                                 &target,
                                 &destination,
                                 &transfer,
-                                &app,
+                                events.as_ref(),
                             )
                             .await
                         }
@@ -1507,8 +1521,15 @@ pub(crate) async fn sftp_transfer(
                         let _ = tokio::fs::remove_file(&archive_path).await;
                         archive_result
                     } else {
-                        copy_with_progress(&source, path, &target, &destination, &transfer, &app)
-                            .await
+                        copy_with_progress(
+                            &source,
+                            path,
+                            &target,
+                            &destination,
+                            &transfer,
+                            events.as_ref(),
+                        )
+                        .await
                     }
                 }
                 .await;
@@ -1530,8 +1551,10 @@ pub(crate) async fn sftp_transfer(
         }
         .await;
         match result {
-            Ok(()) => TransferManager::complete(&transfer, &app).await,
-            Err(error) => TransferManager::fail(&transfer, &app, error.to_string()).await,
+            Ok(()) => TransferManager::complete(&transfer, events.as_ref()).await,
+            Err(error) => {
+                TransferManager::fail(&transfer, events.as_ref(), error.to_string()).await
+            }
         }
     });
     manager.track_worker(task_id, worker).await;

@@ -132,10 +132,10 @@ pub(crate) fn run() {
                 )?;
                 sync.start_scheduler()?;
                 install_oauth_deep_links(app, &sync)?;
+                let events = std::sync::Arc::new(super::TauriEventSink::new(app.handle().clone()));
                 let sessions =
-                    ssh::SshService::new(profiles.clone(), audit.clone(), app.handle().clone());
-                let sftp =
-                    sftp::SftpService::new(profiles.clone(), audit.clone(), app.handle().clone());
+                    ssh::SshService::new(profiles.clone(), audit.clone(), events.clone());
+                let sftp = sftp::SftpService::new(profiles.clone(), audit.clone(), events);
                 app.manage(crate::snippet::SnippetService::new(database.clone()));
                 app.manage(groups);
                 app.manage(vault);
@@ -304,10 +304,9 @@ fn desktop_run() {
             )?;
             sync.start_scheduler()?;
             install_oauth_deep_links(app, &sync)?;
-            let sessions =
-                ssh::SshService::new(profiles.clone(), audit.clone(), app.handle().clone());
-            let sftp =
-                sftp::SftpService::new(profiles.clone(), audit.clone(), app.handle().clone());
+            let events = std::sync::Arc::new(super::TauriEventSink::new(app.handle().clone()));
+            let sessions = ssh::SshService::new(profiles.clone(), audit.clone(), events.clone());
+            let sftp = sftp::SftpService::new(profiles.clone(), audit.clone(), events);
             app.manage(crate::snippet::SnippetService::new(database.clone()));
             app.manage(groups);
             app.manage(vault);

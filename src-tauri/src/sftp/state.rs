@@ -4,7 +4,6 @@ use std::{
 
 use chrono::{DateTime, Local, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter};
 use tokio::{
     sync::{Mutex, RwLock},
     task::JoinHandle,
@@ -14,7 +13,7 @@ use tokio::{
 use super::backend::join_path;
 use super::backend::{base_name, clean_path, format_time, local_home_dir, FileBackend, FileInfo};
 use super::transfer::TransferManager;
-use super::SftpError;
+use super::{SftpError, SftpEventSink};
 use crate::{
     audit::AuditRepository,
     error::CommandError,
@@ -26,7 +25,7 @@ const MAX_EDITABLE_FILE_SIZE: usize = 10 * 1024 * 1024;
 const BINARY_SNIFF_SIZE: usize = 8 * 1024;
 
 #[derive(Debug, Clone, Serialize)]
-pub struct SftpSessionInfo {
+pub(crate) struct SftpSessionInfo {
     id: String,
     profile_id: String,
     status: String,
@@ -38,7 +37,7 @@ pub struct SftpSessionInfo {
 }
 
 #[derive(Debug, Serialize)]
-pub struct SftpCreateSessionResponse {
+pub(crate) struct SftpCreateSessionResponse {
     session_id: String,
     status: String,
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -46,7 +45,7 @@ pub struct SftpCreateSessionResponse {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct SftpEntry {
+pub(crate) struct SftpEntry {
     name: String,
     path: String,
     is_dir: bool,
@@ -57,7 +56,7 @@ pub struct SftpEntry {
 }
 
 #[derive(Debug, Serialize)]
-pub struct SftpTreeNode {
+pub(crate) struct SftpTreeNode {
     #[serde(flatten)]
     entry: SftpEntry,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -65,25 +64,25 @@ pub struct SftpTreeNode {
 }
 
 #[derive(Debug, Serialize)]
-pub struct SftpListResponse {
+pub(crate) struct SftpListResponse {
     path: String,
     entries: Vec<SftpEntry>,
 }
 
 #[derive(Debug, Serialize)]
-pub struct SftpTreeResponse {
+pub(crate) struct SftpTreeResponse {
     path: String,
     entries: Vec<SftpTreeNode>,
 }
 
 #[derive(Debug, Serialize)]
-pub struct SftpDeleteResponse {
+pub(crate) struct SftpDeleteResponse {
     deleted: usize,
     failed: usize,
 }
 
 #[derive(Debug, Serialize)]
-pub struct SftpFileReadResponse {
+pub(crate) struct SftpFileReadResponse {
     path: String,
     content: String,
     size: u64,
@@ -94,7 +93,7 @@ pub struct SftpFileReadResponse {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct SftpFileWriteRequest {
+pub(crate) struct SftpFileWriteRequest {
     content: String,
     #[serde(default)]
     expected_mod_time: String,
@@ -103,17 +102,10 @@ pub struct SftpFileWriteRequest {
 }
 
 #[derive(Debug, Serialize)]
-pub struct SftpFileWriteResponse {
+pub(crate) struct SftpFileWriteResponse {
     path: String,
     size: u64,
     mod_time: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct SftpEvent {
-    #[serde(rename = "type")]
-    event_type: &'static str,
-    payload: serde_json::Value,
 }
 
 struct SessionData {
@@ -136,7 +128,7 @@ pub(crate) struct SftpService {
     connection_tasks: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
     pub(super) profiles: ProfileService,
     pub(super) audit: AuditRepository,
-    pub(super) app: AppHandle,
+    pub(super) events: Arc<dyn SftpEventSink>,
     pub(super) transfers: TransferManager,
 }
 
@@ -155,13 +147,17 @@ impl HostKeyVerifier for StrictHostKeyVerifier {
 }
 
 impl SftpService {
-    pub(crate) fn new(profiles: ProfileService, audit: AuditRepository, app: AppHandle) -> Self {
+    pub(crate) fn new(
+        profiles: ProfileService,
+        audit: AuditRepository,
+        events: Arc<dyn SftpEventSink>,
+    ) -> Self {
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             connection_tasks: Arc::new(Mutex::new(HashMap::new())),
             profiles,
             audit,
-            app,
+            events,
             transfers: TransferManager::new(),
         }
     }
@@ -287,12 +283,9 @@ impl SftpService {
     }
 
     fn emit_session_status(&self, session_id: &str, status: &str) {
-        let _ = self.app.emit(
-            "xcontrol-sftp-message",
-            SftpEvent {
-                event_type: "sftp_session_status",
-                payload: serde_json::json!({"session_id":session_id,"status":status}),
-            },
+        self.events.emit_sftp(
+            "sftp_session_status",
+            serde_json::json!({"session_id":session_id,"status":status}),
         );
     }
 

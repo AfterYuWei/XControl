@@ -8,7 +8,6 @@ use chrono::{Local, SecondsFormat};
 use russh::{client, ChannelMsg, Disconnect, Pty};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter};
 use tokio::{
     sync::{mpsc, Mutex, Notify},
     time::{timeout, Duration},
@@ -16,14 +15,13 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 use super::transport::{connect_route, ClientHandler, ConnectedRoute, HostKeyVerifier};
-use super::{session_manager::SessionManager, SshError};
+use super::{session_manager::SessionManager, SessionEventSink, SshError};
 use crate::{
     audit::AuditRepository,
     error::CommandError,
     profile::{ProfileService, ResolvedProfileNode},
 };
 
-const SESSION_EVENT: &str = "xcontrol-session-message";
 const COMPLETE_TIMEOUT: Duration = Duration::from_millis(400);
 const PRE_ATTACH_OUTPUT_LIMIT: usize = 1024 * 1024;
 const OSC7_SETUP: &str = concat!(
@@ -114,7 +112,7 @@ pub(super) struct Session {
     commands: Mutex<Option<mpsc::Sender<SessionCommand>>>,
     pending_resize: StdMutex<Option<(u32, u32)>>,
     delivery: StdMutex<SessionDelivery>,
-    app: AppHandle,
+    events: Arc<dyn SessionEventSink>,
 }
 
 #[derive(Default)]
@@ -125,7 +123,7 @@ struct SessionDelivery {
 }
 
 impl Session {
-    fn new(profile: &ResolvedProfileNode, app: AppHandle) -> Self {
+    fn new(profile: &ResolvedProfileNode, events: Arc<dyn SessionEventSink>) -> Self {
         let id = uuid::Uuid::new_v4().to_string();
         let initial_log = ConnectionLogEntry {
             at: now_millis(),
@@ -157,7 +155,7 @@ impl Session {
             commands: Mutex::new(None),
             pending_resize: StdMutex::new(None),
             delivery: StdMutex::new(SessionDelivery::default()),
-            app,
+            events,
         }
     }
 
@@ -317,7 +315,7 @@ impl Session {
             }
         };
         if should_emit {
-            let _ = self.app.emit(SESSION_EVENT, message);
+            self.events.emit_session(json!(message));
         }
     }
 
@@ -405,16 +403,20 @@ pub(crate) struct SshService {
     manager: SessionManager,
     profiles: ProfileService,
     audit: AuditRepository,
-    app: AppHandle,
+    events: Arc<dyn SessionEventSink>,
 }
 
 impl SshService {
-    pub(crate) fn new(profiles: ProfileService, audit: AuditRepository, app: AppHandle) -> Self {
+    pub(crate) fn new(
+        profiles: ProfileService,
+        audit: AuditRepository,
+        events: Arc<dyn SessionEventSink>,
+    ) -> Self {
         Self {
             manager: SessionManager::default(),
             profiles,
             audit,
-            app,
+            events,
         }
     }
 
@@ -426,7 +428,7 @@ impl SshService {
             return Err(CommandError::new("VALIDATION", "profile_id is required"));
         }
         let resolved = self.profiles.resolve_connection(&request.profile_id)?;
-        let session = Arc::new(Session::new(&resolved, self.app.clone()));
+        let session = Arc::new(Session::new(&resolved, self.events.clone()));
         let response = SessionCreateResponse {
             session_id: session.id.clone(),
             status: "connecting".into(),

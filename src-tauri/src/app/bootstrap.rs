@@ -130,7 +130,8 @@ pub(crate) fn run() {
                     backup.clone(),
                     data_dir.join("backups"),
                 )?;
-                sync.start_scheduler()?;
+                let runtime = tauri::async_runtime::handle();
+                sync.start_scheduler(runtime.inner())?;
                 install_oauth_deep_links(app, &sync)?;
                 let events = std::sync::Arc::new(super::TauriEventSink::new(app.handle().clone()));
                 let sessions =
@@ -302,7 +303,8 @@ fn desktop_run() {
                 backup.clone(),
                 data_dir.join("backups"),
             )?;
-            sync.start_scheduler()?;
+            let runtime = tauri::async_runtime::handle();
+            sync.start_scheduler(runtime.inner())?;
             install_oauth_deep_links(app, &sync)?;
             let events = std::sync::Arc::new(super::TauriEventSink::new(app.handle().clone()));
             let sessions = ssh::SshService::new(profiles.clone(), audit.clone(), events.clone());

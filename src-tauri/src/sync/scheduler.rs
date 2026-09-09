@@ -2,6 +2,7 @@ use std::{future::pending, time::Duration};
 
 use chrono::{Local, NaiveTime, TimeZone};
 use tokio::{
+    runtime::Handle,
     sync::mpsc,
     time::{Instant, Sleep},
 };
@@ -29,7 +30,7 @@ enum Message {
 }
 
 impl SyncService {
-    pub fn start_scheduler(&self) -> Result<(), CommandError> {
+    pub fn start_scheduler(&self, runtime: &Handle) -> Result<(), CommandError> {
         let mut slot = self
             .inner
             .scheduler
@@ -40,7 +41,7 @@ impl SyncService {
         }
         let (sender, receiver) = mpsc::channel(CHANNEL_CAPACITY);
         let state = self.clone();
-        let task = tokio::spawn(async move { run(state, receiver).await });
+        let task = runtime.spawn(async move { run(state, receiver).await });
         *slot = Some(SchedulerRuntime { sender, task });
         Ok(())
     }

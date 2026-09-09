@@ -492,6 +492,15 @@ mod tests {
     }
 
     #[test]
+    fn scheduler_starts_without_an_entered_runtime() {
+        let (_directory, state) = state();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+
+        state.start_scheduler(runtime.handle()).unwrap();
+        runtime.block_on(state.stop_scheduler());
+    }
+
+    #[test]
     fn validation_matches_go_contract() {
         let mut settings = SyncSettings::default();
         settings.change_debounce_seconds = 1;

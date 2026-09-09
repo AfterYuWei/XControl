@@ -1,10 +1,10 @@
-use std::{path::PathBuf, sync::Arc, time::SystemTime};
+use std::{sync::Arc, time::SystemTime};
 
 use chrono::{DateTime, Utc};
 use russh_sftp::client::SftpSession;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use crate::ssh::transport::ConnectedRoute;
+use crate::{infrastructure::platform::local_files, ssh::transport::ConnectedRoute};
 
 use super::SftpError;
 
@@ -49,7 +49,7 @@ impl FileBackend {
     pub async fn list(&self, path: &str) -> Result<Vec<FileInfo>, SftpError> {
         match self {
             Self::Local => {
-                let mut directory = tokio::fs::read_dir(posix_to_os(path))
+                let mut directory = tokio::fs::read_dir(local_files::path_from_api(path))
                     .await
                     .map_err(file_error)?;
                 let mut result = Vec::new();
@@ -62,7 +62,7 @@ impl FileBackend {
                         is_dir: metadata.is_dir(),
                         size: metadata.len(),
                         modified: metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH),
-                        mode: local_mode(&metadata),
+                        mode: local_files::mode(&metadata),
                     });
                 }
                 Ok(result)
@@ -93,7 +93,7 @@ impl FileBackend {
     pub async fn stat(&self, path: &str) -> Result<FileInfo, SftpError> {
         match self {
             Self::Local => {
-                let metadata = tokio::fs::metadata(posix_to_os(path))
+                let metadata = tokio::fs::metadata(local_files::path_from_api(path))
                     .await
                     .map_err(file_error)?;
                 Ok(FileInfo {
@@ -102,7 +102,7 @@ impl FileBackend {
                     is_dir: metadata.is_dir(),
                     size: metadata.len(),
                     modified: metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH),
-                    mode: local_mode(&metadata),
+                    mode: local_files::mode(&metadata),
                 })
             }
             Self::Remote { sftp, .. } => {
@@ -121,7 +121,7 @@ impl FileBackend {
 
     pub async fn mkdir(&self, path: &str) -> Result<(), SftpError> {
         match self {
-            Self::Local => tokio::fs::create_dir(posix_to_os(path))
+            Self::Local => tokio::fs::create_dir(local_files::path_from_api(path))
                 .await
                 .map_err(file_error),
             Self::Remote { sftp, .. } => sftp.create_dir(path).await.map_err(sftp_error),
@@ -130,7 +130,7 @@ impl FileBackend {
 
     pub async fn mkdir_all(&self, path: &str) -> Result<(), SftpError> {
         if matches!(self, Self::Local) {
-            return tokio::fs::create_dir_all(posix_to_os(path))
+            return tokio::fs::create_dir_all(local_files::path_from_api(path))
                 .await
                 .map_err(file_error);
         }
@@ -150,16 +150,19 @@ impl FileBackend {
 
     pub async fn rename(&self, old_path: &str, new_path: &str) -> Result<(), SftpError> {
         match self {
-            Self::Local => tokio::fs::rename(posix_to_os(old_path), posix_to_os(new_path))
-                .await
-                .map_err(file_error),
+            Self::Local => tokio::fs::rename(
+                local_files::path_from_api(old_path),
+                local_files::path_from_api(new_path),
+            )
+            .await
+            .map_err(file_error),
             Self::Remote { sftp, .. } => sftp.rename(old_path, new_path).await.map_err(sftp_error),
         }
     }
 
     pub async fn remove_file(&self, path: &str) -> Result<(), SftpError> {
         match self {
-            Self::Local => tokio::fs::remove_file(posix_to_os(path))
+            Self::Local => tokio::fs::remove_file(local_files::path_from_api(path))
                 .await
                 .map_err(file_error),
             Self::Remote { sftp, .. } => sftp.remove_file(path).await.map_err(sftp_error),
@@ -168,7 +171,7 @@ impl FileBackend {
 
     pub async fn remove_dir(&self, path: &str) -> Result<(), SftpError> {
         match self {
-            Self::Local => tokio::fs::remove_dir(posix_to_os(path))
+            Self::Local => tokio::fs::remove_dir(local_files::path_from_api(path))
                 .await
                 .map_err(file_error),
             Self::Remote { sftp, .. } => sftp.remove_dir(path).await.map_err(sftp_error),
@@ -179,7 +182,7 @@ impl FileBackend {
         let mut output = Vec::new();
         match self {
             Self::Local => {
-                let file = tokio::fs::File::open(posix_to_os(path))
+                let file = tokio::fs::File::open(local_files::path_from_api(path))
                     .await
                     .map_err(file_error)?;
                 match limit {
@@ -202,7 +205,7 @@ impl FileBackend {
 
     pub async fn open_read(&self, path: &str) -> Result<BackendReader, SftpError> {
         match self {
-            Self::Local => tokio::fs::File::open(posix_to_os(path))
+            Self::Local => tokio::fs::File::open(local_files::path_from_api(path))
                 .await
                 .map(|file| Box::new(file) as BackendReader)
                 .map_err(file_error),
@@ -216,7 +219,7 @@ impl FileBackend {
 
     pub async fn open_write(&self, path: &str) -> Result<BackendWriter, SftpError> {
         match self {
-            Self::Local => tokio::fs::File::create(posix_to_os(path))
+            Self::Local => tokio::fs::File::create(local_files::path_from_api(path))
                 .await
                 .map(|file| Box::new(file) as BackendWriter)
                 .map_err(file_error),
@@ -230,7 +233,7 @@ impl FileBackend {
 
     pub async fn write(&self, path: &str, data: &[u8]) -> Result<(), SftpError> {
         match self {
-            Self::Local => tokio::fs::write(posix_to_os(path), data)
+            Self::Local => tokio::fs::write(local_files::path_from_api(path), data)
                 .await
                 .map_err(file_error),
             Self::Remote { sftp, .. } => {
@@ -285,56 +288,11 @@ pub(crate) fn format_time(time: SystemTime) -> String {
 }
 
 pub(crate) fn local_home_dir() -> String {
-    dirs::home_dir()
-        .as_deref()
-        .map(local_path_to_api)
-        .unwrap_or_else(|| "/".into())
+    local_files::home_dir()
 }
 
-#[cfg(windows)]
 pub(crate) fn local_path_to_api(path: &std::path::Path) -> String {
-    let value = path.to_string_lossy().replace('\\', "/");
-    if value.as_bytes().get(1) == Some(&b':') {
-        format!("/{value}")
-    } else {
-        value
-    }
-}
-
-#[cfg(not(windows))]
-pub(crate) fn local_path_to_api(path: &std::path::Path) -> String {
-    path.to_string_lossy().into_owned()
-}
-
-#[cfg(windows)]
-fn posix_to_os(path: &str) -> PathBuf {
-    let clean = clean_path(path);
-    if clean.len() > 3 && clean.as_bytes()[0] == b'/' && clean.as_bytes()[2] == b':' {
-        PathBuf::from(clean.trim_start_matches('/').replace('/', "\\"))
-    } else {
-        PathBuf::from(clean.replace('/', "\\"))
-    }
-}
-
-#[cfg(not(windows))]
-fn posix_to_os(path: &str) -> PathBuf {
-    PathBuf::from(clean_path(path))
-}
-
-#[cfg(unix)]
-fn local_mode(metadata: &std::fs::Metadata) -> String {
-    use std::os::unix::fs::PermissionsExt;
-    format!("{:o}", metadata.permissions().mode() & 0o777)
-}
-
-#[cfg(not(unix))]
-fn local_mode(metadata: &std::fs::Metadata) -> String {
-    if metadata.permissions().readonly() {
-        "r--r--r--"
-    } else {
-        "rw-rw-rw-"
-    }
-    .into()
+    local_files::path_to_api(path)
 }
 
 fn file_error(error: std::io::Error) -> SftpError {

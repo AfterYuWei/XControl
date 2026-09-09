@@ -5,15 +5,8 @@
 
 use std::collections::HashMap;
 
-use aes_gcm::{
-    aead::{Aead, KeyInit, Payload},
-    Aes256Gcm, Nonce,
-};
-use argon2::{Algorithm, Argon2, Params, Version};
-use base64::{engine::general_purpose::STANDARD, Engine};
 use chrono::{SecondsFormat, Utc};
 use rusqlite::{params, Transaction};
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
@@ -21,217 +14,27 @@ use zeroize::Zeroizing;
 use crate::{
     audit::AuditRepository,
     error::CommandError,
-    group::{Group, GroupService},
+    group::GroupService,
     infrastructure::database::Database,
-    profile::{Profile, ProfileService},
-    vault::{decode_plaintext, encode_plaintext, Credential, Encryptor, VaultItem, VaultService},
+    profile::ProfileService,
+    vault::{decode_plaintext, encode_plaintext, Encryptor, VaultService},
 };
 
-const FORMAT: &str = "xcontrol-backup";
-const VERSION: i64 = 1;
-const MODE_NONE: &str = "none";
-const MODE_ENCRYPTED: &str = "encrypted";
-const MODE_PLAIN: &str = "plain";
+use super::{
+    format::{
+        decode_backup_file, decrypt_backup, encrypt_backup, invalid_backup, KdfParams,
+        ParsedBackup, FORMAT, MODE_ENCRYPTED, MODE_NONE, MODE_PLAIN, VERSION,
+    },
+    model::{
+        strip_credentials, BackupFile, BackupGroup, BackupImportResult, BackupPayload,
+        BackupPreview, BackupProfile, BackupSnapshot, BackupSnippet, BackupStats, BackupVaultItem,
+    },
+};
+
 const STRATEGY_SKIP: &str = "skip";
 const STRATEGY_OVERWRITE: &str = "overwrite";
 const STRATEGY_REGENERATE: &str = "regenerate";
 const MAX_BACKUP_SIZE: u64 = 50 << 20;
-const AAD: &[u8] = b"xcontrol-backup:1";
-const NONCE_LEN: usize = 12;
-
-#[derive(Debug, Serialize, Deserialize)]
-struct KdfParams {
-    algo: String,
-    salt: String,
-    time: u32,
-    memory: u32,
-    threads: u8,
-}
-
-impl KdfParams {
-    fn generate() -> Result<Self, CommandError> {
-        let mut salt = [0_u8; 16];
-        getrandom::fill(&mut salt)
-            .map_err(|error| CommandError::new("KDF_FAILED", error.to_string()))?;
-        Ok(Self {
-            algo: "argon2id".into(),
-            salt: STANDARD.encode(salt),
-            time: 3,
-            memory: 64 * 1024,
-            threads: 2,
-        })
-    }
-
-    fn derive(&self, password: &str) -> Result<Zeroizing<[u8; 32]>, String> {
-        if self.algo != "argon2id" {
-            return Err(format!("unsupported kdf algo: {}", self.algo));
-        }
-        let salt = STANDARD
-            .decode(&self.salt)
-            .map_err(|_| "invalid kdf salt".to_owned())?;
-        if salt.is_empty() {
-            return Err("invalid kdf salt".into());
-        }
-        if self.time == 0 || self.time > 100 {
-            return Err(format!("invalid kdf time: {}", self.time));
-        }
-        if self.memory == 0 || self.memory > 1 << 20 {
-            return Err(format!("invalid kdf memory: {}", self.memory));
-        }
-        if self.threads == 0 || self.threads > 16 {
-            return Err(format!("invalid kdf threads: {}", self.threads));
-        }
-        let params = Params::new(self.memory, self.time, u32::from(self.threads), Some(32))
-            .map_err(|error| error.to_string())?;
-        let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
-        let mut key = Zeroizing::new([0_u8; 32]);
-        argon
-            .hash_password_into(password.as_bytes(), &salt, key.as_mut())
-            .map_err(|error| error.to_string())?;
-        Ok(key)
-    }
-}
-
-#[derive(Default, Serialize, Deserialize)]
-struct BackupFile {
-    format: String,
-    version: i64,
-    #[serde(default = "zero_time")]
-    exported_at: String,
-    credential_mode: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    kdf: Option<KdfParams>,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    payload: String,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    groups: Vec<BackupGroup>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    vault: Vec<BackupVaultItem>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    profiles: Vec<BackupProfile>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    snippets: Vec<BackupSnippet>,
-}
-
-#[derive(Default, Serialize, Deserialize)]
-struct BackupPayload {
-    #[serde(default)]
-    groups: Vec<BackupGroup>,
-    #[serde(default)]
-    vault: Vec<BackupVaultItem>,
-    #[serde(default)]
-    profiles: Vec<BackupProfile>,
-    #[serde(default)]
-    snippets: Vec<BackupSnippet>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct BackupGroup {
-    id: String,
-    name: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    parent_id: String,
-    icon: String,
-    sort_order: i64,
-    #[serde(default = "zero_time")]
-    created_at: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct BackupVaultItem {
-    id: String,
-    name: String,
-    #[serde(rename = "type")]
-    entry_type: String,
-    username: String,
-    remark: String,
-    fingerprint: String,
-    credential: Option<Credential>,
-    #[serde(default = "zero_time")]
-    created_at: String,
-    #[serde(default = "zero_time")]
-    updated_at: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct BackupProfile {
-    id: String,
-    name: String,
-    host: String,
-    port: i64,
-    username: String,
-    auth_type: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    icon: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    vault_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    inline_credential: Option<Credential>,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    proxy_password: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    group_id: String,
-    #[serde(default)]
-    tags: Vec<String>,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    options: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    note: String,
-    sort_order: i64,
-    #[serde(default = "zero_time")]
-    created_at: String,
-    #[serde(default = "zero_time")]
-    updated_at: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct BackupSnippet {
-    id: String,
-    name: String,
-    content: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    description: String,
-    #[serde(default)]
-    tags: Vec<String>,
-    is_global: bool,
-    #[serde(default = "zero_time")]
-    created_at: String,
-    #[serde(default = "zero_time")]
-    updated_at: String,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
-pub struct BackupStats {
-    groups: usize,
-    vault: usize,
-    profiles: usize,
-    snippets: usize,
-}
-
-#[derive(Debug, Serialize)]
-pub struct BackupPreview {
-    credential_mode: String,
-    exported_at: String,
-    stats: BackupStats,
-    conflicts: BackupStats,
-}
-
-#[derive(Debug, Serialize)]
-pub struct BackupSnapshot {
-    groups: Vec<Group>,
-    profiles: Vec<Profile>,
-    vault: Vec<VaultItem>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct BackupImportResult {
-    imported: BackupStats,
-    skipped: BackupStats,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    snapshot: Option<BackupSnapshot>,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    snapshot_error: String,
-}
 
 #[derive(Clone)]
 pub(crate) struct BackupService {
@@ -608,68 +411,6 @@ impl BackupService {
         }
         Ok(result)
     }
-}
-
-struct ParsedBackup {
-    payload: BackupPayload,
-    mode: String,
-    exported_at: String,
-}
-
-fn decode_backup_file(raw: &[u8], password: &str) -> Result<ParsedBackup, CommandError> {
-    let mut file: BackupFile = serde_json::from_slice(raw)
-        .map_err(|error| invalid_backup(format!("备份文件格式无效: {error}")))?;
-    if file.format != FORMAT {
-        return Err(invalid_backup("不是有效的 XControl 备份文件"));
-    }
-    if file.version > VERSION {
-        return Err(invalid_backup(format!(
-            "备份版本 {} 过新，当前仅支持 ≤ {VERSION}",
-            file.version
-        )));
-    }
-    let mode = file.credential_mode.clone();
-    let mut payload = match mode.as_str() {
-        MODE_ENCRYPTED => {
-            if password.is_empty() {
-                return Err(CommandError::new(
-                    "PASSWORD_REQUIRED",
-                    "该备份已加密，请输入导出密码",
-                ));
-            }
-            let kdf = file
-                .kdf
-                .take()
-                .ok_or_else(|| invalid_backup("加密备份缺少 kdf 参数"))?;
-            let key = kdf
-                .derive(password)
-                .map_err(|error| invalid_backup(format!("kdf 参数无效: {error}")))?;
-            let plaintext = decrypt_backup(&key, &file.payload)
-                .map_err(|_| CommandError::new("INVALID_PASSWORD", "密码错误或备份文件已损坏"))?;
-            serde_json::from_slice(&plaintext)
-                .map_err(|error| invalid_backup(format!("备份内容损坏: {error}")))?
-        }
-        MODE_NONE | MODE_PLAIN => BackupPayload {
-            groups: file.groups,
-            vault: file.vault,
-            profiles: file.profiles,
-            snippets: file.snippets,
-        },
-        _ => {
-            return Err(invalid_backup(format!(
-                "未知的 credential_mode: {:?}",
-                file.credential_mode
-            )));
-        }
-    };
-    if mode == MODE_NONE {
-        strip_credentials(&mut payload);
-    }
-    Ok(ParsedBackup {
-        payload,
-        mode,
-        exported_at: file.exported_at,
-    })
 }
 
 fn export_groups(transaction: &Transaction<'_>) -> Result<Vec<BackupGroup>, CommandError> {
@@ -1170,18 +911,6 @@ fn remap_jump_profile(options: &mut String, ids: &HashMap<String, String>) {
     }
 }
 
-fn strip_credentials(payload: &mut BackupPayload) {
-    payload.vault.clear();
-    for profile in &mut payload.profiles {
-        profile.inline_credential = None;
-        profile.proxy_password.clear();
-        profile.vault_id.clear();
-        if profile.auth_type == "vault" {
-            profile.auth_type = "none".into();
-        }
-    }
-}
-
 fn stats(payload: &BackupPayload) -> BackupStats {
     BackupStats {
         groups: payload.groups.len(),
@@ -1197,61 +926,6 @@ fn normalize_vault_username(entry_type: &str, username: &str) -> String {
     } else {
         String::new()
     }
-}
-
-fn zero_time() -> String {
-    "0001-01-01T00:00:00Z".into()
-}
-
-fn invalid_backup(message: impl Into<String>) -> CommandError {
-    CommandError::new("INVALID_BACKUP_FORMAT", message)
-}
-
-fn encrypt_backup(key: &[u8; 32], plaintext: &[u8]) -> Result<String, String> {
-    let mut nonce = [0_u8; NONCE_LEN];
-    getrandom::fill(&mut nonce).map_err(|error| error.to_string())?;
-    encrypt_backup_with_nonce(key, plaintext, nonce)
-}
-
-fn encrypt_backup_with_nonce(
-    key: &[u8; 32],
-    plaintext: &[u8],
-    nonce: [u8; NONCE_LEN],
-) -> Result<String, String> {
-    let cipher = Aes256Gcm::new(aes_gcm::Key::<Aes256Gcm>::from_slice(key));
-    let body = cipher
-        .encrypt(
-            Nonce::from_slice(&nonce),
-            Payload {
-                msg: plaintext,
-                aad: AAD,
-            },
-        )
-        .map_err(|_| "encrypt failed".to_owned())?;
-    let mut output = Vec::with_capacity(NONCE_LEN + body.len());
-    output.extend_from_slice(&nonce);
-    output.extend_from_slice(&body);
-    Ok(STANDARD.encode(output))
-}
-
-fn decrypt_backup(key: &[u8; 32], encoded: &str) -> Result<Vec<u8>, String> {
-    let raw = STANDARD
-        .decode(encoded)
-        .map_err(|error| error.to_string())?;
-    if raw.len() < NONCE_LEN {
-        return Err("ciphertext too short".into());
-    }
-    let (nonce, body) = raw.split_at(NONCE_LEN);
-    let cipher = Aes256Gcm::new(aes_gcm::Key::<Aes256Gcm>::from_slice(key));
-    cipher
-        .decrypt(
-            Nonce::from_slice(nonce),
-            Payload {
-                msg: body,
-                aad: AAD,
-            },
-        )
-        .map_err(|_| "decrypt failed".to_owned())
 }
 
 #[derive(Clone, Copy)]
@@ -1291,6 +965,10 @@ fn result_error<T>(result: Result<T, CommandError>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        backup::{format::encrypt_backup_with_nonce, model::zero_time},
+        vault::Credential,
+    };
 
     fn state() -> (tempfile::TempDir, BackupService) {
         let directory = tempfile::tempdir().unwrap();

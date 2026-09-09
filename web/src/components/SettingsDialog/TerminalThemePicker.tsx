@@ -1,6 +1,7 @@
 import { Check } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { terminalThemes } from '@/lib/terminalThemes'
+import { Button } from '@/components/ui/button'
 
 interface TerminalThemePickerProps {
   open: boolean
@@ -28,7 +29,9 @@ export function TerminalThemePicker({ open, onOpenChange, value, onChange }: Ter
             const swatches = [t.black, t.red, t.green, t.yellow, t.blue, t.magenta, t.cyan, t.white]
 
             return (
-              <button
+              <Button
+                type="button"
+                variant="ghost"
                 key={theme.id}
                 className={`terminal-theme-item ${isSelected ? 'selected' : ''}`}
                 onClick={() => {
@@ -65,7 +68,7 @@ export function TerminalThemePicker({ open, onOpenChange, value, onChange }: Ter
                 {isSelected && (
                   <Check size={18} className="terminal-theme-check" />
                 )}
-              </button>
+              </Button>
             )
           })}
         </div>

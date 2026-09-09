@@ -8,6 +8,7 @@ import { useSessionStore } from '@/store/session'
 import { useSidebarDetailStore } from '@/store/sidebarDetail'
 import { useServerDetailStore } from '@/store/serverDetail'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Input } from '@/components/ui/input'
 import { useServerMetrics } from '@/hooks/useServerMetrics'
 import { EditorDialog } from '@/components/Editor/EditorDialog'
 import { SftpContextMenu, type MenuItem } from '@/components/Sftp/SftpContextMenu'
@@ -754,7 +755,7 @@ function PathBreadcrumb({ path, onNavigate }: { path: string; onNavigate: (path:
   if (isEditing) {
     return (
       <div className="sdetail-file-path editing">
-        <input
+        <Input
           ref={inputRef}
           type="text"
           value={editValue}

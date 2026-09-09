@@ -1,5 +1,6 @@
 import { Sun, Moon, Monitor } from 'lucide-react'
 import { useSettingsStore } from '@/store/settings'
+import { Button } from '@/components/ui/button'
 
 interface ThemeToggleProps {
   className?: string
@@ -41,7 +42,9 @@ export function ThemeToggle({
         : 'Theme: Light'
 
   return (
-    <button
+    <Button
+      type="button"
+      variant="ghost"
       className={className}
       data-tip={tooltipLabel}
       onClick={cycle}
@@ -49,6 +52,6 @@ export function ThemeToggle({
     >
       <Icon size={13} />
       {showLabel ? <span className="hdr-icon-btn-label">{buttonLabel}</span> : null}
-    </button>
+    </Button>
   )
 }

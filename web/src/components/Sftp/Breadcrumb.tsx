@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight, Home } from 'lucide-react'
 import { dropPayloadAttr } from '@/lib/dragRegistry'
+import { Input } from '@/components/ui/input'
 import type { SftpDropTarget } from '@/store/sftp'
 
 interface BreadcrumbProps {
@@ -89,7 +90,7 @@ export function Breadcrumb({ path, onNavigate, dropTargetPath, makeDropTarget }:
   if (editing) {
     return (
       <div className="sftp-crumb">
-        <input
+        <Input
           className="sftp-crumb-input"
           autoFocus
           value={draft}

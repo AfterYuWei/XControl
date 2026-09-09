@@ -6,6 +6,7 @@ import { StatusBar } from '@/components/StatusBar'
 import { CommandPalette } from '@/components/CommandPalette'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { Toaster } from '@/components/ui/sonner'
+import { Input } from '@/components/ui/input'
 import { useProfileStore } from '@/store/profile'
 import { useSessionStore } from '@/store/session'
 import { useSettingsStore } from '@/store/settings'
@@ -214,8 +215,9 @@ export function Layout() {
         <div className="header-center" data-tauri-drag-region={desktop || undefined}>
           <div ref={searchRef} className="header-search">
             <Search size={14} className="header-search-icon" />
-            <input
+            <Input
               type="text"
+              className="header-search-input"
               placeholder="搜索服务器或密钥…"
               autoComplete="off"
               spellCheck={false}

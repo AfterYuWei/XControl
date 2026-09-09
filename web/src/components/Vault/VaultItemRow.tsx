@@ -4,6 +4,7 @@ import { vaultApi } from '@/api/vault'
 import { toast } from 'sonner'
 import { VAULT_TYPE_LABELS, type ProfileRef, type VaultItem } from '@/types/vault'
 import { VAULT_TYPE_ICONS } from '@/lib/vaultIcons'
+import { Button } from '@/components/ui/button'
 
 interface VaultItemRowProps {
   item: VaultItem
@@ -83,17 +84,20 @@ export function VaultItemRow({ item, onEdit, onDelete }: VaultItemRowProps) {
       )}
 
       <div className="vault-card-actions">
-        <button className="vault-card-act" onClick={() => onEdit(item)} title="编辑">
+        <Button type="button" variant="ghost" size="icon-xs" className="vault-card-act" onClick={() => onEdit(item)} title="编辑">
           <Pencil size={14} />
-        </button>
-        <button
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
           className="vault-card-act vault-card-act-danger"
           onClick={handleDelete}
           disabled={checkingDeleteRefs}
           title="删除"
         >
           {item.ref_count > 0 ? <AlertTriangle size={14} /> : <Trash2 size={14} />}
-        </button>
+        </Button>
       </div>
     </div>
   )

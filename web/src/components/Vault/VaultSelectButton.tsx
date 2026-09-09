@@ -4,6 +4,7 @@ import { vaultApi } from '@/api/vault'
 import { VAULT_TYPE_LABELS, type VaultItem } from '@/types/vault'
 import { VAULT_TYPE_ICONS } from '@/lib/vaultIcons'
 import { VaultSelectDialog } from './VaultSelectDialog'
+import { Button } from '@/components/ui/button'
 
 interface VaultSelectButtonProps {
   vaultId?: string
@@ -43,7 +44,7 @@ export function VaultSelectButton({ vaultId, onChange, onItemResolved }: VaultSe
 
   return (
     <>
-      <button type="button" className="vault-select-btn" onClick={() => setDialogOpen(true)}>
+      <Button type="button" variant="outline" className="vault-select-btn" onClick={() => setDialogOpen(true)}>
         {item ? (
           <span className="vault-select-btn-summary">
             {Icon && <Icon size={14} />}
@@ -59,7 +60,7 @@ export function VaultSelectButton({ vaultId, onChange, onItemResolved }: VaultSe
           <span className="vault-select-btn-placeholder">点击选择 Vault 凭据</span>
         )}
         <ChevronRight size={14} style={{ color: 'var(--fg-4)' }} />
-      </button>
+      </Button>
 
       <VaultSelectDialog
         open={dialogOpen}

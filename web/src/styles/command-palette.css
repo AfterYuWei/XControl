@@ -1,18 +1,4 @@
 /* ===== COMMAND PALETTE ===== */
-.pal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(6px);
-  z-index: 100;
-  display: none;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: min(18vh, 160px);
-}
-.pal-overlay.open {
-  display: flex;
-}
 .pal {
   width: 500px;
   max-height: 400px;
@@ -60,12 +46,16 @@
   padding: 8px 10px 4px;
 }
 .pal-item {
+  width: 100%;
+  height: auto;
   display: flex;
   align-items: center;
   gap: 9px;
   padding: 7px 10px;
   border-radius: var(--r);
   cursor: pointer;
+  justify-content: flex-start;
+  font-weight: 400;
   transition: background 0.06s;
 }
 .pal-item:hover,
@@ -114,4 +104,3 @@
 .pal-empty svg {
   opacity: 0.45;
 }
-

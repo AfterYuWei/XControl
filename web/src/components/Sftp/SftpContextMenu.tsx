@@ -1,4 +1,11 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu'
 
 export interface MenuItem {
   id: string
@@ -17,50 +24,30 @@ interface SftpContextMenuProps {
   onClose: () => void
 }
 
-/** Floating right-click menu. Repositions itself if it would overflow the
- *  viewport. Closes on outside click or Escape. */
+/** Controlled shadcn context menu anchored at the captured pointer position. */
 export function SftpContextMenu({ x, y, items, onClose }: SftpContextMenuProps) {
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const rect = el.getBoundingClientRect()
-    const vw = window.innerWidth
-    const vh = window.innerHeight
-    el.style.left = `${Math.min(x, vw - rect.width - 8)}px`
-    el.style.top = `${Math.min(y, vh - rect.height - 8)}px`
-  }, [x, y])
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
-
   return (
-    <>
-      <div className="fixed inset-0 z-40" onClick={onClose} onContextMenu={(e) => { e.preventDefault(); onClose() }} />
-      <div className="sftp-ctx-menu fixed z-50" ref={ref} style={{ left: x, top: y }}>
+    <ContextMenu open onOpenChange={(open) => !open && onClose()}>
+      <ContextMenuTrigger asChild>
+        <span className="pointer-events-none fixed size-px" style={{ left: x, top: y }} />
+      </ContextMenuTrigger>
+      <ContextMenuContent className="min-w-[168px]" sideOffset={0} collisionPadding={8}>
         {items.map((item) =>
           item.divider ? (
-            <div key={item.id} className="sftp-ctx-divider" />
+            <ContextMenuSeparator key={item.id} />
           ) : (
-            <button
+            <ContextMenuItem
               key={item.id}
-              className={`sftp-ctx-item ${item.danger ? 'danger' : ''}`}
+              variant={item.danger ? 'destructive' : 'default'}
               disabled={item.disabled}
-              onClick={() => {
-                item.onClick?.()
-                onClose()
-              }}
+              onSelect={item.onClick}
             >
-              {item.icon && <span className="sftp-ctx-icon">{item.icon}</span>}
+              {item.icon && <span className="flex shrink-0 items-center justify-center text-muted-foreground">{item.icon}</span>}
               {item.label}
-            </button>
+            </ContextMenuItem>
           )
         )}
-      </div>
-    </>
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }

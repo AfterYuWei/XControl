@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { FolderUp, X } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 import { useSessionStore } from '@/store/session'
 import { useSftpStore } from './storeContext'
 import { type PaneSide } from '@/store/sftp'
@@ -120,9 +121,9 @@ export function ServerPicker({ open, pane, onClose }: ServerPickerProps) {
         <div className="sftp-picker">
         <div className="sftp-picker-hdr">
           <span className="sftp-picker-title">选择服务器</span>
-          <button className="sftp-picker-x" onClick={onClose} aria-label="关闭">
+          <Button type="button" variant="ghost" size="icon-xs" className="sftp-picker-x" onClick={onClose} aria-label="关闭">
             <X size={15} />
-          </button>
+          </Button>
         </div>
         <div className="sftp-picker-sub">
           单击选中服务器，双击进行连接。当前终端会话的服务器已高亮。

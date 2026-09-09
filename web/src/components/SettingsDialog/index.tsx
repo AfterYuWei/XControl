@@ -6,6 +6,8 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { OptionSelect } from '@/components/OptionSelect'
 import { Switch } from '@/components/ui/switch'
+import { Button } from '@/components/ui/button'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Monitor, Terminal, Palette, Type, ChevronRight, DatabaseBackup, CloudSync, Info, FileText } from 'lucide-react'
 import { TerminalThemePicker } from './TerminalThemePicker'
 import { BackupPanel } from './BackupPanel'
@@ -134,27 +136,32 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           <DialogTitle>设置</DialogTitle>
         </DialogHeader>
 
-        <div className="settings-layout">
+        <Tabs
+          className="settings-layout"
+          orientation="vertical"
+          value={activeTab}
+          onValueChange={(value) => setActiveTab(value as SettingsTab)}
+        >
           {/* 左侧导航 */}
-          <nav className="settings-nav">
+          <TabsList className="settings-nav" variant="line" aria-label="设置分类">
             {tabs.map((tab) => {
               const Icon = tab.icon
               return (
-                <button
+                <TabsTrigger
                   key={tab.key}
-                  className={`settings-nav-item ${activeTab === tab.key ? 'active' : ''}`}
-                  onClick={() => setActiveTab(tab.key)}
+                  value={tab.key}
+                  className="settings-nav-item"
                 >
                   <Icon size={15} />
                   <span>{tab.label}</span>
-                </button>
+                </TabsTrigger>
               )
             })}
-          </nav>
+          </TabsList>
 
           {/* 右侧内容 */}
-          <div className="settings-content">
-            {activeTab === 'appearance' && (
+          <div className="settings-content-shell">
+            <TabsContent value="appearance" className="settings-content">
               <div className="settings-section">
                 <div className="settings-section-title">
                   <Monitor size={14} />
@@ -214,9 +221,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   </div>
                 </div>
               </div>
-            )}
+            </TabsContent>
 
-            {activeTab === 'terminal' && (
+            <TabsContent value="terminal" className="settings-content">
               <div className="settings-section">
                 <div className="settings-section-title">
                   <Terminal size={14} />
@@ -232,13 +239,15 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     </Label>
                     <span className="settings-field-desc">终端颜色方案</span>
                   </div>
-                  <button
+                  <Button
+                    type="button"
+                    variant="outline"
                     className="settings-theme-btn"
                     onClick={() => setThemePickerOpen(true)}
                   >
                     <span>{currentThemeLabel}</span>
                     <ChevronRight size={14} />
-                  </button>
+                  </Button>
                 </div>
 
                 {/* 终端主题选择器 Dialog */}
@@ -320,17 +329,17 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   />
                 </div>
               </div>
-            )}
+            </TabsContent>
 
-            {activeTab === 'backup' && <BackupPanel />}
+            <TabsContent value="backup" className="settings-content"><BackupPanel /></TabsContent>
 
-            {activeTab === 'sync' && <SyncPanel />}
+            <TabsContent value="sync" className="settings-content"><SyncPanel /></TabsContent>
 
-            {activeTab === 'logs' && <LogPanel />}
+            <TabsContent value="logs" className="settings-content"><LogPanel /></TabsContent>
 
-            {activeTab === 'about' && <AboutPanel />}
+            <TabsContent value="about" className="settings-content"><AboutPanel /></TabsContent>
           </div>
-        </div>
+        </Tabs>
       </DialogContent>
     </Dialog>
   )

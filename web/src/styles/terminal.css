@@ -1,8 +1,6 @@
 /* ===== TERMINAL ===== */
-/* Terminal container adapts its background/border to the active terminal theme.
-   The border color is set equal to the terminal background (driven from
-   TerminalView.tsx) so the container, its padding ring, and the xterm canvas
-   form one continuous color — no visible seam, for an immersive feel. */
+/* Terminal content follows its selected palette while the outer border and
+   elevation follow the application theme, keeping the window edge legible. */
 .term-wrap {
   flex: 1;
   display: flex;

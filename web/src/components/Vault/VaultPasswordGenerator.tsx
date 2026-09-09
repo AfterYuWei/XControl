@@ -1,6 +1,8 @@
 import { useState, useMemo, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Slider } from '@/components/ui/slider'
 import { Copy, Check, Dices } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -65,38 +67,37 @@ export function VaultPasswordGenerator({ onApply }: VaultPasswordGeneratorProps)
     <div className="vault-gen-pwd">
       <div className="vault-gen-pwd-row">
         <label className="vault-gen-pwd-label">长度: {length}</label>
-        <input
-          type="range"
+        <Slider
           min={8}
           max={64}
-          value={length}
-          onChange={(e) => setLength(parseInt(e.target.value))}
+          value={[length]}
+          onValueChange={([value]) => setLength(value)}
           className="vault-gen-pwd-slider"
         />
       </div>
 
       <div className="vault-gen-pwd-charset">
-        <label className="vault-gen-pwd-check">
-          <input type="checkbox" checked={useLower} onChange={(e) => setUseLower(e.target.checked)} />
+        <label className="vault-gen-pwd-check" htmlFor="vault-gen-lower">
+          <Checkbox id="vault-gen-lower" checked={useLower} onCheckedChange={(checked) => setUseLower(Boolean(checked))} />
           <span>a-z</span>
         </label>
-        <label className="vault-gen-pwd-check">
-          <input type="checkbox" checked={useUpper} onChange={(e) => setUseUpper(e.target.checked)} />
+        <label className="vault-gen-pwd-check" htmlFor="vault-gen-upper">
+          <Checkbox id="vault-gen-upper" checked={useUpper} onCheckedChange={(checked) => setUseUpper(Boolean(checked))} />
           <span>A-Z</span>
         </label>
-        <label className="vault-gen-pwd-check">
-          <input type="checkbox" checked={useDigit} onChange={(e) => setUseDigit(e.target.checked)} />
+        <label className="vault-gen-pwd-check" htmlFor="vault-gen-digit">
+          <Checkbox id="vault-gen-digit" checked={useDigit} onCheckedChange={(checked) => setUseDigit(Boolean(checked))} />
           <span>0-9</span>
         </label>
-        <label className="vault-gen-pwd-check">
-          <input type="checkbox" checked={useSymbol} onChange={(e) => setUseSymbol(e.target.checked)} />
+        <label className="vault-gen-pwd-check" htmlFor="vault-gen-symbol">
+          <Checkbox id="vault-gen-symbol" checked={useSymbol} onCheckedChange={(checked) => setUseSymbol(Boolean(checked))} />
           <span>符号</span>
         </label>
-        <label className="vault-gen-pwd-check">
-          <input
-            type="checkbox"
+        <label className="vault-gen-pwd-check" htmlFor="vault-gen-ambiguous">
+          <Checkbox
+            id="vault-gen-ambiguous"
             checked={excludeAmbiguous}
-            onChange={(e) => setExcludeAmbiguous(e.target.checked)}
+            onCheckedChange={(checked) => setExcludeAmbiguous(Boolean(checked))}
           />
           <span>排除易混淆</span>
         </label>

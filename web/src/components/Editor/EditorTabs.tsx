@@ -1,4 +1,5 @@
 import { X, FileText } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 export interface EditorTabItem {
   id: string
@@ -30,7 +31,10 @@ export function EditorTabs({ tabs, onSelect, onClose }: EditorTabsProps) {
           <FileText size={12} className="editor-tab-icon" />
           <span className="editor-tab-name">{tab.filename}</span>
           {tab.dirty && <span className="editor-tab-dirty" />}
-          <button
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
             className="editor-tab-close"
             onClick={(e) => {
               e.stopPropagation()
@@ -39,7 +43,7 @@ export function EditorTabs({ tabs, onSelect, onClose }: EditorTabsProps) {
             title="关闭"
           >
             <X size={12} />
-          </button>
+          </Button>
         </div>
       ))}
     </div>

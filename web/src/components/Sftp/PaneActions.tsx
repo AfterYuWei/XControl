@@ -11,6 +11,7 @@ import {
   EyeOff,
 } from 'lucide-react'
 import type { SftpViewMode } from '@/store/sftp'
+import { Button } from '@/components/ui/button'
 
 interface PaneActionsProps {
   view: SftpViewMode
@@ -86,7 +87,10 @@ function ActionBtn({
   disabled?: boolean
 }) {
   return (
-    <button
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-xs"
       className="sftp-act-btn"
       title={label}
       aria-label={label}
@@ -94,6 +98,6 @@ function ActionBtn({
       disabled={disabled}
     >
       {icon}
-    </button>
+    </Button>
   )
 }

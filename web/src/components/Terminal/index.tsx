@@ -22,10 +22,10 @@ export function TerminalView() {
 
   const themeMeta = getTerminalThemeMeta(terminalTheme)
   const termBg = themeMeta.theme.background
-  // 沉浸式：边框颜色与终端背景严格一致，消除“边框与终端背景色不一致”的视觉割裂；
-  // 内阴影改为极轻量的中性外阴影，仅在卡片外部提供层次，不在终端内部产生异色描边。
-  const termBorder = termBg
-  const termShadow = '0 1px 2px rgba(0, 0, 0, 0.12)'
+  // The outer boundary follows the application chrome rather than the terminal
+  // palette, so light terminal themes remain distinct from the surrounding UI.
+  const termBorder = 'var(--surface-border)'
+  const termShadow = 'var(--term-shadow)'
 
   return (
     <div

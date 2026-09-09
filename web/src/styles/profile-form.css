@@ -1,6 +1,6 @@
 /* ===== PROFILE FORM (add/edit connection dialog) ===== */
-/* Vercel-style: vertical label-above-input layout, compact grid card,
-   monospace inputs, sharp focus rings. No horizontal label columns. */
+/* Vercel-style: vertical label-above-input layout and compact grid card.
+   Interactive controls keep the shared shadcn focus treatment. */
 .pf-form {
   display: flex;
   flex-direction: column;
@@ -208,23 +208,9 @@
 .pf-icon-prefix:hover {
   color: var(--fg);
 }
-/* Icon popover — floating card anchored below the prefix button. */
+/* Icon picker content inside the shared shadcn Popover. */
 .pf-icon-popover {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 60;
-  width: 220px;
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: var(--r);
-  box-shadow: var(--shadow-floating);
-  padding: 10px;
-  animation: pf-popover-in 0.12s ease;
-}
-@keyframes pf-popover-in {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
+  font-family: var(--sans);
 }
 .pf-icon-popover-title {
   font: 500 var(--sans-size) / 1 var(--sans);
@@ -265,15 +251,11 @@
   font-size: 11.5px !important;
   resize: vertical;
 }
-/* Sharp focus ring — crisp black (light) / white (dark) border on focus.
-   Dark-mode inputs also get an elevated background + brighter border so they
-   stay readable against the dark dialog panel. */
 /* Dark mode default input state — visible background + border. */
 :root.dark .pf-field input,
 :root.dark .pf-field textarea,
 :root.dark .pf-field select {
   background: var(--bg-input) !important;
-  border-color: var(--border) !important;
   color: var(--fg) !important;
 }
 :root.dark .pf-field input::placeholder,
@@ -292,14 +274,6 @@
 .pf-field select:hover:not(:disabled):not(:focus-visible) {
   border-color: var(--input-hover-border) !important;
   background: var(--input-hover-bg) !important;
-}
-.pf-field input:focus-visible,
-.pf-field textarea:focus-visible,
-.pf-field select:focus-visible {
-  border-color: var(--input-focus-border) !important;
-  background: var(--input-focus-bg) !important;
-  box-shadow: var(--input-focus-shadow) !important;
-  outline: none !important;
 }
 /* Error message. */
 .pf-error {
@@ -328,4 +302,3 @@
 .pf-btn-submit {
   min-width: 96px;
 }
-

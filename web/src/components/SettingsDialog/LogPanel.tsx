@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { Clipboard, FileText, RefreshCw, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from 'sonner'
 
 type LogKind = 'frontend' | 'backend'
@@ -57,14 +58,16 @@ export function LogPanel() {
       </div>
 
       <div className="log-toolbar">
-        <div className="log-kind-switch" role="tablist" aria-label="日志类型">
-          <button className={kind === 'frontend' ? 'active' : ''} onClick={() => setKind('frontend')}>
+        <Tabs value={kind} onValueChange={(value) => setKind(value as LogKind)}>
+          <TabsList className="log-kind-switch" aria-label="日志类型">
+          <TabsTrigger value="frontend">
             前端日志
-          </button>
-          <button className={kind === 'backend' ? 'active' : ''} onClick={() => setKind('backend')}>
+          </TabsTrigger>
+          <TabsTrigger value="backend">
             后端日志
-          </button>
-        </div>
+          </TabsTrigger>
+          </TabsList>
+        </Tabs>
         <div className="log-actions">
           <Button variant="outline" size="sm" onClick={() => void copy()} disabled={!snapshot?.content}>
             <Clipboard size={13} />复制

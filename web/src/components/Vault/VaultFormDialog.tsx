@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { OptionSelect } from '@/components/OptionSelect'
 import { Textarea } from '@/components/ui/textarea'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { vaultApi } from '@/api/vault'
 import { toast } from 'sonner'
 import { useVaultStore } from '@/store/vault'
@@ -190,10 +191,8 @@ function VaultFormDialogInner({ item, onOpenChange }: VaultFormDialogInnerProps)
   const [error, setError] = useState('')
   const [showGenerator, setShowGenerator] = useState(false)
   const [showPrivateKey, setShowPrivateKey] = useState(false)
-  const [copyMenuOpen, setCopyMenuOpen] = useState(false)
   const publicKeyFileRef = useRef<HTMLInputElement>(null)
   const privateKeyFileRef = useRef<HTMLInputElement>(null)
-  const copyMenuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!item) return
@@ -216,26 +215,6 @@ function VaultFormDialogInner({ item, onOpenChange }: VaultFormDialogInnerProps)
       })
       .catch(() => toast.warning('加载凭据内容失败，请重新输入'))
   }, [item])
-
-  useEffect(() => {
-    if (!copyMenuOpen) return
-
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!copyMenuRef.current?.contains(event.target as Node)) {
-        setCopyMenuOpen(false)
-      }
-    }
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setCopyMenuOpen(false)
-    }
-
-    document.addEventListener('mousedown', handlePointerDown)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [copyMenuOpen])
 
   const readFile = (file: File, field: 'private_key' | 'public_key') => {
     if (file.size > 100 * 1024) {
@@ -457,7 +436,7 @@ function VaultFormDialogInner({ item, onOpenChange }: VaultFormDialogInnerProps)
                 rows={6}
                 className={`pf-input-mono pf-key-textarea vault-form-key-textarea ${showPrivateKey ? '' : 'vault-form-key-hidden'}`}
               />
-              <input
+              <Input
                 ref={privateKeyFileRef}
                 type="file"
                 accept=".pem,.key,.id_rsa,.id_ed25519"
@@ -474,40 +453,37 @@ function VaultFormDialogInner({ item, onOpenChange }: VaultFormDialogInnerProps)
               <div className="vault-form-key-head">
                 <span className="vault-form-key-title">公钥（可选）</span>
                 <div className="vault-form-key-actions">
-                  <div ref={copyMenuRef} className="vault-key-copy">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCopyMenuOpen((current) => !current)}
-                      disabled={!form.public_key?.trim()}
-                      className="vault-sheet-inline-btn"
-                      aria-haspopup="menu"
-                      aria-expanded={copyMenuOpen}
-                    >
-                      <Copy size={13} />
-                      复制
-                      <ChevronDown size={12} />
-                    </Button>
-                    {copyMenuOpen ? (
-                      <div className="vault-key-copy-menu" role="menu">
-                        <button type="button" role="menuitem" onClick={() => void handleCopyPublicKey('content')}>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={!form.public_key?.trim()}
+                        className="vault-sheet-inline-btn"
+                      >
+                        <Copy size={13} />
+                        复制
+                        <ChevronDown size={12} />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-64">
+                        <DropdownMenuItem className="items-start" onSelect={() => void handleCopyPublicKey('content')}>
                           <FileText size={14} />
-                          <span>
-                            <strong>复制公钥内容</strong>
-                            <small>复制完整的 OpenSSH 公钥</small>
+                          <span className="flex min-w-0 flex-col gap-0.5">
+                            <strong className="text-xs font-semibold">复制公钥内容</strong>
+                            <small className="text-[11px] leading-snug text-muted-foreground">复制完整的 OpenSSH 公钥</small>
                           </span>
-                        </button>
-                        <button type="button" role="menuitem" onClick={() => void handleCopyPublicKey('command')}>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="items-start" onSelect={() => void handleCopyPublicKey('command')}>
                           <Terminal size={14} />
-                          <span>
-                            <strong>复制公钥导入指令</strong>
-                            <small>追加到 authorized_keys</small>
+                          <span className="flex min-w-0 flex-col gap-0.5">
+                            <strong className="text-xs font-semibold">复制公钥导入指令</strong>
+                            <small className="text-[11px] leading-snug text-muted-foreground">追加到 authorized_keys</small>
                           </span>
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                   <Button
                     type="button"
                     variant="outline"
@@ -527,7 +503,7 @@ function VaultFormDialogInner({ item, onOpenChange }: VaultFormDialogInnerProps)
                 rows={3}
                 className="pf-input-mono pf-key-textarea vault-form-key-textarea vault-form-key-textarea-short"
               />
-              <input
+              <Input
                 ref={publicKeyFileRef}
                 type="file"
                 accept=".pub,.txt"

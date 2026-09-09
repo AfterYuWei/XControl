@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Check } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { vaultApi } from '@/api/vault'
 import { toast } from 'sonner'
 import { VAULT_TYPE_LABELS, type VaultItem } from '@/types/vault'
@@ -59,7 +60,7 @@ export function VaultSelectDialog({ open, onOpenChange, selectedId, onSelect }: 
           <DialogTitle>从 Vault 选择凭据</DialogTitle>
         </DialogHeader>
 
-        <input
+        <Input
           type="text"
           className="vault-select-search"
           placeholder="搜索名称 / 备注"

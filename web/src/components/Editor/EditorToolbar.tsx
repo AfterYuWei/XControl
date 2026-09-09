@@ -1,4 +1,5 @@
 import { Save, RotateCcw, X, FileText, Lock, AlertTriangle } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 interface EditorToolbarProps {
   path: string | null
@@ -54,16 +55,20 @@ export function EditorToolbar({
           </span>
         )}
 
-        <button
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-xs"
           className="editor-btn"
           onClick={onReload}
           disabled={loading || !hasSession}
           title="重新加载（放弃本地修改）"
         >
           <RotateCcw size={13} />
-        </button>
+        </Button>
 
-        <button
+        <Button
+          type="button"
           className="editor-btn primary"
           onClick={onSave}
           disabled={!canSave}
@@ -71,11 +76,11 @@ export function EditorToolbar({
         >
           <Save size={13} />
           <span>{saving ? '保存中…' : '保存'}</span>
-        </button>
+        </Button>
 
-        <button className="editor-btn ghost" onClick={onClose} title="关闭">
+        <Button type="button" variant="ghost" size="icon-xs" className="editor-btn ghost" onClick={onClose} title="关闭">
           <X size={14} />
-        </button>
+        </Button>
       </div>
     </div>
   )

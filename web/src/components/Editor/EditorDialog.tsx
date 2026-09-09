@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { FileX } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
 import { useEditorStore, useActiveTab } from '@/store/editor'
 import { CodeEditor } from './CodeEditor'
 import { EditorToolbar } from './EditorToolbar'
@@ -128,10 +129,12 @@ export function EditorDialog() {
               </div>
             </div>
             <div className="editor-confirm-actions">
-              <button className="editor-btn" onClick={() => setConfirmClose(false)}>
+              <Button type="button" variant="outline" className="editor-btn" onClick={() => setConfirmClose(false)}>
                 继续编辑
-              </button>
-              <button
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
                 className="editor-btn"
                 onClick={() => {
                   reloadFile(activeTabId!)
@@ -139,10 +142,10 @@ export function EditorDialog() {
                 }}
               >
                 重新加载
-              </button>
-              <button className="editor-btn danger" onClick={closeAll}>
+              </Button>
+              <Button type="button" variant="destructive" className="editor-btn danger" onClick={closeAll}>
                 放弃修改
-              </button>
+              </Button>
             </div>
           </div>
         )}

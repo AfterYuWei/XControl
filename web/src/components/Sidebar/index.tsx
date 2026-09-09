@@ -10,6 +10,7 @@ import { resolveServerIcon } from '@/lib/serverIcons'
 import { resolveGroupIcon } from '@/lib/groupIcons'
 import { usePointerDrag } from '@/hooks/usePointerDrag'
 import { dropPayloadAttr } from '@/lib/dragRegistry'
+import { SftpContextMenu } from '@/components/Sftp/SftpContextMenu'
 import type { Profile } from '@/types/profile'
 import type { Group } from '@/types/group'
 
@@ -446,56 +447,46 @@ export function Sidebar() {
 
       {/* Profile context menu */}
       {profileMenu && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setProfileMenu(null)} />
-          <ContextMenuBox x={profileMenu.x} y={profileMenu.y}>
-            <ContextItem icon={<Server size={13} />} onClick={() => { handleConnect(profileMenu.profile); setProfileMenu(null) }}>
-              连接
-            </ContextItem>
-            <ContextDivider />
-            <ContextItem icon={<Edit size={13} />} onClick={() => handleEditProfile(profileMenu.profile)}>
-              编辑
-            </ContextItem>
-            <ContextDivider />
-            <ContextItem icon={<Trash2 size={13} />} danger onClick={() => handleDeleteProfile(profileMenu.profile)}>
-              删除
-            </ContextItem>
-          </ContextMenuBox>
-        </>
+        <SftpContextMenu
+          x={profileMenu.x}
+          y={profileMenu.y}
+          onClose={() => setProfileMenu(null)}
+          items={[
+            { id: 'connect', label: '连接', icon: <Server size={13} />, onClick: () => handleConnect(profileMenu.profile) },
+            { id: 'divider-edit', label: '', divider: true },
+            { id: 'edit', label: '编辑', icon: <Edit size={13} />, onClick: () => handleEditProfile(profileMenu.profile) },
+            { id: 'divider-delete', label: '', divider: true },
+            { id: 'delete', label: '删除', icon: <Trash2 size={13} />, danger: true, onClick: () => void handleDeleteProfile(profileMenu.profile) },
+          ]}
+        />
       )}
 
       {/* Group context menu */}
       {groupMenu && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setGroupMenu(null)} />
-          <ContextMenuBox x={groupMenu.x} y={groupMenu.y}>
-            <ContextItem icon={<FolderPlus size={13} />} onClick={() => handleAddGroup(groupMenu.group.id)}>
-              新建子分组
-            </ContextItem>
-            <ContextItem icon={<FolderEdit size={13} />} onClick={() => handleEditGroup(groupMenu.group)}>
-              编辑分组
-            </ContextItem>
-            <ContextDivider />
-            <ContextItem icon={<Trash2 size={13} />} danger onClick={() => handleDeleteGroup(groupMenu.group)}>
-              删除分组
-            </ContextItem>
-          </ContextMenuBox>
-        </>
+        <SftpContextMenu
+          x={groupMenu.x}
+          y={groupMenu.y}
+          onClose={() => setGroupMenu(null)}
+          items={[
+            { id: 'add-child', label: '新建子分组', icon: <FolderPlus size={13} />, onClick: () => handleAddGroup(groupMenu.group.id) },
+            { id: 'edit', label: '编辑分组', icon: <FolderEdit size={13} />, onClick: () => handleEditGroup(groupMenu.group) },
+            { id: 'divider-delete', label: '', divider: true },
+            { id: 'delete', label: '删除分组', icon: <Trash2 size={13} />, danger: true, onClick: () => void handleDeleteGroup(groupMenu.group) },
+          ]}
+        />
       )}
 
       {/* Blank-area context menu */}
       {blankMenu && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setBlankMenu(null)} />
-          <ContextMenuBox x={blankMenu.x} y={blankMenu.y}>
-            <ContextItem icon={<Server size={13} />} onClick={handleAddServer}>
-              新建服务器
-            </ContextItem>
-            <ContextItem icon={<FolderPlus size={13} />} onClick={() => handleAddGroup('')}>
-              新建分组
-            </ContextItem>
-          </ContextMenuBox>
-        </>
+        <SftpContextMenu
+          x={blankMenu.x}
+          y={blankMenu.y}
+          onClose={() => setBlankMenu(null)}
+          items={[
+            { id: 'add-server', label: '新建服务器', icon: <Server size={13} />, onClick: handleAddServer },
+            { id: 'add-group', label: '新建分组', icon: <FolderPlus size={13} />, onClick: () => handleAddGroup('') },
+          ]}
+        />
       )}
 
       {/* Segmented page indicator — page 1 = global list, page 2 = per-tab detail.
@@ -538,39 +529,4 @@ export function Sidebar() {
       />
     </div>
   )
-}
-
-/* --- small context-menu primitives, themed via CSS variables --- */
-function ContextMenuBox({ x, y, children }: { x: number; y: number; children: React.ReactNode }) {
-  return (
-    <div
-      className="fixed z-50 ctx-menu"
-      style={{ left: x, top: y }}
-    >
-      {children}
-    </div>
-  )
-}
-
-function ContextItem({
-  icon,
-  children,
-  onClick,
-  danger,
-}: {
-  icon: React.ReactNode
-  children: React.ReactNode
-  onClick: () => void
-  danger?: boolean
-}) {
-  return (
-    <button className={`ctx-item ${danger ? 'ctx-danger' : ''}`} onClick={onClick}>
-      {icon}
-      {children}
-    </button>
-  )
-}
-
-function ContextDivider() {
-  return <div className="ctx-divider" />
 }

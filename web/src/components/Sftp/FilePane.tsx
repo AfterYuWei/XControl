@@ -19,6 +19,7 @@ import { FileTree } from './FileTree'
 import { PaneTabs } from './PaneTabs'
 import { PaneActions } from './PaneActions'
 import { SftpContextMenu, type MenuItem } from './SftpContextMenu'
+import { Button } from '@/components/ui/button'
 import { useSftpStore, useSftpStoreApi } from './storeContext'
 import {
   parentPath,
@@ -131,9 +132,9 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
           </div>
           <div className="sftp-pane-empty-title">未连接服务器</div>
           <div className="sftp-pane-empty-desc">点击下方按钮选择一台服务器，即可浏览其文件系统</div>
-          <button className="sftp-pane-empty-btn" onClick={onPickServer}>
+          <Button type="button" variant="outline" className="sftp-pane-empty-btn" onClick={onPickServer}>
             <Server size={14} /> 选择服务器
-          </button>
+          </Button>
         </div>
       </div>
     )

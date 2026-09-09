@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { OptionSelect } from '@/components/OptionSelect'
 import { Textarea } from '@/components/ui/textarea'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useProfileStore } from '@/store/profile'
 import { profileApi } from '@/api/profile'
 import { SERVER_ICONS, ServerIcon } from '@/lib/serverIcons'
@@ -72,37 +73,9 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
   const [uploadingKey, setUploadingKey] = useState(false)
   const [selectedVaultItem, setSelectedVaultItem] = useState<VaultItem | null>(null)
   const autoVaultUsernameRef = useRef('')
-  const iconBtnRef = useRef<HTMLButtonElement>(null)
-  const iconPopoverRef = useRef<HTMLDivElement>(null)
   const privateKeyFileRef = useRef<HTMLInputElement>(null)
 
   const closeIconPopover = useCallback(() => setIconOpen(false), [])
-
-  useEffect(() => {
-    if (!iconOpen) return
-
-    const handleMouseDown = (event: MouseEvent) => {
-      if (
-        iconBtnRef.current &&
-        !iconBtnRef.current.contains(event.target as Node) &&
-        iconPopoverRef.current &&
-        !iconPopoverRef.current.contains(event.target as Node)
-      ) {
-        closeIconPopover()
-      }
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeIconPopover()
-    }
-
-    document.addEventListener('mousedown', handleMouseDown)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('mousedown', handleMouseDown)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [iconOpen, closeIconPopover])
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -296,28 +269,31 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
             </Label>
             <div className="pf-input-group">
               <div className="pf-icon-prefix-wrap">
-                <button
-                  ref={iconBtnRef}
-                  type="button"
-                  className="pf-icon-prefix"
-                  onClick={() => setIconOpen((value) => !value)}
-                  aria-label="选择服务器图标"
-                  aria-expanded={iconOpen}
-                  title="点击更换图标"
-                >
-                  <ServerIcon iconKey={form.icon} size={15} />
-                </button>
-                {iconOpen && (
-                  <div ref={iconPopoverRef} className="pf-icon-popover" role="dialog">
+                <Popover open={iconOpen} onOpenChange={setIconOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="pf-icon-prefix"
+                      aria-label="选择服务器图标"
+                      title="点击更换图标"
+                    >
+                      <ServerIcon iconKey={form.icon} size={15} />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="pf-icon-popover w-[220px] p-2.5">
                     <div className="pf-icon-popover-title">选择图标</div>
                     <div className="pf-icon-popover-grid">
                       {SERVER_ICONS.map((definition) => {
                         const Icon = definition.Icon
                         const active = (form.icon || 'server') === definition.key
                         return (
-                          <button
+                          <Button
                             key={definition.key}
                             type="button"
+                            variant="ghost"
+                            size="icon-sm"
                             title={definition.label}
                             onClick={() => {
                               setForm({ ...form, icon: definition.key })
@@ -328,12 +304,12 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
                             aria-pressed={active}
                           >
                             <Icon size={16} />
-                          </button>
+                          </Button>
                         )
                       })}
                     </div>
-                  </div>
-                )}
+                  </PopoverContent>
+                </Popover>
               </div>
               <Input
                 id="name"
@@ -454,7 +430,7 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
                         {uploadingKey ? '读取中...' : '上传文件'}
                       </button>
                     </div>
-                    <input
+                    <Input
                       ref={privateKeyFileRef}
                       type="file"
                       accept=".pem,.key,.txt,*/*"

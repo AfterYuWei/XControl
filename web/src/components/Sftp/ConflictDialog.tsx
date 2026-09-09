@@ -1,5 +1,6 @@
 import { AlertTriangle, FileWarning, X } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 import { useSftpStore } from './storeContext'
 import type { ConflictResolution } from '@/types/sftp'
 
@@ -30,9 +31,9 @@ export function ConflictDialog() {
         <div className="sftp-conflict-hdr">
           <AlertTriangle size={16} className="sftp-conflict-warn" />
           <span className="sftp-conflict-title">文件冲突</span>
-          <button className="sftp-picker-x" onClick={dismiss} aria-label="关闭">
+          <Button type="button" variant="ghost" size="icon-xs" className="sftp-picker-x" onClick={dismiss} aria-label="关闭">
             <X size={15} />
-          </button>
+          </Button>
         </div>
         <div className="sftp-conflict-sub">
           目标位置已存在 {conflicts.length} 个同名项目。请选择处理方式（将应用到全部冲突项）。
@@ -61,27 +62,32 @@ export function ConflictDialog() {
         </div>
 
         <div className="sftp-conflict-actions">
-          <button
-            className="sftp-conflict-btn primary"
+          <Button
+            type="button"
+            className="sftp-conflict-btn"
             onClick={() => choose('overwrite')}
           >
             {conflicts.some((c) => c.dest_is_dir) ? '覆盖并删除目标目录' : '覆盖'}
-          </button>
-          <button
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
             className="sftp-conflict-btn"
             onClick={() => choose('rename')}
           >
             重命名
-          </button>
-          <button
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
             className="sftp-conflict-btn"
             onClick={() => choose('skip')}
           >
             跳过冲突项
-          </button>
-          <button className="sftp-conflict-btn ghost" onClick={dismiss}>
+          </Button>
+          <Button type="button" variant="ghost" className="sftp-conflict-btn ghost" onClick={dismiss}>
             取消
-          </button>
+          </Button>
         </div>
         </div>
       </DialogContent>

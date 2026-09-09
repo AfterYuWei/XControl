@@ -3,6 +3,9 @@ import { Search, Plus, X as XIcon, PanelLeft, Server, RefreshCw, FolderTree, Cop
 import { useProfileStore } from '@/store/profile'
 import { useSessionStore } from '@/store/session'
 import { toast } from 'sonner'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import type { Profile } from '@/types/profile'
 
 interface CommandPaletteProps {
@@ -95,19 +98,18 @@ export function CommandPalette({
   let lastType = ''
 
   return (
-    <div
-      className={`pal-overlay ${open ? 'open' : ''}`}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
-    >
-      <div className="pal">
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+      <DialogContent
+        showCloseButton={false}
+        className="pal top-[min(18vh,160px)] max-w-[500px] translate-y-0 gap-0 p-0"
+      >
+        <DialogTitle className="sr-only">命令面板</DialogTitle>
         <div className="pal-inp-wrap">
           <Search size={15} />
-          <input
+          <Input
             ref={inputRef}
             type="text"
-            className="pal-inp"
+            className="pal-inp focus-visible:ring-0"
             placeholder="Command or server name…"
             autoComplete="off"
             spellCheck={false}
@@ -147,7 +149,9 @@ export function CommandPalette({
                       {it.type === 'srv' ? 'Servers' : 'Commands'}
                     </div>
                   )}
-                  <div
+                  <Button
+                    type="button"
+                    variant="ghost"
                     className={`pal-item ${i === selIdx ? 'sel' : ''}`}
                     role="option"
                     aria-selected={i === selIdx}
@@ -184,13 +188,13 @@ export function CommandPalette({
                         {it.kbd && <span className="pal-item-kbd">{it.kbd}</span>}
                       </>
                     )}
-                  </div>
+                  </Button>
                 </div>
               )
             })
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

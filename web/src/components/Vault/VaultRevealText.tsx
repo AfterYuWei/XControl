@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 interface VaultRevealTextProps {
   value: string
@@ -26,15 +27,17 @@ export function VaultRevealText({ value, multiline, placeholder, className }: Va
       <span className="vault-reveal-value" title={revealed ? value : ''}>
         {revealed ? value : '•'.repeat(Math.min(value.length, 24))}
       </span>
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="icon-xs"
         className="vault-reveal-toggle"
         onClick={() => setRevealed((v) => !v)}
         aria-label={revealed ? '隐藏' : '显示'}
         title={revealed ? '隐藏' : '显示'}
       >
         {revealed ? <EyeOff size={13} /> : <Eye size={13} />}
-      </button>
+      </Button>
     </div>
   )
 }

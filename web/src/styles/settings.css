@@ -34,14 +34,19 @@
   background: var(--bg-hover);
   color: var(--fg-2);
 }
-.settings-nav-item.active {
+.settings-nav-item[data-state='active'] {
   background: var(--accent-bg);
   color: var(--accent);
 }
 
 /* 右侧内容 */
-.settings-content {
+.settings-content-shell {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.settings-content {
+  height: 100%;
   overflow-y: auto;
   padding: 4px 0;
 }
@@ -112,14 +117,8 @@
   width: 72px !important;
   border-radius: var(--r-sm) !important;
   background: var(--bg-input) !important;
-  border-color: var(--border) !important;
   color: var(--fg) !important;
   text-align: center;
-}
-.settings-number-input:focus-visible {
-  border-color: var(--input-focus-border) !important;
-  background: var(--input-focus-bg) !important;
-  box-shadow: var(--input-focus-shadow) !important;
 }
 .settings-number-unit {
   font: 400 11px / 1 var(--sans);
@@ -323,7 +322,7 @@
   border-radius: var(--r-sm);
   background: var(--bg-input);
 }
-.log-kind-switch button {
+.log-kind-switch [data-slot='tabs-trigger'] {
   border: 0;
   border-radius: calc(var(--r-sm) - 2px);
   padding: 6px 12px;
@@ -332,7 +331,7 @@
   font: 500 11px / 1 var(--sans);
   cursor: pointer;
 }
-.log-kind-switch button.active {
+.log-kind-switch [data-slot='tabs-trigger'][data-state='active'] {
   color: var(--accent);
   background: var(--accent-bg);
 }

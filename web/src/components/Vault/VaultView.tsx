@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, KeyRound, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { OptionSelect } from '@/components/OptionSelect'
 import {
   Dialog,
@@ -81,7 +82,7 @@ export function VaultView() {
             onChange={(v) => setFilterType(v as typeof filterType)}
           />
         </div>
-        <input
+        <Input
           type="text"
           className="vault-toolbar-search"
           placeholder="搜索名称/用户名/备注…"

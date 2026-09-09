@@ -15,10 +15,10 @@
 
 | 原领域 | Rust 实现 | 兼容重点 |
 |---|---|---|
-| SQLite stores/migrations | `database.rs` + 各领域 repository | schema 版本、WAL、事务与时间格式 |
-| credential crypto/vault | `credential_crypto.rs`、`vault.rs` | nonce/ciphertext/tag 与密钥文件 |
-| profile/group/snippet/audit | 对应 `*.rs` | JSON 字段、排序、引用约束、审计动作 |
-| backup | `backup.rs` | `.xcbackup`、加密、预览与事务导入 |
+| SQLite stores/migrations | `infrastructure/database/` + 各 feature repository | schema 版本、WAL、事务与时间格式 |
+| credential crypto/vault | `vault/crypto.rs`、`vault/` | nonce/ciphertext/tag 与密钥文件 |
+| profile/group/snippet/audit | 对应 feature 目录 | JSON 字段、排序、引用约束、审计动作 |
+| backup | `backup/` | `.xcbackup`、加密、预览与事务导入 |
 | sync/providers/OAuth | `sync/` | provider 配置、版本、冲突和调度 |
 | SSH transport/session | `ssh/` | 代理、jump、认证、PTY、host key、补全 |
 | SFTP/editor/transfers | `sftp/` | 路径、冲突、目录模式、进度、取消、拖出 |

@@ -2,7 +2,8 @@
 
 ## Project
 
-XControl is a Tauri 2 desktop SSH terminal and SFTP client. React/TypeScript renders the UI;
+XControl is a Tauri 2 SSH terminal and SFTP client with desktop support and a shared mobile-ready
+Rust core. React/TypeScript renders the UI;
 all persistence, encryption, SSH/SFTP, backup and sync logic runs in the Rust process. User-facing
 UI and documentation are written in Chinese.
 
@@ -21,26 +22,30 @@ npm --prefix web run build
 
 cd src-tauri
 cargo fmt --all -- --check
-cargo clippy --all-targets --locked -- -D warnings
+cargo check --locked
+cargo clippy --all-targets --all-features --locked -- -D warnings
 cargo test --locked
 ```
 
 ## Architecture
 
-- `src-tauri/src/lib.rs`: application composition, plugins, state registration and shutdown.
-- `database.rs`: SQLite migrations and connection policy.
-- `credential_crypto.rs`: AES-256-GCM credential compatibility.
-- `profiles.rs`, `vault.rs`, `groups.rs`, `snippets.rs`, `audit.rs`: local domains.
-- `backup.rs`, `sync/`: backup, providers, OAuth and scheduler.
+- `src-tauri/src/app/`: application composition, Tauri event adapters, plugins and shutdown.
+- `src-tauri/src/commands/`: all Tauri IPC command adapters; commands do not own business logic.
+- `src-tauri/src/infrastructure/database/`: SQLite connection policy and compatible migrations.
+- `src-tauri/src/profile/`, `vault/`, `group/`, `snippet/`, `audit/`: local feature modules and
+  domain-owned repositories.
+- `src-tauri/src/backup/`, `sync/`: backup aggregate, providers, OAuth and tracked scheduler.
 - `ssh/transport.rs`: direct, SOCKS5, HTTP CONNECT and SSH jump connections.
-- `ssh/session.rs`: PTY, terminal I/O, completion and host-key confirmation.
-- `sftp/`: sessions, file operations, editor, transfers and drag-out materialization.
+- `ssh/session.rs` + `session_manager.rs`: PTY, terminal I/O and tracked session ownership.
+- `sftp/`: sessions, file operations, editor and tracked transfers.
+- `infrastructure/platform/desktop/`: dialogs, logs, drag-out, legacy paths and settings migration.
 - `server_detail.rs`: host information and resource metrics through SSH exec.
 - `web/src/api/`: fine-grained Tauri command wrappers.
 - `web/src/store/`: Zustand state.
 
 React communicates with Rust through Tauri commands and events. Upload/download payloads use
 binary Tauri IPC. There is no local HTTP or WebSocket gateway.
+See `docs/RUST_ARCHITECTURE.md` for dependency, visibility and Desktop/Mobile boundary rules.
 
 ## Data and compatibility
 

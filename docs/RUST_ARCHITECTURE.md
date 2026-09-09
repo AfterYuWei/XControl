@@ -1,326 +1,83 @@
 # XControl Rust / Tauri 后端架构
 
-> 状态：Phase 1 架构审计基线  
-> 基线提交：`57bddcb`  
-> 审计日期：2026-09-09
+> 状态：架构重构与主机验收完成，等待各原生平台 CI/真机持续验证
+>
+> 初始审计基线：`57bddcb`
+>
+> 实现区间：`7f53a8b..HEAD`
+>
+> 更新日期：2026-09-09
 
-本文记录 XControl `src-tauri` 后端的当前架构、已识别风险、目标模块边界和迁移计划。
-它是后续小步重构的约束文档，不代表所有目标目录均已实现。
+本文是 `src-tauri` 的架构约束、实现说明与审计记录。它描述当前真实代码，不是要求所有
+Feature 套用同一模板的目录蓝图。数据库 schema、IPC command 名称、credential 密文、
+`.xcbackup` 和 Sync 云端格式均保持兼容。
 
 ## Architecture Overview
 
-XControl 是一个标准 Tauri 2 crate。React 前端通过 Tauri command 和 event 与 Rust 后端通信；
-SQLite、credential 加密、SSH/SFTP、备份和同步均在 Rust 进程内完成。
-
-当前实际调用链为：
-
 ```text
 React / web/src/api
-  -> lib.rs 中的 generate_handler!
-  -> 分散在根模块及各 Feature 内的 Tauri commands
-  -> ProfileState / VaultState / SessionState / SftpState / SyncState 等
-  -> SQLite / Encryptor / russh / russh-sftp / reqwest / filesystem
+        |
+        v
+commands/*                 Tauri IPC adapter
+        |
+        v
+Feature facade             ProfileService / SshService / SftpService / ...
+        |
+        +--> repository    domain-owned SQL
+        +--> manager       session / transfer / scheduler ownership
+        +--> provider      SSH / SFTP / cloud protocol
+        |
+        v
+infrastructure/*           SQLite connection/migration + platform adapters
 ```
 
-当前主要依赖关系：
+反向事件通过 feature-owned port 输出：
 
 ```text
-profile/group/snippet/vault commands -> SyncState::notify_change
-sync -> backup -> profile/group/vault
-
-sftp::state -> TransferManager
-sftp::transfer -> SftpState
-
-sftp -> ssh::transport::ConnectedRoute -> russh handle
+SSH/SFTP runtime -> SessionEventSink / SftpEventSink
+                 -> app::TauriEventSink
+                 -> Tauri event -> React
 ```
-
-这些关系形成了业务层与 IPC 的反向依赖、SFTP 内部双向耦合，以及 SSH 底层类型泄漏。
-
-当前正面基础包括：
-
-- SQLite 使用短生命周期独立连接，没有全局 `Connection` mutex；
-- SSH 与 scheduler 使用有界 channel；
-- SSH session 和 transfer 已使用 `CancellationToken`；
-- 未发现全局 `std::sync::MutexGuard` 跨 `.await`；
-- 数据库 schema、credential 密文和 backup 格式已有兼容性测试。
-
-## Audit Baseline
-
-### P0 — Correctness / Security
-
-1. SFTP 远端目录归档路径会先将文件读入多个 `Vec<u8>`，再构建完整压缩包，可能因大目录造成
-   数倍数据量的内存峰值或 OOM。
-2. Sync scheduler 使用 `try_send`；队列满时请求可能被静默丢弃，但 command 仍可能返回
-   `started: true`。
-3. scheduler、手动同步、cloud pull/push 和 restore 未完全受同一 operation coordinator 保护，
-   云端索引 read-modify-write 与数据库恢复存在竞态窗口。
-4. Profile、Vault、Backup、Sync 中部分 secret-bearing 类型实现 `Debug` 或大量 `Clone`，
-   增加密码、私钥、passphrase、token 和明文备份数据泄漏或复制的风险。
-
-### P1 — Architecture / Ownership
-
-- 94 个 `#[tauri::command]` 分散在业务模块。
-- SSH/SFTP spawned task 没有统一保存和等待 `JoinHandle`。
-- shutdown 主要执行 cancel/clear，不能保证所有后台任务已经结束。
-- Mobile builder 缺少与 Desktop 对等的生命周期清理。
-- `ssh::transport::ConnectedRoute` 向 SFTP 暴露 `russh` handle。
-- `profiles.rs`、`vault.rs`、`backup.rs`、`ssh/session.rs`、`sftp/state.rs` 和
-  `sftp/transfer.rs` 混合了多类职责。
-- 内部 storage/domain/protocol 错误过早转换为 IPC `CommandError` 或 `String`。
-- desktop/mobile bootstrap 大量重复。
-
-### P2 — Maintainability
-
-- 模型、SQL、use case、command 和测试集中在巨型文件中。
-- `pub(crate)` 和 glob re-export 范围偏大。
-- `SyncState` 的 inherent impl 分散在多个文件。
-- OAuth abandoned pending state 缺少主动清理。
-- 远端服务器信息采集默认依赖 Linux shell 和 `/proc`，支持范围未在 API 中表达。
-
-### P3 — Cleanup
-
-- 存在 Go handler/state/manager 迁移形成的复合对象和命名。
-- `lib.rs` 同时承担 builder、插件、状态构造、command 注册、deep-link 和 shutdown。
-- 部分只服务单一 Feature 的函数仍留在大型根文件中。
-
-## Current File Responsibilities
-
-| 文件 | 当前职责 | 目标归属 | 优先级 |
-| --- | --- | --- | --- |
-| `main.rs` | 调用 library `run()` | 保留 | P3 |
-| `lib.rs` | builder、插件、状态初始化、commands、deep-link、shutdown | `app/` + `commands/` | P1 |
-| `commands.rs` | 窗口、ready、日志、设置迁移、文件对话框 | commands + desktop adapter | P1 |
-| `database.rs` | SQLite connection、schema、migration | `infrastructure/database/` | P2 |
-| `error.rs` | IPC `CommandError` | `commands/error.rs` + typed errors | P1 |
-| `credential_crypto.rs` | 兼容加密和 key file | `vault/crypto.rs` + platform paths | P1 |
-| `runtime.rs` | 旧数据目录和构建渠道 | `infrastructure/platform/paths.rs` | P1 |
-| `settings_migrate.rs` | Electron 设置迁移 | desktop platform adapter | P2 |
-| `drag_out.rs` | drag-out command、临时文件、路径转换 | SFTP command + desktop adapter | P1 |
-| `audit.rs` | 模型、SQL、command | `audit/model.rs`, `repository.rs` | P2 |
-| `groups.rs` | 模型、验证、CRUD SQL、command、sync 通知 | `group/` | P1 |
-| `snippets.rs` | 模型、验证、CRUD SQL、command、sync 通知 | `snippet/` | P1 |
-| `profiles.rs` | DTO、CRUD、Vault、加密、连接解析、host key、command | `profile/` | P1 |
-| `vault.rs` | 模型、CRUD、加密、keygen、Profile 引用、审计、command | `vault/` | P0/P1 |
-| `backup.rs` | 格式、KDF、加密、跨域 SQL、导入导出、dialog command | `backup/` | P0/P1 |
-| `server_detail.rs` | 远端脚本、解析、指标、command | `server_detail/` | P2 |
-| `ssh/mod.rs` | 子模块和重导出 | 收窄 Feature API | P2 |
-| `ssh/transport.rs` | TCP/proxy/jump/auth/host key | SSH transport boundary | P1 |
-| `ssh/session.rs` | session、registry、PTY、事件、command、OSC | SSH session/service/manager | P1 |
-| `ssh/profile_test.rs` | Profile 连接测试和 command | use case + external command | P2 |
-| `sftp/mod.rs` | 广泛重导出 | 收窄 Feature API | P2 |
-| `sftp/backend.rs` | 本地/远端文件操作和路径转换 | remote backend + platform file access | P1 |
-| `sftp/state.rs` | session registry、连接、CRUD、编辑器、事件、command | SFTP session/service/manager | P1 |
-| `sftp/transfer.rs` | 任务、上传、归档、复制移动、事件、command | `sftp/transfer/` | P0/P1 |
-| `sync/mod.rs` | 模块和 command 重导出 | 收窄 Feature API | P1 |
-| `sync/model.rs` | settings/provider/version/event DTO | model + secret-safe views | P0/P2 |
-| `sync/store.rs` | Sync SQLite persistence | `sync/repository.rs` | P1 |
-| `sync/manager.rs` | 状态、备份协调、恢复、版本和 operation lock | `sync/service.rs` | P0/P1 |
-| `sync/scheduler.rs` | 调度、队列、shutdown backup | scheduler + explicit ownership | P0 |
-| `sync/oauth.rs` | OAuth state、URL、callback、token exchange | Sync core + callback adapter | P1/P2 |
-| `sync/cloud.rs` | provider pull/push、索引、冲突、恢复 | Sync use cases | P0/P1 |
-| `sync/provider.rs` | WebDAV/S3/GDrive/OneDrive HTTP | 保持 concrete provider boundary | P1 |
 
 ## Module Boundaries
 
-目标依赖方向：
+- `app`：进程 composition、Tauri plugin、handler、deep-link、event adapter 与 shutdown；
+- `commands`：IPC adapter，不拥有业务状态或底层资源；
+- feature：model、use case、repository/manager/provider，并通过 `mod.rs` 暴露最小 facade；
+- `infrastructure/database`：connection policy 与 schema migration；
+- `infrastructure/platform/desktop`：不能在移动端复用的 OS/Tauri 能力；
+- SSH/SFTP event trait 定义在使用它的 feature，Tauri 实现在 `app`，依赖指向 port 而不是 adapter。
 
-```text
-React
-  -> Tauri commands / event adapters
-  -> Feature facade / use case
-  -> Repository / Manager / Connector / Provider
-  -> SQLite / SSH / filesystem / cloud / OS
-```
+## Dependency Rules
 
-禁止依赖：
+当前强制依赖方向：
 
-```text
-feature -> commands
-repository -> Tauri
-database infrastructure -> feature
-profile/group/settings -> russh
-SSH core -> Tauri AppHandle
-cross-platform feature -> desktop adapter
-```
+- `commands -> feature -> repository/manager/provider -> external library`；
+- `app` 是 composition root，负责构造、插件、state 注册、deep-link 与 shutdown；
+- feature、repository 不依赖 `commands`；
+- `#[tauri::command]` 只允许存在于 `commands/`；
+- `russh` 具体类型只允许存在于 `ssh/`，SFTP 仅通过 SSH 封装的连接能力取得 subsystem；
+- 单域 SQL 放在所属 feature repository；schema 和连接策略只在 `infrastructure/database`；
+- Desktop API 只存在于 `app`、`commands/desktop`、`commands/backup` 的 desktop 分支和
+  `infrastructure/platform/desktop`。
 
-小 Feature 只在复杂度真实存在时拆分。不会建立 `service/impl`、单实现 trait、全局
-`database/repositories`、`utils` 或 `common` 目录。
-
-## Tauri Command Boundary
-
-所有 `#[tauri::command]` 迁移到 `commands/`。Command 只负责：
-
-1. Tauri `State`/IPC 参数接收；
-2. 基础输入转换；
-3. 调用高层 Feature API；
-4. 将 typed internal error 转换为稳定的 IPC error；
-5. 必要的事件分发或 `spawn_blocking` 边界。
-
-Command 不直接执行 SQL、加解密、russh 调用、registry 操作或复杂 Tokio task 管理。
-现有 command 名称和前端 payload contract 保持不变。
-
-## Database Boundary
-
-`infrastructure/database` 仅负责：
-
-- 数据库路径和 connection factory；
-- SQLite pragma/connection policy；
-- schema 和向后兼容 migration。
-
-单域 SQL 位于对应 Feature repository。Backup 的跨域导入导出保留专用 aggregate repository，
-以保证单事务导入、ID remapping 和格式兼容，不强行通过多个 repository 拼装事务。
-
-## SSH Runtime Ownership
-
-目标关系：
-
-```text
-ProfileService
-  -> ConnectionPlan
-  -> SshConnector
-  -> SshConnection
-  -> terminal / exec / sftp channel
-
-SshService
-  -> SessionManager
-  -> 0..N Session
-  -> tracked tasks + cancellation + joined shutdown
-```
-
-- `ConnectionPlan` 不包含 Profile repository 或 Tauri 类型。
-- `SshConnection` 封装 russh handle，russh 类型不越过 SSH boundary。
-- `Session` 只代表单个活动会话。
-- `SessionManager` 负责注册、lookup、remove、自然退出回收和 shutdown。
-- 后台任务保存 `JoinHandle`，shutdown 执行 cancel 后等待退出。
-- Tauri event 通过明确的 event sink adapter 注入。该抽象有平台 adapter 和测试替换需求，
-  因而是合理的 dependency inversion，而不是形式化 trait。
-
-## SFTP Runtime Ownership
-
-```text
-SftpService
-  -> SftpSessionManager
-  -> SftpSession / RemoteBackend
-  -> TransferManager
-  -> tracked TransferTask
-```
-
-- SFTP 与 SSH 只通过封装后的连接能力共享底层连接。
-- 本地文件访问是平台能力，不与 remote SFTP backend 混为同一套路径假设。
-- 上传下载继续使用分块 IPC/流式 IO。
-- 目录归档改为流式写入或有限磁盘 staging，禁止将整棵目录加载到内存。
-- task 完成后自动回收，并支持 cancel-and-join shutdown。
-
-## Error Strategy
-
-内部错误保持类型和 source chain：
-
-```text
-StorageError
-VaultError
-BackupError
-SshError
-SftpError
-SyncError
-PlatformError
-```
-
-如果 composition 确实需要，再通过较小的 `AppError` 聚合；不要求所有函数统一一个错误类型。
-只有进入 Tauri command 时转换为兼容现有前端的：
-
-```text
-IpcError {
-    code,
-    message,
-    references,
-}
-```
-
-SQLite、russh、reqwest 和 provider 原始响应不得直接暴露给前端。敏感数据不实现 `Debug`，
-减少 `Clone`，并在所有权允许时移动或 `zeroize`。
-
-## App State and Ownership
-
-不建立可任意访问所有底层资源的公开 God `AppState`。Tauri 管理高层 concrete facade，
-例如 `ProfileService`、`VaultService`、`SshService`、`SftpService`、`SyncService`。
-
-`Database`、`Encryptor`、session/transfer maps 和 provider clients 是 facade 私有实现。
-`app::bootstrap` 负责构造和注入，`app::lifecycle` 只保存完成 shutdown 所需的高层句柄。
-
-## Platform Boundary
-
-跨平台核心包括 Profile、Vault、Backup 格式、数据库 repository、SSH 协议、远端 SFTP 和
-Sync/cloud 规则。
-
-当前明确的 Desktop-only 能力包括：
-
-- single instance；
-- updater；
-- drag-out；
-- 桌面窗口和标题栏控制；
-- Electron 设置迁移；
-- 普通本地文件路径选择；
-- 任意本地目录访问；
-- 桌面日志目录和本机 SSH agent。
-
-这些能力收敛到 `infrastructure/platform/desktop` 及对应 command adapter。Cargo dependency、
-插件初始化和 capability 使用 desktop target/cfg 限定。
-
-## Desktop / Mobile Strategy
-
-不复制两套业务模块。目标为：
-
-```text
-                    Shared Core Features
-                            |
-              +-------------+-------------+
-              |                           |
-       Desktop adapters             Mobile adapters
-```
-
-Android/iOS 后续 adapter 重点处理：
-
-- mobile deep-link 和 OAuth callback；
-- content URI / file URL / sandboxed document access；
-- secure key storage policy；
-- app suspend/resume、网络断开、session 恢复；
-- 后台任务限制；
-- mobile capability 文件。
-
-不会提前创建空的 `android.rs`、`ios.rs` 或完整 `mobile/` 目录。
-
-## Visibility Rules
-
-默认按以下顺序选择最小可见性：
-
-```text
-private -> pub(super) -> pub(crate) -> pub
-```
-
-- repository、russh wrapper、registry 和内部 DTO 默认私有；
-- `mod.rs` 只声明模块和重导出 Feature facade/必要 model；
-- 禁止 glob 重导出 command 和内部 state；
-- 对前端公开的是 command contract，不等同于 Rust `pub` API。
-
-## Target Directory
-
-目标目录根据实际复杂度逐步形成：
+## Implemented Source Tree
 
 ```text
 src/
 ├── main.rs
 ├── lib.rs
+├── error.rs
+├── server_detail.rs
 ├── app/
 │   ├── mod.rs
 │   ├── bootstrap.rs
-│   ├── lifecycle.rs
 │   └── events.rs
 ├── commands/
 │   ├── mod.rs
-│   ├── error.rs
-│   ├── app.rs
 │   ├── audit.rs
 │   ├── backup.rs
+│   ├── desktop.rs
 │   ├── group.rs
 │   ├── profile.rs
 │   ├── server_detail.rs
@@ -330,135 +87,348 @@ src/
 │   ├── sync.rs
 │   └── vault.rs
 ├── audit/{mod.rs,model.rs,repository.rs}
-├── backup/{mod.rs,model.rs,format.rs,crypto.rs,repository.rs,service.rs}
+├── backup/{mod.rs,error.rs,format.rs,model.rs,repository.rs,service.rs}
 ├── group/{mod.rs,model.rs,repository.rs,service.rs}
-├── profile/{mod.rs,model.rs,repository.rs,credentials.rs,connection.rs,service.rs}
+├── profile/{mod.rs,connection.rs,error.rs,legacy.rs,model.rs,repository.rs,service.rs}
 ├── snippet/{mod.rs,model.rs,repository.rs,service.rs}
-├── vault/{mod.rs,model.rs,crypto.rs,repository.rs,service.rs}
+├── vault/{mod.rs,crypto.rs,error.rs,model.rs,repository.rs,service.rs}
 ├── ssh/
 │   ├── mod.rs
 │   ├── error.rs
-│   ├── transport.rs
-│   ├── connection.rs
+│   ├── events.rs
 │   ├── profile_test.rs
-│   ├── service.rs
 │   ├── session.rs
 │   ├── session_manager.rs
-│   └── terminal.rs
+│   └── transport.rs
 ├── sftp/
 │   ├── mod.rs
+│   ├── backend.rs
+│   ├── error.rs
+│   ├── events.rs
+│   ├── state.rs
+│   └── transfer.rs
+├── sync/
+│   ├── mod.rs
+│   ├── cloud.rs
 │   ├── error.rs
 │   ├── model.rs
-│   ├── backend.rs
-│   ├── editor.rs
-│   ├── service.rs
-│   ├── session.rs
-│   ├── session_manager.rs
-│   └── transfer/{mod.rs,model.rs,manager.rs,copy.rs,archive.rs}
-├── server_detail/{mod.rs,model.rs,parser.rs,service.rs}
-├── sync/{mod.rs,model.rs,repository.rs,service.rs,scheduler.rs,cloud.rs,oauth.rs,provider.rs}
+│   ├── oauth.rs
+│   ├── provider.rs
+│   ├── repository.rs
+│   ├── scheduler.rs
+│   └── service.rs
 └── infrastructure/
     ├── mod.rs
-    ├── database/{mod.rs,connection.rs,migration.rs}
+    ├── database/{mod.rs,connection.rs,error.rs,migration.rs}
     └── platform/
         ├── mod.rs
-        ├── paths.rs
-        └── desktop/{mod.rs,dialogs.rs,drag_out.rs,logs.rs,settings_migration.rs}
+        └── desktop/
+            ├── mod.rs
+            ├── dialogs.rs
+            ├── drag_out.rs
+            ├── error.rs
+            ├── logs.rs
+            ├── paths.rs
+            └── settings_migration.rs
 ```
 
-目录由复杂度驱动；迁移过程中若某个文件仍然足够小，将保留为单文件模块。
+`server_detail.rs`、`sftp/state.rs` 和 `sftp/transfer.rs` 暂时仍是单文件模块：前者是单一远端
+采集能力，后两者虽较大，但已拥有清晰 facade/manager 边界。继续拆文件只有在职责继续增长时
+进行，避免为了目录对称制造空模块。
 
-## Migration Plan
+## Current File Responsibilities
 
-每个 Phase 必须保持可编译并形成独立 commit。
+| 文件 | 当前职责 | 边界/可见性 |
+| --- | --- | --- |
+| `main.rs` | 调用 library `run()` | binary 入口 |
+| `lib.rs` | 声明 crate 模块并导出 Tauri/mobile entry | 不承担 composition 细节 |
+| `error.rs` | 稳定、可序列化的 use-case/IPC `CommandError` | 第三方错误先在下层 typed error 收口 |
+| `server_detail.rs` | 通过已存在 SSH route 执行远端采集并解析指标 | 不拥有连接，不含 command |
+| `app/mod.rs` | app facade | 仅重导出 bootstrap/event adapter |
+| `app/bootstrap.rs` | Desktop/Mobile builder、依赖构造、插件、handler、deep-link、shutdown | composition root |
+| `app/events.rs` | `SessionEventSink`/`SftpEventSink` 的 Tauri 实现 | feature 不直接依赖 Tauri |
+| `audit/backup/group/profile/snippet/vault/ssh/sftp/sync/mod.rs` | 声明 feature 子模块并选择性重导出 facade/model | 不承载业务逻辑 |
+| `infrastructure/mod.rs`、`database/mod.rs`、`platform/mod.rs`、`desktop/mod.rs` | 声明基础设施层级及最小 API | desktop module 由 cfg 隔离 |
+| `commands/mod.rs` | command 模块注册 facade | crate 内可见；glob 用于携带 Tauri 宏生成的 handler 符号 |
+| `commands/audit.rs` | Audit IPC 与 `spawn_blocking` | 无 SQL |
+| `commands/backup.rs` | Backup IPC；desktop 文件对话框门控 | 无格式/加密逻辑 |
+| `commands/desktop.rs` | 窗口、日志、迁移、保存、drag-out IPC | `#[cfg(desktop)]` |
+| `commands/group.rs` | Group IPC 与 Sync change 通知 | 无 SQL |
+| `commands/profile.rs` | Profile IPC 与 Sync change 通知 | 无凭据实现 |
+| `commands/server_detail.rs` | Server detail IPC | 只调用 use case |
+| `commands/sftp.rs` | SFTP IPC、binary body/response 转换 | 不管理 session/transfer map |
+| `commands/snippet.rs` | Snippet IPC 与 Sync change 通知 | 无 SQL |
+| `commands/ssh.rs` | Profile test 和 SSH session IPC | 不调用 `russh` |
+| `commands/sync.rs` | Sync IPC 和阻塞任务切换 | 不实现 provider 协议 |
+| `commands/vault.rs` | Vault IPC 和 keygen 阻塞任务切换 | 不实现加密 |
+| `audit/model.rs` | 审计记录 DTO | feature model |
+| `audit/repository.rs` | Audit SQL、查询与写入 | `Database` 短连接 |
+| `group/model.rs` | Group DTO/request | feature model |
+| `group/repository.rs` | Group SQL | repository 私有实现 |
+| `group/service.rs` | 验证、引用约束和 CRUD use case | concrete facade |
+| `snippet/model.rs` | Snippet DTO/request | feature model |
+| `snippet/repository.rs` | Snippet SQL | repository 私有实现 |
+| `snippet/service.rs` | 验证与 CRUD use case | concrete facade |
+| `profile/model.rs` | Profile、proxy、resolved connection DTO；敏感 resolved 数据 zeroize | 无 SQL |
+| `profile/connection.rs` | proxy/options 解析和 host-key option 更新 | 不连接 SSH |
+| `profile/error.rs` | Profile validation/credential/reference typed errors | feature 私有 |
+| `profile/legacy.rs` | 历史 inline credential 幂等回填 | compatibility boundary |
+| `profile/repository.rs` | Profile SQL | repository 私有实现 |
+| `profile/service.rs` | Profile CRUD、credential resolution、proxy/jump 验证 | 不依赖 Tauri/russh |
+| `vault/model.rs` | Vault DTO 和 zeroizing `Credential` | secret model 不实现 `Debug` |
+| `vault/crypto.rs` | Go-compatible AES-256-GCM/key file | `CryptoError` typed boundary |
+| `vault/error.rs` | credential 编码错误 | feature 私有 |
+| `vault/repository.rs` | Vault SQL 与 Profile 引用 SQL | repository 私有实现 |
+| `vault/service.rs` | Vault use case、审计、key generation | 唯一 credential 加解密入口 |
+| `backup/model.rs` | `.xcbackup` wire model 与 aggregate DTO | secret-bearing payload 无 `Debug` |
+| `backup/format.rs` | 格式校验、Argon2id、AES-GCM | 保持 v1/AAD/nonce 格式 |
+| `backup/error.rs` | Backup typed errors | feature 私有 |
+| `backup/repository.rs` | 跨域导出与单事务导入 | 明确 aggregate repository |
+| `backup/service.rs` | export/preview/import/sync version orchestration | 不依赖 Tauri dialog |
+| `ssh/error.rs` | transport/protocol/auth typed errors | 第三方错误不越界 |
+| `ssh/events.rs` | terminal outbound event port | 合理的 dependency inversion |
+| `ssh/transport.rs` | TCP、SOCKS5、HTTP CONNECT、jump、auth、host-key、subsystem/exec | `russh` boundary |
+| `ssh/profile_test.rs` | Profile 测试连接 use case | 无 command |
+| `ssh/session.rs` | 单 session、PTY、terminal I/O、completion、`SshService` | registry 委托 manager |
+| `ssh/session_manager.rs` | session/JoinHandle 注册、查询、移除、cancel-and-join | runtime owner |
+| `sftp/error.rs` | backend/transfer/archive typed errors | feature boundary |
+| `sftp/events.rs` | SFTP outbound event port | 不依赖 Tauri |
+| `sftp/backend.rs` | Local/remote 流式文件操作，remote 持有封装 route | 不暴露 russh handle |
+| `sftp/state.rs` | `SftpService`、session registry、连接和文件 use case | connection task owner |
+| `sftp/transfer.rs` | TransferManager、分块上传下载、复制/移动、磁盘 staging 归档 | worker/cancellation owner |
+| `sync/model.rs` | settings/provider/version/conflict DTO | secret config zeroize 且无 `Debug` |
+| `sync/error.rs` | operation/scheduler typed errors | 映射稳定错误码 |
+| `sync/repository.rs` | Sync SQLite persistence | 原 `store.rs` |
+| `sync/service.rs` | local version/settings/provider use case 和统一 operation coordinator | 原 `manager.rs` |
+| `sync/scheduler.rs` | bounded queue、计划/变更触发、tracked JoinHandle、shutdown | backpressure 显式返回 |
+| `sync/cloud.rs` | pull/push/index/conflict/restore orchestration | 受 operation coordinator 保护 |
+| `sync/oauth.rs` | OAuth state、URL/callback、token exchange | deep-link 监听在 app adapter |
+| `sync/provider.rs` | WebDAV/S3/GDrive/OneDrive HTTP connector | provider body 不直接进入 IPC error |
+| `infrastructure/database/connection.rs` | SQLite connection factory、busy timeout、foreign keys | 不含业务 SQL |
+| `infrastructure/database/migration.rs` | schema 和幂等兼容 migration | 不依赖 feature |
+| `infrastructure/database/error.rs` | `StorageError` | 保留 rusqlite/io source |
+| `infrastructure/platform/mod.rs` | 平台模块 cfg 路由 | 当前只创建真实 desktop adapter |
+| `infrastructure/platform/desktop/paths.rs` | legacy `XControl` 数据目录和 build channel | desktop only |
+| `infrastructure/platform/desktop/dialogs.rs` | 系统保存对话框与落盘 | desktop only |
+| `infrastructure/platform/desktop/logs.rs` | 测试渠道日志读取/写入/截断 | desktop only |
+| `infrastructure/platform/desktop/drag_out.rs` | drag 临时物化与回收 | desktop only |
+| `infrastructure/platform/desktop/settings_migration.rs` | Electron settings 一次性迁移 | desktop only |
+| `infrastructure/platform/desktop/error.rs` | `PlatformError` | desktop adapter typed error |
 
-### Phase 1 — Architecture Baseline
+每个目录的 `mod.rs` 只声明子模块和选择性重导出。`commands/mod.rs` 是一个例外：Tauri command
+宏会生成同名隐藏 handler symbol，command registry 需要 glob 一并导入这些宏符号；其模块本身
+仍为 crate-private。
 
-- 保存本架构文档和审计结论。
-- 不修改运行行为。
-- 验证 Markdown、Git diff 和工作树。
+## Tauri Command Boundary
 
-### Phase 2 — Composition and Infrastructure
+当前 94 个 command 全部位于 `commands/`。它们只处理：
 
-- 建立 `app/`、`commands/`、`infrastructure/` 基础边界。
-- 将 `database.rs` 拆为 connection 和 migration。
-- 调整 `mod` 与 `use` 路径，不改变公开 command。
-- 风险：低。
+1. `State`、IPC 参数和 binary body/response；
+2. 输入的轻量适配；
+3. 必要的 `spawn_blocking`；
+4. 调用 feature facade；
+5. 保持既有 `CommandError` 或 desktop 字符串错误 contract；
+6. 成功写操作后的 Sync change 通知。
 
-### Phase 3 — Small Feature Boundaries
+Feature 中不存在 `#[tauri::command]`。SSH/SFTP 的反向消息也通过 event port 注入，不再持有
+`AppHandle`。
 
-- 拆 Audit、Group、Snippet 的 model/repository/service。
-- 将相应 commands 移入 `commands/`。
-- Sync change notification 在 command/use-case orchestration 处处理，不让 repository 依赖 Sync。
-- 风险：中。
+## Database Boundary
 
-### Phase 4 — Profile and Vault
+`Database` 只持有 `Arc<PathBuf>`，每次操作创建短生命周期 connection。没有全局 SQLite
+connection mutex，因而不会发生 connection lock 跨 `.await`。连接统一启用：
 
-- 拆 Profile 模型、repository、credential resolution 和 connection plan。
-- 拆 Vault 模型、repository、crypto 和 service。
-- 保持 schema、密文、legacy backfill、host key 和 IPC contract。
-- 清理 secret `Debug` 和不必要 clone。
-- 风险：高。
+- `busy_timeout = 5s`；
+- `foreign_keys = ON`；
+- migration 中保持历史 WAL/schema/column backfill。
 
-### Phase 5 — Backup
+业务 SQL 与其领域共同演进。Backup 是唯一合法跨域 repository，因为导入必须在一个 SQLite
+transaction 内保持原子性；它不是全局 repository 垃圾桶。
 
-- 拆 format、crypto、aggregate repository 和 service。
-- 保留跨域导入的事务原子性和 ID remapping。
-- 文件选择进入 desktop adapter。
-- 保持 backup 格式和 Go compatibility fixture。
-- 风险：高。
+## SSH Runtime Ownership
 
-### Phase 6 — SSH Ownership
+```text
+SshService
+├── ProfileService + AuditRepository
+├── Arc<dyn SessionEventSink>
+└── SessionManager
+    ├── sessions: id -> Arc<Session>
+    └── tasks: id -> JoinHandle
+```
 
-- 建立 SshService、Session、SessionManager。
-- transport 使用自有 ConnectionPlan，并封装 russh handle。
-- 跟踪 spawned tasks，实现 cancel-and-join shutdown 和自然退出回收。
-- command/event adapter 与核心分离。
-- 风险：高。
+- `Session` 只拥有一个活动连接的命令 channel、host-key decision、输出缓冲和 cancellation；
+- `SessionManager` 负责 registry 与 task 生命周期；
+- session 自然完成后回收，应用退出执行 cancel、disconnect、join；
+- `ConnectedRoute` 的 russh handle 为私有；SFTP 只调用 `open_subsystem`/`exec` 等封装能力；
+- SSH channel 使用有界 channel，不在 `.await` 期间持有 `std::sync::MutexGuard`。
 
-### Phase 7 — SFTP Ownership
+## SFTP Runtime Ownership
 
-- 建立 SftpService、SessionManager 和独立 TransferManager。
-- 消除 `state <-> transfer` 双向依赖。
-- 将本地文件访问移入平台边界。
-- 修正目录归档的整树内存加载。
-- 保持 chunk、IPC、编辑器和传输行为。
-- 风险：高。
+```text
+SftpService
+├── session registry
+├── tracked connection tasks
+├── TransferManager
+│   ├── transfer/upload registries
+│   ├── Semaphore(5)
+│   ├── tracked workers
+│   └── CancellationToken
+└── Arc<dyn SftpEventSink>
+```
 
-### Phase 8 — Sync Ownership
+上传/下载继续使用最多 1 MiB 的 binary IPC chunk 和 128 KiB relay buffer。目录下载和
+remote-to-remote archive 使用有限磁盘 staging，再流式压缩/上传；不会把整棵目录及压缩包同时
+驻留内存。shutdown 会取消并等待 connection/transfer workers，清理临时文件。
 
-- 将 `sync/commands.rs` 迁入 `commands/sync.rs`。
-- `store.rs` 改为明确 repository。
-- 建立统一 operation coordinator。
-- 修正 scheduler backpressure、task tracking 和 shutdown。
-- 保持 sync data、cloud object 和 backup 格式。
-- 风险：高。
+## Sync Runtime Ownership
 
-### Phase 9 — Typed Errors
+`SyncService` 私有持有 repository、BackupService、backup directory、OAuth pending state、
+`OperationCoordinator` 与 scheduler slot。Scheduler 使用容量 32 的 bounded channel：手动
+reload/sync/push 在队列满或关闭时返回稳定错误，不再虚假返回 `started: true`；change 通知失败
+会记录日志。
 
-- 引入 Storage/Vault/Backup/SSH/SFTP/Sync/Platform errors。
-- 仅在 command 边界生成兼容 IPC error。
-- 对底层错误和 provider body 脱敏。
-- 风险：中高。
+所有 create/restore/pull/push/conflict/delete-cloud 变更使用同一个 Tokio operation mutex，避免
+版本恢复和云端 index read-modify-write 并发。该 mutex 有意覆盖完整异步 operation；它不是
+保护普通数据结构的细粒度锁，因此不存在 lock ordering 链。
 
-### Phase 10 — Platform Boundary
+## Error Strategy
 
-- target-gate desktop-only dependencies 和插件。
-- 收敛 paths/dialogs/logs/drag-out/settings migration。
-- 添加 mobile deep-link 与 capability 基础配置。
-- 不删除现有 Desktop 功能，不虚构尚无实现的 mobile filesystem adapter。
-- 风险：中高。
+下层边界使用 `StorageError`、`VaultError`/`CryptoError`、`BackupError`、`ProfileError`、
+`SshError`、`SftpError`、`SyncError` 和 `PlatformError`。内部不再以裸
+`Result<T, String>` 承载 repository、crypto、transport 或 transfer 错误。
 
-### Phase 11 — Visibility and Final Verification
+Feature facade 使用结构化 `CommandError { code, message, references }` 表示稳定 use-case 错误；
+command 可直接让 Tauri 序列化该类型。Desktop 历史 commands 保留 `Result<T, String>`，因为
+前端已有字符串错误 contract，转换发生在 `commands/desktop.rs`。第三方 provider response body、
+russh debug detail 和敏感 plaintext 不直接暴露到 IPC。
 
-- 收窄 visibility 和 re-export。
-- 清理迁移后 dead code 和过期命名。
-- 更新本文的“目标”状态为实际状态。
-- 完成桌面构建、测试和可用条件下的移动端 check。
+## Credential and Secret Boundary
 
-## Verification Policy
+- 只有 `vault/crypto.rs` 实现 credential AES-256-GCM；Profile、Backup、Sync 复用 `Encryptor`；
+- key file、nonce/ciphertext/tag、Backup Argon2id/AAD 均保持 Go 兼容；
+- `Credential`、`ResolvedProfileNode`、`SyncSettings`、`SyncProviderConfig`、`BackupPayload` 等
+  secret-bearing 类型不实现 `Debug`；
+- secret model 使用 `Zeroize`/`ZeroizeOnDrop` 或 `Zeroizing`；
+- 对前端返回的 Profile/Vault/Sync metadata 不包含 resolved credential/provider secret；
+- 日志和错误不输出密码、私钥、token、明文备份或 provider 响应正文。
 
-每个 Phase 至少执行：
+## App State and Shutdown
+
+没有全局 God `AppState`。Tauri 分别管理 `GroupService`、`SnippetService`、`ProfileService`、
+`VaultService`、`BackupService`、`SyncService`、`SshService`、`SftpService` 和
+`AuditRepository`。Command 只能请求其签名中声明的 state。
+
+Desktop `ExitRequested` 的清理顺序为：SSH sessions -> SFTP sessions/transfers -> Sync scheduler
+-> shutdown backup。每个长期任务均有 manager/slot 保存其 `JoinHandle`。Mobile composition 使用
+相同 feature facade；suspend/resume 与移动 OS 后台网络策略仍属于真机集成阶段。
+
+## Platform Boundary
+
+### Desktop only
+
+- single-instance、dialog、opener、drag、updater、process plugins；
+- window controls、ready-to-show、日志查看器、Electron settings migration、drag-out；
+- 系统任意路径对话框和 legacy `XControl` 用户目录选择。
+
+以上插件放在 Cargo desktop target dependency table，代码用 `#[cfg(desktop)]`，默认 capability
+显式限制为 Linux/macOS/Windows。
+
+## Desktop / Mobile Strategy
+
+```text
+                Shared feature core
+                       |
+            +----------+----------+
+            |                     |
+     Desktop adapters       Mobile integration
+```
+
+移动端复用同一套 Profile、Vault、Backup、SSH/SFTP 和 Sync 业务逻辑。平台差异通过 capability、
+Cargo target dependency、composition 分支和 feature port 处理，不复制业务目录。
+
+### Cross-platform core
+
+- Profile/Group/Snippet/Audit/Vault/Backup/Sync 规则与格式；
+- bundled SQLite schema/repositories；
+- russh SSH 与 remote SFTP；
+- cloud providers 与 OAuth use case；
+- terminal/SFTP event ports 和 session/transfer ownership。
+
+### Mobile readiness and remaining integration work
+
+| 范围 | Android | iOS |
+| --- | --- | --- |
+| Tauri entry/composition | `mobile_entry_point` 与 mobile builder 已存在 | 同左 |
+| Capability | `mobile.json` 仅 core/app 权限 | 同左 |
+| 数据目录 | Tauri app data sandbox | Tauri app data sandbox |
+| Credential key | 当前为 sandbox 内加密 key file；可后续接 Keystore adapter | 可后续接 Keychain adapter |
+| SSH/SFTP sockets | 需 NDK target/真机验证 russh、ring、DNS、代理 | 需 Xcode target/真机验证 Network policy |
+| 本地文件 | 当前 local session 只能访问进程可见路径；后续接 content URI/document picker | 后续接 security-scoped URL/document picker |
+| SSH agent | 视为 desktop capability；mobile 应提示不可用或接平台 provider | 同左 |
+| 生命周期 | 需补 suspend/resume、后台限时和网络切换策略 | iOS 后台 socket 限制尤其需要真机策略 |
+| Server detail | 远端 Linux `/proc`/shell 假设与手机本机无关 | 同左 |
+
+不会复制 `desktop/ssh` 与 `mobile/ssh` 两套业务代码，也不会预先创建无实现的
+`android.rs`/`ios.rs`。
+
+## Dependency Compatibility Audit
+
+| 依赖/假设 | 状态 |
+| --- | --- |
+| `tauri-plugin-single-instance/dialog/opener/drag/updater/process` | desktop target-gated |
+| `tauri-plugin-deep-link` | 共用；mobile callback 需真机验证 |
+| `rusqlite(bundled)` | 无系统 SQLite 路径假设；需各 target 编译验证 |
+| `russh`/`russh-sftp`/`ring` | 不含 desktop API；需 Android/iOS toolchain 验证 |
+| `reqwest` + rustls + system-proxy | 无 OpenSSL 依赖；system proxy 行为需 mobile 验证 |
+| `dirs` | 只用于 desktop legacy path 与 local SFTP home fallback |
+| filesystem/temp path | desktop adapter 已隔离；SFTP staging 使用进程 temp sandbox |
+| process/shell | 不启动本地业务进程；ServerDetail 命令在远端 SSH 执行 |
+| keyring | 当前未依赖；未来 secure storage 通过 platform adapter 引入 |
+| updater/drag-out | capability 和代码均 desktop-only，未删除现有功能 |
+
+## Initial Audit Resolution
+
+| 初始风险 | 等级 | 处置 |
+| --- | --- | --- |
+| 远端目录归档整树载入内存 | P0 | 已改为磁盘 staging + 流式复制/归档 |
+| Sync `try_send` 静默丢请求 | P0 | 已返回 busy/stopped typed error |
+| Sync restore/push/pull 竞态 | P0 | 已统一 `OperationCoordinator` |
+| secret-bearing model `Debug`/clone | P0 | 已移除 Debug，增加 zeroize；保留必要所有权 clone |
+| command 与 SQL/SSH/SFTP 流程混合 | P1 | 94 个 command 全部迁至 adapter 层 |
+| session/transfer detached tasks | P1 | manager 跟踪、自然回收、cancel-and-join |
+| SFTP 泄漏 raw russh handle | P1 | `ConnectedRoute` 私有封装 subsystem/exec |
+| feature 直接持有 Tauri AppHandle | P1 | feature-owned event port + app adapter |
+| root God files / Go manager 命名 | P1/P2 | feature model/repository/service/manager 按真实职责拆分 |
+| SQLite schema 与业务 SQL 混合 | P1/P2 | infrastructure migration 与 feature repository 分离 |
+| 大面积 `Result<T, String>` | P1/P2 | typed lower errors；仅 desktop IPC contract 保留字符串 |
+| Desktop 依赖进入 mobile graph | P1 | Cargo target gate + 分离 capability/builder |
+| Sync async 流程中的短 SQLite 调用 | P2 性能 | 仍需 profiling；若成为瓶颈再引入专用 DB worker，不先造 pool/trait |
+| OAuth callback 短任务未集中登记 | P2 生命周期 | 由 Tauri runtime 承载；后续 mobile lifecycle 阶段评估 task set |
+| ServerDetail 假设远端 Linux | P2 兼容 | 保持既有行为，未来以 remote OS collector 分支扩展 |
+
+## Migration Record
+
+每一阶段在通过 Rust gate 后独立提交：
+
+| Phase | Commit | 内容 |
+| --- | --- | --- |
+| 1 | `7f53a8b` | 架构审计与迁移方案 |
+| 2 | `ceb8868` | app/commands/database 基础边界 |
+| 3 | `08c70fb` | Audit/Group/Snippet feature boundaries |
+| 4 | `8b73738` | Profile/Vault boundaries |
+| 5a | `41966df` | Backup command adapters |
+| 5b | `e77bf5b` | Backup model/format |
+| 5c | `ddbd609` | Backup aggregate repository |
+| 6-7 | `5aae685` | SSH/SFTP runtime ownership、流式归档、shutdown |
+| 8 | `1428c3a` | Sync service/repository/scheduler/coordinator |
+| 9-10 | `5e93ea8` | typed errors、desktop platform adapters、mobile capability |
+| 11 | `12ea2bf` | Tauri event ports 与 visibility 收口 |
+
+所有移动均保持 command 名称、JSON 字段、binary IPC、SQLite schema、数据目录、密文与备份格式。
+
+## Verification Policy and Record
+
+每阶段及最终验收使用：
 
 ```bash
 cd src-tauri
@@ -466,48 +436,42 @@ cargo fmt --all -- --check
 cargo check --locked
 cargo clippy --all-targets --all-features --locked -- -D warnings
 cargo test --locked
-```
 
-涉及 command、配置或前端 contract 时额外执行：
-
-```bash
+npm --prefix web run test:unit
+npm --prefix web run lint
 npm --prefix web run build
 ```
 
-最终验收还包括：
+2026-09-09 最终结果：
 
-- command 名称和 payload 对照；
-- schema/migration 快照；
-- credential/backup compatibility fixtures；
-- shutdown/cancellation 测试；
-- 大文件和目录 transfer 测试；
-- capability 与 target dependency 检查；
-- Windows/macOS/Linux 构建或 CI；
-- Android/iOS toolchain 可用后的 `cargo check` 与真机生命周期测试。
+- Rust `fmt/check/clippy -D warnings/test` 全部通过，59 passed，0 failed；
+- Web unit tests 82 passed，lint 通过，production build 通过；
+- 重构前后 command 集合均为 94 个，名称集合无差异；
+- Android 与 iOS Cargo 一级依赖树均能解析，且不包含 single-instance、dialog、opener、
+  drag、updater、process 六个 desktop-only plugins；
+- Desktop smoke binary 编译成功，但当前无图形显示环境，Tao 在业务初始化前报告
+  `Failed to initialize GTK`；本机也没有 `xvfb-run`；
+- 本机仅安装 `x86_64-unknown-linux-gnu` Rust target，因此没有把依赖树解析等同于 Android/iOS
+  cross-compile；Windows/macOS/Linux bundle 和移动真机仍由对应平台 CI/机器验证。
 
-## Baseline Verification
+## Visibility Rules
 
-在 `57bddcb` 基线上已通过：
-
-```text
-cargo fmt --all -- --check
-cargo check --locked
-cargo clippy --all-targets --all-features --locked -- -D warnings
-cargo test --locked                # 57 passed, 0 failed
-npm --prefix web run build
-```
-
-本机仅安装 `x86_64-unknown-linux-gnu` target，因此本阶段未完成 Android/iOS cross-compile。
+1. 默认 private；兄弟子模块共享用 `pub(super)`；composition/commands 需要时才用 `pub(crate)`；
+2. `pub` 只用于 crate 真正对外入口；私有 module 内的序列化 DTO 不等于外部 Rust API；
+3. repository、error、manager、provider 实现不从 feature `mod.rs` 暴露；
+4. `mod.rs` 不承载业务逻辑，只声明模块与最小 re-export；
+5. 不创建 `common`、`utils`、`helpers`、`service/impl` 或单实现 trait；
+6. `SessionEventSink`/`SftpEventSink` 是因为平台 adapter 和测试替换确有价值而存在的 trait。
 
 ## Future Extension Rules
 
-1. 新 Feature 优先按业务能力组织，不进入全局 controller/service/dao 层。
-2. concrete first；只有多实现、平台差异、dependency inversion 或测试替换有明确价值时创建 trait。
-3. 新 command 必须放在 `commands/`，不能把 Tauri 类型引入 Feature core。
-4. 新业务 SQL 放在所属 Feature repository；跨域事务需要明确 aggregate owner。
-5. russh、russh-sftp、rusqlite 和平台 API 不越过各自 boundary。
-6. 新后台任务必须有 owner、取消方式、完成回收和 shutdown 策略。
-7. secret-bearing 类型默认不实现 `Debug`，避免非必要 `Clone`，并明确 zeroize 生命周期。
-8. Desktop/Mobile 共享业务逻辑，只为真实平台能力建立 adapter。
-9. 不创建 `common`、`utils`、`helpers` 垃圾桶。
-10. 所有架构迁移保持小步、可编译、可测试，并以独立 commit 记录。
+1. 新 feature 按业务能力组织，复杂度增长后再从单文件升级为目录；
+2. 新 command 必须位于 `commands/`，不能直接执行 SQL、crypto、russh 或管理 task map；
+3. 新业务 SQL 放入所属 feature repository；跨域事务必须声明 aggregate owner；
+4. russh、russh-sftp、rusqlite、cloud HTTP 和 OS API 不越过各自边界；
+5. 新后台任务必须声明 owner、bounded/backpressure、取消、自然回收与 shutdown；
+6. 不在 `.await` 时持有普通互斥锁；长操作串行化只能由明确 operation coordinator 完成；
+7. secret 类型默认不实现 `Debug`，避免不必要 clone，并明确 zeroize 生命周期；
+8. Desktop/Mobile 共享 core，只为真实平台差异增加 adapter/cfg；
+9. 对外 contract 变更必须先设计迁移，不能借架构重构修改 schema/密文/备份/IPC；
+10. 每个架构阶段保持可编译、可测试并独立提交。

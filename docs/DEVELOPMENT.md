@@ -1,7 +1,8 @@
 # XControl 开发指南
 
-XControl 是基于 React、Tauri 2 与 Rust 的桌面 SSH/SFTP 客户端。所有业务领域都在
-Tauri 主进程内运行，前端通过细粒度 command 与 event 通信，不启动本地服务进程。
+XControl 是基于 React、Tauri 2 与 Rust 的 SSH/SFTP 客户端。当前发布桌面版本，Rust
+核心与 Tauri mobile entry 为 Android/iOS 复用预留。所有业务领域都在 Tauri 进程内运行，
+前端通过细粒度 command 与 event 通信，不启动本地服务进程。
 
 ## 开发环境
 
@@ -23,7 +24,8 @@ npm --prefix web run lint
 npm --prefix web run build
 cd src-tauri
 cargo fmt --all -- --check
-cargo clippy --all-targets --locked -- -D warnings
+cargo check --locked
+cargo clippy --all-targets --all-features --locked -- -D warnings
 cargo test --locked
 ```
 
@@ -31,17 +33,21 @@ cargo test --locked
 
 ## 架构
 
-Rust 入口在 `src-tauri/src/lib.rs`，启动时按顺序初始化 SQLite、凭据加密、审计、
-Profile/Vault/Group/Snippet、备份与同步、SSH 会话和 SFTP 会话。
+Rust 入口在 `src-tauri/src/lib.rs`，`app/bootstrap.rs` 按顺序初始化 SQLite、凭据加密、
+审计、Profile/Vault/Group/Snippet、备份与同步、SSH 会话和 SFTP 会话。
 
-- `database.rs`：SQLite schema、事务迁移、WAL 与 busy timeout。
-- `credential_crypto.rs`：AES-256-GCM 凭据格式与历史数据兼容。
-- `profiles.rs`、`vault.rs`、`groups.rs`、`snippets.rs`：本地业务数据。
-- `backup.rs`、`sync/`：备份、云 provider、OAuth 与调度器。
+- `commands/`：全部 Tauri IPC adapter；不执行 SQL、加密或底层 SSH/SFTP 流程。
+- `infrastructure/database/`：SQLite schema、兼容迁移、WAL 与 busy timeout。
+- `profile/`、`vault/`、`group/`、`snippet/`、`audit/`：本地 feature 与各自 repository。
+- `backup/`、`sync/`：备份 aggregate、云 provider、OAuth 与 tracked scheduler。
 - `ssh/transport.rs`：直连、SOCKS5、HTTP CONNECT、SSH jump 与认证。
-- `ssh/session.rs`：PTY、终端 I/O、补全、host-key 确认与 Tauri event。
-- `sftp/`：会话、文件操作、编辑、上传下载、跨会话传输与拖出物化。
+- `ssh/session.rs`、`session_manager.rs`：PTY、终端 I/O、补全、host-key 与生命周期。
+- `sftp/`：会话、文件操作、编辑、上传下载与跨会话传输。
+- `app/events.rs`：SSH/SFTP feature event port 的 Tauri adapter。
+- `infrastructure/platform/desktop/`：对话框、drag-out、日志、legacy path/settings。
 - `server_detail.rs`：通过现有 SSH/SFTP 会话采集主机信息和运行指标。
+
+完整依赖、错误、所有权和移动端边界见 `docs/RUST_ARCHITECTURE.md`。
 
 React 的领域 API 位于 `web/src/api/`，统一使用 `invokeCommand`；实时消息由
 `xcontrol-session-message`、`xcontrol-sftp-message` 等 Tauri event 承载。

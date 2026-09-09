@@ -17,7 +17,7 @@ use tokio::{
     time::timeout,
 };
 
-use crate::profiles::{ProxyConfig, ResolvedProfileNode};
+use crate::profile::{ProxyConfig, ResolvedProfileNode};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 

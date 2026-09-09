@@ -20,7 +20,7 @@ use super::transport::{connect_route, ClientHandler, ConnectedRoute, HostKeyVeri
 use crate::{
     audit::AuditRepository,
     error::CommandError,
-    profiles::{ProfileState, ResolvedProfileNode},
+    profile::{ProfileService, ResolvedProfileNode},
 };
 
 const SESSION_EVENT: &str = "xcontrol-session-message";
@@ -385,13 +385,13 @@ impl HostKeyVerifier for SessionHostKeyVerifier {
 #[derive(Clone)]
 pub struct SessionState {
     sessions: Arc<RwLock<HashMap<String, Arc<Session>>>>,
-    profiles: ProfileState,
+    profiles: ProfileService,
     audit: AuditRepository,
     app: AppHandle,
 }
 
 impl SessionState {
-    pub fn new(profiles: ProfileState, audit: AuditRepository, app: AppHandle) -> Self {
+    pub fn new(profiles: ProfileService, audit: AuditRepository, app: AppHandle) -> Self {
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             profiles,

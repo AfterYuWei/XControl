@@ -21,12 +21,11 @@ use zeroize::Zeroizing;
 
 use crate::{
     audit::AuditRepository,
-    credential_crypto::Encryptor,
     error::CommandError,
     group::{Group, GroupService},
     infrastructure::database::Database,
-    profiles::{Profile, ProfileState},
-    vault::{decode_plaintext, encode_plaintext, Credential, VaultItem, VaultState},
+    profile::{Profile, ProfileService},
+    vault::{decode_plaintext, encode_plaintext, Credential, Encryptor, VaultItem, VaultService},
 };
 
 const FORMAT: &str = "xcontrol-backup";
@@ -94,7 +93,7 @@ impl KdfParams {
     }
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize)]
 struct BackupFile {
     format: String,
     version: i64,
@@ -115,7 +114,7 @@ struct BackupFile {
     snippets: Vec<BackupSnippet>,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize)]
 struct BackupPayload {
     #[serde(default)]
     groups: Vec<BackupGroup>,
@@ -139,7 +138,7 @@ struct BackupGroup {
     created_at: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 struct BackupVaultItem {
     id: String,
     name: String,
@@ -155,7 +154,7 @@ struct BackupVaultItem {
     updated_at: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 struct BackupProfile {
     id: String,
     name: String,
@@ -241,8 +240,8 @@ pub struct BackupState {
     encryptor: Encryptor,
     audit: AuditRepository,
     groups: GroupService,
-    profiles: ProfileState,
-    vault: VaultState,
+    profiles: ProfileService,
+    vault: VaultService,
 }
 
 impl BackupState {
@@ -251,8 +250,8 @@ impl BackupState {
         encryptor: Encryptor,
         audit: AuditRepository,
         groups: GroupService,
-        profiles: ProfileState,
-        vault: VaultState,
+        profiles: ProfileService,
+        vault: VaultService,
     ) -> Self {
         Self {
             database,
@@ -1399,8 +1398,9 @@ mod tests {
         let encryptor = Encryptor::load_or_create(directory.path().join("key")).unwrap();
         let audit = AuditRepository::new(database.clone());
         let groups = GroupService::new(database.clone());
-        let profiles = ProfileState::initialize(database.clone(), encryptor.clone()).unwrap();
-        let vault = VaultState::new(database.clone(), encryptor.clone(), audit.clone());
+        let vault = VaultService::new(database.clone(), encryptor.clone(), audit.clone());
+        let profiles =
+            ProfileService::initialize(database.clone(), encryptor.clone(), vault.clone()).unwrap();
         (
             directory,
             BackupState::new(database, encryptor, audit, groups, profiles, vault),

@@ -378,9 +378,12 @@ fn now() -> String {
 mod tests {
     use super::*;
     use crate::{
-        audit::AuditRepository, credential_crypto::Encryptor, group::GroupService,
-        infrastructure::database::Database, profiles::ProfileState, sync::store::SyncRepository,
-        vault::VaultState,
+        audit::AuditRepository,
+        group::GroupService,
+        infrastructure::database::Database,
+        profile::ProfileService,
+        sync::store::SyncRepository,
+        vault::{Encryptor, VaultService},
     };
 
     fn state() -> (tempfile::TempDir, SyncState) {
@@ -389,8 +392,9 @@ mod tests {
         let encryptor = Encryptor::load_or_create(directory.path().join("key")).unwrap();
         let audit = AuditRepository::new(database.clone());
         let groups = GroupService::new(database.clone());
-        let profiles = ProfileState::initialize(database.clone(), encryptor.clone()).unwrap();
-        let vault = VaultState::new(database.clone(), encryptor.clone(), audit.clone());
+        let vault = VaultService::new(database.clone(), encryptor.clone(), audit.clone());
+        let profiles =
+            ProfileService::initialize(database.clone(), encryptor.clone(), vault.clone()).unwrap();
         let backup = BackupState::new(
             database.clone(),
             encryptor.clone(),

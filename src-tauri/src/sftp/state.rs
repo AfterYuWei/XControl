@@ -14,7 +14,7 @@ use super::transfer::TransferManager;
 use crate::{
     audit::AuditRepository,
     error::CommandError,
-    profiles::ProfileState,
+    profile::ProfileService,
     ssh::transport::{connect_route, HostKeyVerifier},
 };
 
@@ -129,7 +129,7 @@ pub(super) struct SftpSession {
 #[derive(Clone)]
 pub struct SftpState {
     pub(super) sessions: Arc<RwLock<HashMap<String, Arc<SftpSession>>>>,
-    pub(super) profiles: ProfileState,
+    pub(super) profiles: ProfileService,
     pub(super) audit: AuditRepository,
     pub(super) app: AppHandle,
     pub(super) transfers: TransferManager,
@@ -150,7 +150,7 @@ impl HostKeyVerifier for StrictHostKeyVerifier {
 }
 
 impl SftpState {
-    pub fn new(profiles: ProfileState, audit: AuditRepository, app: AppHandle) -> Self {
+    pub fn new(profiles: ProfileService, audit: AuditRepository, app: AppHandle) -> Self {
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             profiles,

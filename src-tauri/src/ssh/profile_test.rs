@@ -12,7 +12,7 @@ use tauri::State;
 use super::transport::{connect_route, HostKeyVerifier};
 use crate::{
     error::CommandError,
-    profiles::{ProfileCreateRequest, ProfileState, ProfileUpdateRequest, ResolvedProfileNode},
+    profile::{ProfileCreateRequest, ProfileService, ProfileUpdateRequest, ResolvedProfileNode},
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -171,7 +171,7 @@ async fn run_test(node: ResolvedProfileNode) -> ProfileTestResult {
 
 #[tauri::command]
 pub async fn profile_test_new(
-    state: State<'_, ProfileState>,
+    state: State<'_, ProfileService>,
     request: ProfileCreateRequest,
 ) -> Result<ProfileTestResult, CommandError> {
     Ok(run_test(state.resolve_connection_draft_create(request)?).await)
@@ -179,7 +179,7 @@ pub async fn profile_test_new(
 
 #[tauri::command]
 pub async fn profile_test_existing(
-    state: State<'_, ProfileState>,
+    state: State<'_, ProfileService>,
     id: String,
     request: ProfileUpdateRequest,
 ) -> Result<ProfileTestResult, CommandError> {
@@ -188,7 +188,7 @@ pub async fn profile_test_existing(
 
 #[tauri::command]
 pub async fn profile_confirm_host_key(
-    state: State<'_, ProfileState>,
+    state: State<'_, ProfileService>,
     id: String,
     fingerprint: String,
 ) -> Result<serde_json::Value, CommandError> {

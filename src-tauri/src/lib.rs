@@ -7,13 +7,12 @@ mod app;
 mod audit;
 mod backup;
 mod commands;
-mod credential_crypto;
 #[cfg(desktop)]
 mod drag_out;
 mod error;
 mod group;
 mod infrastructure;
-mod profiles;
+mod profile;
 mod runtime;
 mod server_detail;
 #[cfg(desktop)]

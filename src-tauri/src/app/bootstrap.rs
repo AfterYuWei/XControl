@@ -1,6 +1,6 @@
 //! Tauri application composition root.
 
-use crate::{backup, commands, credential_crypto, profiles, server_detail, sftp, ssh, sync, vault};
+use crate::{backup, commands, profile, server_detail, sftp, ssh, sync, vault};
 
 #[cfg(desktop)]
 use crate::{drag_out, runtime};
@@ -24,19 +24,19 @@ pub(crate) fn run() {
                 commands::group_update,
                 commands::group_delete,
                 commands::audit_list,
-                vault::vault_list,
-                vault::vault_get,
-                vault::vault_create,
-                vault::vault_update,
-                vault::vault_delete,
-                vault::vault_references,
-                vault::vault_reveal,
-                vault::vault_generate_key_pair,
-                profiles::profile_list,
-                profiles::profile_get,
-                profiles::profile_create,
-                profiles::profile_update,
-                profiles::profile_delete,
+                commands::vault_list,
+                commands::vault_get,
+                commands::vault_create,
+                commands::vault_update,
+                commands::vault_delete,
+                commands::vault_references,
+                commands::vault_reveal,
+                commands::vault_generate_key_pair,
+                commands::profile_list,
+                commands::profile_get,
+                commands::profile_create,
+                commands::profile_update,
+                commands::profile_delete,
                 ssh::profile_test::profile_test_new,
                 ssh::profile_test::profile_test_existing,
                 ssh::profile_test::profile_confirm_host_key,
@@ -106,14 +106,17 @@ pub(crate) fn run() {
                     data_dir.join("xcontrol.db"),
                 )
                 .map_err(|error| std::io::Error::other(error.to_string()))?;
-                let encryptor = credential_crypto::Encryptor::load_or_create(data_dir.join("key"))
+                let encryptor = vault::Encryptor::load_or_create(data_dir.join("key"))
                     .map_err(|error| std::io::Error::other(error.to_string()))?;
                 let audit = crate::audit::AuditRepository::new(database.clone());
-                let profiles =
-                    profiles::ProfileState::initialize(database.clone(), encryptor.clone())?;
-                let groups = crate::group::GroupService::new(database.clone());
                 let vault =
-                    vault::VaultState::new(database.clone(), encryptor.clone(), audit.clone());
+                    vault::VaultService::new(database.clone(), encryptor.clone(), audit.clone());
+                let profiles = profile::ProfileService::initialize(
+                    database.clone(),
+                    encryptor.clone(),
+                    vault.clone(),
+                )?;
+                let groups = crate::group::GroupService::new(database.clone());
                 let backup = backup::BackupState::new(
                     database.clone(),
                     encryptor.clone(),
@@ -196,19 +199,19 @@ fn desktop_run() {
             commands::group_update,
             commands::group_delete,
             commands::audit_list,
-            vault::vault_list,
-            vault::vault_get,
-            vault::vault_create,
-            vault::vault_update,
-            vault::vault_delete,
-            vault::vault_references,
-            vault::vault_reveal,
-            vault::vault_generate_key_pair,
-            profiles::profile_list,
-            profiles::profile_get,
-            profiles::profile_create,
-            profiles::profile_update,
-            profiles::profile_delete,
+            commands::vault_list,
+            commands::vault_get,
+            commands::vault_create,
+            commands::vault_update,
+            commands::vault_delete,
+            commands::vault_references,
+            commands::vault_reveal,
+            commands::vault_generate_key_pair,
+            commands::profile_list,
+            commands::profile_get,
+            commands::profile_create,
+            commands::profile_update,
+            commands::profile_delete,
             ssh::profile_test::profile_test_new,
             ssh::profile_test::profile_test_existing,
             ssh::profile_test::profile_confirm_host_key,
@@ -275,12 +278,17 @@ fn desktop_run() {
             let database =
                 crate::infrastructure::database::Database::initialize(data_dir.join("xcontrol.db"))
                     .map_err(|error| std::io::Error::other(error.to_string()))?;
-            let encryptor = credential_crypto::Encryptor::load_or_create(data_dir.join("key"))
+            let encryptor = vault::Encryptor::load_or_create(data_dir.join("key"))
                 .map_err(|error| std::io::Error::other(error.to_string()))?;
             let audit = crate::audit::AuditRepository::new(database.clone());
-            let profiles = profiles::ProfileState::initialize(database.clone(), encryptor.clone())?;
+            let vault =
+                vault::VaultService::new(database.clone(), encryptor.clone(), audit.clone());
+            let profiles = profile::ProfileService::initialize(
+                database.clone(),
+                encryptor.clone(),
+                vault.clone(),
+            )?;
             let groups = crate::group::GroupService::new(database.clone());
-            let vault = vault::VaultState::new(database.clone(), encryptor.clone(), audit.clone());
             let backup = backup::BackupState::new(
                 database.clone(),
                 encryptor.clone(),

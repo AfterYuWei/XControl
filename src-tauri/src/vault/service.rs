@@ -5,106 +5,34 @@
 
 use chrono::{Local, SecondsFormat};
 use rand_core::OsRng;
-use rusqlite::{params, params_from_iter, OptionalExtension, Row};
-use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use ssh_key::{
     private::{KeypairData, RsaKeypair},
     Algorithm, LineEnding, PrivateKey,
 };
-use tauri::State;
-use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::{
-    audit::AuditRepository, credential_crypto::Encryptor, error::CommandError,
-    infrastructure::database::Database,
+use crate::{audit::AuditRepository, error::CommandError, infrastructure::database::Database};
+
+use super::{
+    repository::{VaultRecord, VaultRepository},
+    Credential, Encryptor, GenerateKeyRequest, GenerateKeyResponse, ProfileRef, VaultItem,
+    VaultWriteRequest,
 };
 
 const PASSWORD: &str = "password";
 const PRIVATE_KEY: &str = "private_key";
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct VaultItem {
-    pub id: String,
-    pub name: String,
-    #[serde(rename = "type")]
-    pub entry_type: String,
-    pub username: String,
-    pub remark: String,
-    pub fingerprint: String,
-    pub ref_count: i64,
-    pub has_passphrase: bool,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct ProfileRef {
-    pub id: String,
-    pub name: String,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, Zeroize, ZeroizeOnDrop)]
-pub struct Credential {
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub password: String,
-    #[serde(
-        default,
-        rename = "private_key",
-        skip_serializing_if = "String::is_empty"
-    )]
-    pub private_key: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub public_key: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub passphrase: String,
-}
-
-#[derive(Debug, Deserialize, Zeroize, ZeroizeOnDrop)]
-pub struct VaultWriteRequest {
-    pub name: String,
-    #[serde(rename = "type")]
-    pub entry_type: String,
-    #[serde(default)]
-    pub username: String,
-    #[serde(default)]
-    pub remark: String,
-    #[serde(default)]
-    pub password: String,
-    #[serde(default, rename = "private_key")]
-    pub private_key: String,
-    #[serde(default)]
-    pub public_key: String,
-    #[serde(default)]
-    pub passphrase: String,
-}
-
-#[derive(Debug, Deserialize, Zeroize, ZeroizeOnDrop)]
-pub struct GenerateKeyRequest {
-    pub algo: String,
-    pub bits: Option<usize>,
-    #[serde(default)]
-    pub passphrase: String,
-}
-
-#[derive(Debug, Serialize, Zeroize, ZeroizeOnDrop)]
-pub struct GenerateKeyResponse {
-    pub public_key: String,
-    pub private_key: String,
-    pub fingerprint: String,
-}
-
 #[derive(Clone)]
-pub struct VaultState {
-    database: Database,
+pub(crate) struct VaultService {
+    repository: VaultRepository,
     encryptor: Encryptor,
     audit: AuditRepository,
 }
 
-impl VaultState {
+impl VaultService {
     pub fn new(database: Database, encryptor: Encryptor, audit: AuditRepository) -> Self {
         Self {
-            database,
+            repository: VaultRepository::new(database),
             encryptor,
             audit,
         }
@@ -115,60 +43,19 @@ impl VaultState {
         entry_type: Option<&str>,
         q: Option<&str>,
     ) -> Result<Vec<VaultItem>, CommandError> {
-        let connection = self.database.connect()?;
-        let mut query = String::from(
-            "SELECT v.id, v.type, v.data, v.name, v.username, v.remark, v.fingerprint, \
-             v.created_at, v.updated_at, COUNT(p.id) \
-             FROM vault v LEFT JOIN profiles p \
-             ON p.vault_id = v.id AND p.auth_type = 'vault'",
-        );
-        let mut arguments = Vec::<String>::new();
-        let mut conditions = Vec::new();
-        if let Some(value) = entry_type.filter(|value| !value.is_empty()) {
-            conditions.push("v.type = ?");
-            arguments.push(value.to_owned());
-        }
-        if let Some(value) = q.filter(|value| !value.is_empty()) {
-            conditions.push("(v.name LIKE ? OR v.remark LIKE ? OR v.username LIKE ?)");
-            let pattern = format!("%{value}%");
-            arguments.extend([pattern.clone(), pattern.clone(), pattern]);
-        }
-        if !conditions.is_empty() {
-            query.push_str(" WHERE ");
-            query.push_str(&conditions.join(" AND "));
-        }
-        query.push_str(
-            " GROUP BY v.id, v.type, v.data, v.name, v.username, v.remark, \
-             v.fingerprint, v.created_at, v.updated_at ORDER BY v.updated_at DESC",
-        );
-
-        let mut statement = connection.prepare(&query).map_err(CommandError::database)?;
-        let rows = statement
-            .query_map(params_from_iter(arguments.iter()), vault_record_from_row)
-            .map_err(CommandError::database)?;
-        rows.map(|row| row.map_err(CommandError::database))
-            .map(|result| result.map(|record| self.item_from_record(record)))
+        self.repository
+            .list(entry_type, q)?
+            .into_iter()
+            .map(|record| Ok(self.item_from_record(record)))
             .collect()
     }
 
-    fn get(&self, id: &str) -> Result<VaultItem, CommandError> {
-        let connection = self.database.connect()?;
-        let record = connection
-            .query_row(
-                "SELECT v.id, v.type, v.data, v.name, v.username, v.remark, v.fingerprint, \
-                 v.created_at, v.updated_at, \
-                 (SELECT COUNT(*) FROM profiles p WHERE p.auth_type = 'vault' AND p.vault_id = v.id) \
-                 FROM vault v WHERE v.id = ?1",
-                [id],
-                vault_record_from_row,
-            )
-            .optional()
-            .map_err(CommandError::database)?
-            .ok_or_else(not_found)?;
+    pub(crate) fn get(&self, id: &str) -> Result<VaultItem, CommandError> {
+        let record = self.repository.get(id)?.ok_or_else(not_found)?;
         Ok(self.item_from_record(record))
     }
 
-    fn create(&self, request: VaultWriteRequest) -> Result<VaultItem, CommandError> {
+    pub(crate) fn create(&self, request: VaultWriteRequest) -> Result<VaultItem, CommandError> {
         let (name, entry_type, username, remark, credential) = prepare_request(request)?;
         validate_credential(&credential, &entry_type)?;
         let (plaintext, fingerprint) = encode_plaintext(&credential, &entry_type)
@@ -179,24 +66,18 @@ impl VaultState {
             .map_err(|error| CommandError::new("VAULT_ERROR", error.to_string()))?;
         let id = uuid::Uuid::new_v4().to_string();
         let now = now();
-        let connection = self.database.connect()?;
-        connection
-            .execute(
-                "INSERT INTO vault \
-                 (id, type, data, fingerprint, name, username, remark, created_at, updated_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
-                params![
-                    id,
-                    entry_type,
-                    encrypted,
-                    fingerprint,
-                    name,
-                    username,
-                    remark,
-                    now,
-                ],
-            )
-            .map_err(|error| CommandError::new("VAULT_ERROR", error.to_string()))?;
+        self.repository.insert(&VaultRecord {
+            id: id.clone(),
+            entry_type,
+            data: encrypted,
+            name: name.clone(),
+            username,
+            remark,
+            fingerprint,
+            created_at: now.clone(),
+            updated_at: Some(now),
+            ref_count: 0,
+        })?;
         let _ = self
             .audit
             .record(&id, "vault_create", format!("name={name}"));
@@ -204,7 +85,11 @@ impl VaultState {
             .map_err(|error| CommandError::new("DB_ERROR", error.message))
     }
 
-    fn update(&self, id: &str, request: VaultWriteRequest) -> Result<VaultItem, CommandError> {
+    pub(crate) fn update(
+        &self,
+        id: &str,
+        request: VaultWriteRequest,
+    ) -> Result<VaultItem, CommandError> {
         let (name, entry_type, username, remark, credential) = prepare_request(request)?;
         let existing = self.get(id)?;
         if existing.entry_type != entry_type {
@@ -222,38 +107,21 @@ impl VaultState {
             .map_err(|error| CommandError::new("VAULT_ERROR", error.to_string()))?;
 
         let now = now();
-        let mut connection = self.database.connect()?;
-        let transaction = connection
-            .transaction()
-            .map_err(|error| CommandError::new("VAULT_ERROR", error.to_string()))?;
-        transaction
-            .execute(
-                "UPDATE vault SET type=?1, data=?2, fingerprint=?3, name=?4, username=?5, \
-                 remark=?6, updated_at=?7 WHERE id=?8",
-                params![
-                    entry_type,
-                    encrypted,
-                    fingerprint,
-                    name,
-                    username,
-                    remark,
-                    now,
-                    id,
-                ],
-            )
-            .map_err(|error| CommandError::new("VAULT_ERROR", error.to_string()))?;
-        if entry_type == PASSWORD {
-            transaction
-                .execute(
-                    "UPDATE profiles SET username=?1, updated_at=?2 \
-                     WHERE auth_type='vault' AND vault_id=?3",
-                    params![username, now, id],
-                )
-                .map_err(|error| CommandError::new("VAULT_ERROR", error.to_string()))?;
-        }
-        transaction
-            .commit()
-            .map_err(|error| CommandError::new("VAULT_ERROR", error.to_string()))?;
+        self.repository.update(
+            &VaultRecord {
+                id: id.to_owned(),
+                entry_type: entry_type.clone(),
+                data: encrypted,
+                name: name.clone(),
+                username,
+                remark,
+                fingerprint,
+                created_at: existing.created_at,
+                updated_at: Some(now),
+                ref_count: existing.ref_count,
+            },
+            entry_type == PASSWORD,
+        )?;
         let _ = self
             .audit
             .record(id, "vault_update", format!("name={name}"));
@@ -261,7 +129,7 @@ impl VaultState {
             .map_err(|error| CommandError::new("DB_ERROR", error.message))
     }
 
-    fn delete(&self, id: &str) -> Result<(), CommandError> {
+    pub(crate) fn delete(&self, id: &str) -> Result<(), CommandError> {
         let references = self.references(id)?;
         if !references.is_empty() {
             return Err(
@@ -269,48 +137,38 @@ impl VaultState {
                     .with_references(&references),
             );
         }
-        let connection = self.database.connect()?;
-        connection
-            .execute("DELETE FROM vault WHERE id=?1", [id])
-            .map_err(CommandError::database)?;
+        self.repository.delete(id)?;
         let _ = self.audit.record(id, "vault_delete", "");
         Ok(())
     }
 
-    fn references(&self, id: &str) -> Result<Vec<ProfileRef>, CommandError> {
-        let connection = self.database.connect()?;
-        let mut statement = connection
-            .prepare("SELECT id, name FROM profiles WHERE auth_type='vault' AND vault_id=?1")
-            .map_err(CommandError::database)?;
-        let rows = statement
-            .query_map([id], |row| {
-                Ok(ProfileRef {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                })
-            })
-            .map_err(CommandError::database)?;
-        rows.collect::<Result<Vec<_>, _>>()
-            .map_err(CommandError::database)
+    pub(crate) fn references(&self, id: &str) -> Result<Vec<ProfileRef>, CommandError> {
+        self.repository.references(id)
     }
 
-    fn reveal(&self, id: &str) -> Result<Credential, CommandError> {
-        let connection = self.database.connect()?;
-        let (entry_type, data): (String, String) = connection
-            .query_row("SELECT type, data FROM vault WHERE id=?1", [id], |row| {
-                Ok((row.get(0)?, row.get(1)?))
-            })
-            .optional()
-            .map_err(CommandError::database)?
-            .ok_or_else(not_found)?;
-        let plaintext = self.encryptor.decrypt(&data).map_err(|_| not_found())?;
-        let mut credential = decode_plaintext(&plaintext, &entry_type);
+    pub(crate) fn reveal(&self, id: &str) -> Result<Credential, CommandError> {
+        let mut credential = self.resolve_for_profile(id).map_err(|_| not_found())?;
         credential.public_key = credential.public_key.trim().to_owned();
         if credential.public_key.is_empty() {
             credential.public_key = derive_authorized_public_key(&credential).unwrap_or_default();
         }
         let _ = self.audit.record(id, "vault_reveal", "");
         Ok(credential)
+    }
+
+    pub(crate) fn metadata(&self, id: &str) -> Result<(String, String), CommandError> {
+        self.repository
+            .get(id)?
+            .map(|record| (record.entry_type, record.username))
+            .ok_or_else(not_found)
+    }
+
+    /// Resolve a credential for an in-process SSH use case without producing a
+    /// user-facing reveal audit event.
+    pub(crate) fn resolve_for_profile(&self, id: &str) -> Result<Credential, CommandError> {
+        let (entry_type, data) = self.repository.secret(id)?.ok_or_else(not_found)?;
+        let plaintext = self.encryptor.decrypt(&data).map_err(|_| not_found())?;
+        Ok(decode_plaintext(&plaintext, &entry_type))
     }
 
     fn item_from_record(&self, record: VaultRecord) -> VaultItem {
@@ -338,34 +196,6 @@ impl VaultState {
             created_at: record.created_at,
         }
     }
-}
-
-struct VaultRecord {
-    id: String,
-    entry_type: String,
-    data: String,
-    name: String,
-    username: String,
-    remark: String,
-    fingerprint: String,
-    created_at: String,
-    updated_at: Option<String>,
-    ref_count: i64,
-}
-
-fn vault_record_from_row(row: &Row<'_>) -> rusqlite::Result<VaultRecord> {
-    Ok(VaultRecord {
-        id: row.get(0)?,
-        entry_type: row.get(1)?,
-        data: row.get(2)?,
-        name: row.get(3)?,
-        username: row.get(4)?,
-        remark: row.get(5)?,
-        fingerprint: row.get(6)?,
-        created_at: row.get(7)?,
-        updated_at: row.get(8)?,
-        ref_count: row.get(9)?,
-    })
 }
 
 fn prepare_request(
@@ -484,7 +314,9 @@ fn derive_authorized_public_key(credential: &Credential) -> Result<String, ssh_k
         .map(|key| key.trim().to_owned())
 }
 
-fn generate_key_pair(request: GenerateKeyRequest) -> Result<GenerateKeyResponse, CommandError> {
+pub(crate) fn generate_key_pair(
+    request: GenerateKeyRequest,
+) -> Result<GenerateKeyResponse, CommandError> {
     let algo = request.algo.to_lowercase();
     let algo = if algo.is_empty() { "ed25519" } else { &algo };
     let mut rng = OsRng;
@@ -549,113 +381,16 @@ fn not_found() -> CommandError {
     CommandError::new("NOT_FOUND", "vault entry not found")
 }
 
-#[tauri::command]
-pub async fn vault_list(
-    state: State<'_, VaultState>,
-    vault_type: Option<String>,
-    q: Option<String>,
-) -> Result<Vec<VaultItem>, CommandError> {
-    let state = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || state.list(vault_type.as_deref(), q.as_deref()))
-        .await
-        .map_err(CommandError::database)?
-}
-
-#[tauri::command]
-pub async fn vault_get(
-    state: State<'_, VaultState>,
-    id: String,
-) -> Result<VaultItem, CommandError> {
-    let state = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || state.get(&id))
-        .await
-        .map_err(CommandError::database)?
-}
-
-#[tauri::command]
-pub async fn vault_create(
-    state: State<'_, VaultState>,
-    sync_state: State<'_, crate::sync::SyncState>,
-    request: VaultWriteRequest,
-) -> Result<VaultItem, CommandError> {
-    let state = state.inner().clone();
-    let item = tauri::async_runtime::spawn_blocking(move || state.create(request))
-        .await
-        .map_err(CommandError::database)??;
-    sync_state.notify_change();
-    Ok(item)
-}
-
-#[tauri::command]
-pub async fn vault_update(
-    state: State<'_, VaultState>,
-    sync_state: State<'_, crate::sync::SyncState>,
-    id: String,
-    request: VaultWriteRequest,
-) -> Result<VaultItem, CommandError> {
-    let state = state.inner().clone();
-    let item = tauri::async_runtime::spawn_blocking(move || state.update(&id, request))
-        .await
-        .map_err(CommandError::database)??;
-    sync_state.notify_change();
-    Ok(item)
-}
-
-#[tauri::command]
-pub async fn vault_delete(
-    state: State<'_, VaultState>,
-    sync_state: State<'_, crate::sync::SyncState>,
-    id: String,
-) -> Result<(), CommandError> {
-    let state = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || state.delete(&id))
-        .await
-        .map_err(CommandError::database)??;
-    sync_state.notify_change();
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn vault_references(
-    state: State<'_, VaultState>,
-    id: String,
-) -> Result<Vec<ProfileRef>, CommandError> {
-    let state = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || state.references(&id))
-        .await
-        .map_err(CommandError::database)?
-}
-
-#[tauri::command]
-pub async fn vault_reveal(
-    state: State<'_, VaultState>,
-    id: String,
-) -> Result<Credential, CommandError> {
-    let state = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || state.reveal(&id))
-        .await
-        .map_err(CommandError::database)?
-}
-
-#[tauri::command]
-pub async fn vault_generate_key_pair(
-    request: GenerateKeyRequest,
-) -> Result<GenerateKeyResponse, CommandError> {
-    tauri::async_runtime::spawn_blocking(move || generate_key_pair(request))
-        .await
-        .map_err(CommandError::database)?
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn state() -> (tempfile::TempDir, VaultState) {
+    fn state() -> (tempfile::TempDir, VaultService) {
         let directory = tempfile::tempdir().unwrap();
         let database = Database::initialize(directory.path().join("xcontrol.db")).unwrap();
         let encryptor = Encryptor::load_or_create(directory.path().join("key")).unwrap();
         let audit = AuditRepository::new(database.clone());
-        let state = VaultState::new(database, encryptor, audit);
+        let state = VaultService::new(database, encryptor, audit);
         (directory, state)
     }
 
@@ -684,6 +419,7 @@ mod tests {
         assert_eq!(state.list(Some(PASSWORD), Some("数据")).unwrap().len(), 1);
 
         state
+            .repository
             .database
             .connect()
             .unwrap()
@@ -698,6 +434,7 @@ mod tests {
             .unwrap();
         assert_eq!(updated.ref_count, 1);
         let username: String = state
+            .repository
             .database
             .connect()
             .unwrap()
@@ -711,6 +448,7 @@ mod tests {
         assert_eq!(error.code, "IN_USE");
         assert!(error.references.is_some());
         let audit_count: i64 = state
+            .repository
             .database
             .connect()
             .unwrap()
@@ -743,6 +481,7 @@ mod tests {
             .encrypt("legacy-key\0legacy-passphrase")
             .unwrap();
         state
+            .repository
             .database
             .connect()
             .unwrap()
@@ -810,14 +549,16 @@ mod tests {
             bits: Some(1024),
             passphrase: String::new(),
         })
-        .unwrap_err();
+        .err()
+        .expect("invalid RSA size must fail");
         assert_eq!(error.message, "rsa bits must be 2048 or 4096");
         let error = generate_key_pair(GenerateKeyRequest {
             algo: "ecdsa".into(),
             bits: None,
             passphrase: String::new(),
         })
-        .unwrap_err();
+        .err()
+        .expect("unsupported algorithm must fail");
         assert_eq!(error.message, "algo must be rsa or ed25519");
     }
 }

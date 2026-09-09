@@ -6,7 +6,6 @@
 use std::collections::HashMap;
 
 use chrono::{SecondsFormat, Utc};
-use rusqlite::{params, Transaction};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
@@ -17,7 +16,7 @@ use crate::{
     group::GroupService,
     infrastructure::database::Database,
     profile::ProfileService,
-    vault::{decode_plaintext, encode_plaintext, Encryptor, VaultService},
+    vault::{Encryptor, VaultService},
 };
 
 use super::{
@@ -27,8 +26,9 @@ use super::{
     },
     model::{
         strip_credentials, BackupFile, BackupGroup, BackupImportResult, BackupPayload,
-        BackupPreview, BackupProfile, BackupSnapshot, BackupSnippet, BackupStats, BackupVaultItem,
+        BackupPreview, BackupSnapshot, BackupStats,
     },
+    repository::BackupRepository,
 };
 
 const STRATEGY_SKIP: &str = "skip";
@@ -38,8 +38,7 @@ const MAX_BACKUP_SIZE: u64 = 50 << 20;
 
 #[derive(Clone)]
 pub(crate) struct BackupService {
-    database: Database,
-    encryptor: Encryptor,
+    repository: BackupRepository,
     audit: AuditRepository,
     groups: GroupService,
     profiles: ProfileService,
@@ -56,8 +55,7 @@ impl BackupService {
         vault: VaultService,
     ) -> Self {
         Self {
-            database,
-            encryptor,
+            repository: BackupRepository::new(database, encryptor),
             audit,
             groups,
             profiles,
@@ -118,16 +116,7 @@ impl BackupService {
     }
 
     fn export_payload(&self) -> Result<BackupPayload, CommandError> {
-        let mut connection = self.database.connect()?;
-        let transaction = connection.transaction().map_err(CommandError::database)?;
-        let payload = BackupPayload {
-            groups: export_groups(&transaction)?,
-            vault: export_vault(&transaction, &self.encryptor)?,
-            profiles: export_profiles(&transaction, &self.encryptor)?,
-            snippets: export_snippets(&transaction)?,
-        };
-        transaction.commit().map_err(CommandError::database)?;
-        Ok(payload)
+        self.repository.export_payload()
     }
 
     /// Sync 版本沿用同一 `.xcbackup` 加密格式，但使用紧凑 JSON，并以加密前业务
@@ -231,44 +220,7 @@ impl BackupService {
     }
 
     fn conflicts(&self, payload: &BackupPayload) -> Result<BackupStats, CommandError> {
-        let connection = self.database.connect()?;
-        let count = |table: &str, ids: Vec<&str>| -> Result<usize, CommandError> {
-            let mut total = 0;
-            for id in ids {
-                let query = format!("SELECT EXISTS(SELECT 1 FROM {table} WHERE id=?1)");
-                let exists: bool = connection
-                    .query_row(&query, [id], |row| row.get(0))
-                    .map_err(CommandError::database)?;
-                total += usize::from(exists);
-            }
-            Ok(total)
-        };
-        Ok(BackupStats {
-            groups: count(
-                "groups",
-                payload.groups.iter().map(|item| item.id.as_str()).collect(),
-            )?,
-            vault: count(
-                "vault",
-                payload.vault.iter().map(|item| item.id.as_str()).collect(),
-            )?,
-            profiles: count(
-                "profiles",
-                payload
-                    .profiles
-                    .iter()
-                    .map(|item| item.id.as_str())
-                    .collect(),
-            )?,
-            snippets: count(
-                "snippets",
-                payload
-                    .snippets
-                    .iter()
-                    .map(|item| item.id.as_str())
-                    .collect(),
-            )?,
-        })
+        self.repository.conflicts(payload)
     }
 
     pub(crate) fn import(
@@ -303,76 +255,9 @@ impl BackupService {
         let group_order = topo_sort_groups(&payload.groups)
             .map_err(|error| CommandError::new("IMPORT_FAILED", error))?;
 
-        let mut connection = self
-            .database
-            .connect()
-            .map_err(|error| CommandError::new("IMPORT_FAILED", error.message))?;
-        let transaction = connection
-            .transaction()
-            .map_err(|error| CommandError::new("IMPORT_FAILED", error.to_string()))?;
-        let mut result = BackupImportResult {
-            imported: BackupStats::default(),
-            skipped: BackupStats::default(),
-            snapshot: None,
-            snapshot_error: String::new(),
-        };
-        for index in group_order {
-            add_result(
-                &mut result,
-                Resource::Group,
-                import_group(&transaction, &payload.groups[index], strategy).map_err(|error| {
-                    CommandError::new(
-                        "IMPORT_FAILED",
-                        format!("import group {}: {error}", payload.groups[index].id),
-                    )
-                })?,
-            );
-        }
-        for item in &payload.vault {
-            add_result(
-                &mut result,
-                Resource::Vault,
-                import_vault(&transaction, item, strategy, &self.encryptor).map_err(|error| {
-                    CommandError::new(
-                        "IMPORT_FAILED",
-                        format!("import vault {}: {error}", item.id),
-                    )
-                })?,
-            );
-        }
-        for item in &payload.profiles {
-            add_result(
-                &mut result,
-                Resource::Profile,
-                import_profile(&transaction, item, strategy, &self.encryptor).map_err(|error| {
-                    CommandError::new(
-                        "IMPORT_FAILED",
-                        format!("import profile {}: {error}", item.id),
-                    )
-                })?,
-            );
-        }
-        for item in &payload.snippets {
-            add_result(
-                &mut result,
-                Resource::Snippet,
-                import_snippet(&transaction, item, strategy).map_err(|error| {
-                    CommandError::new(
-                        "IMPORT_FAILED",
-                        format!("import snippet {}: {error}", item.id),
-                    )
-                })?,
-            );
-        }
-        normalize_vault_usernames(&transaction).map_err(|error| {
-            CommandError::new(
-                "IMPORT_FAILED",
-                format!("normalize vault usernames: {error}"),
-            )
-        })?;
-        transaction
-            .commit()
-            .map_err(|error| CommandError::new("IMPORT_FAILED", error.to_string()))?;
+        let mut result = self
+            .repository
+            .import_payload(&payload, strategy, &group_order)?;
 
         let group_snapshot = self.groups.list();
         let profile_snapshot = self.profiles.list(None, None);
@@ -411,413 +296,6 @@ impl BackupService {
         }
         Ok(result)
     }
-}
-
-fn export_groups(transaction: &Transaction<'_>) -> Result<Vec<BackupGroup>, CommandError> {
-    let mut statement = transaction
-        .prepare(
-            "SELECT id,name,parent_id,icon,sort_order,created_at \
-             FROM groups ORDER BY sort_order,name",
-        )
-        .map_err(CommandError::database)?;
-    let rows = statement
-        .query_map([], |row| {
-            Ok(BackupGroup {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                parent_id: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
-                icon: row.get(3)?,
-                sort_order: row.get(4)?,
-                created_at: row.get(5)?,
-            })
-        })
-        .map_err(CommandError::database)?;
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(CommandError::database)
-}
-
-fn export_vault(
-    transaction: &Transaction<'_>,
-    encryptor: &Encryptor,
-) -> Result<Vec<BackupVaultItem>, CommandError> {
-    let mut statement = transaction
-        .prepare(
-            "SELECT id,type,data,name,COALESCE(username,''),COALESCE(remark,''),\
-             COALESCE(fingerprint,''),created_at,updated_at FROM vault ORDER BY created_at",
-        )
-        .map_err(CommandError::database)?;
-    let rows = statement
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, String>(4)?,
-                row.get::<_, String>(5)?,
-                row.get::<_, String>(6)?,
-                row.get::<_, String>(7)?,
-                row.get::<_, Option<String>>(8)?,
-            ))
-        })
-        .map_err(CommandError::database)?;
-    let mut output = Vec::new();
-    for row in rows {
-        let (id, entry_type, data, name, username, remark, fingerprint, created_at, updated_at) =
-            row.map_err(CommandError::database)?;
-        let plaintext = encryptor.decrypt(&data).map_err(|error| {
-            CommandError::new("EXPORT_FAILED", format!("decrypt vault {id}: {error}"))
-        })?;
-        output.push(BackupVaultItem {
-            id,
-            name,
-            username: normalize_vault_username(&entry_type, &username),
-            remark,
-            fingerprint,
-            credential: Some(decode_plaintext(&plaintext, &entry_type)),
-            updated_at: updated_at.unwrap_or_else(|| created_at.clone()),
-            created_at,
-            entry_type,
-        });
-    }
-    Ok(output)
-}
-
-fn export_profiles(
-    transaction: &Transaction<'_>,
-    encryptor: &Encryptor,
-) -> Result<Vec<BackupProfile>, CommandError> {
-    let mut statement = transaction
-        .prepare(
-            "SELECT id,name,host,port,username,auth_type,COALESCE(icon,''),\
-             COALESCE(vault_id,''),COALESCE(inline_credential,''),\
-             COALESCE(proxy_credential,''),COALESCE(group_id,''),COALESCE(tags,'[]'),\
-             COALESCE(options,'{}'),COALESCE(note,''),COALESCE(sort_order,0),created_at,updated_at \
-             FROM profiles ORDER BY sort_order,name",
-        )
-        .map_err(CommandError::database)?;
-    let rows = statement
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, i64>(3)?,
-                row.get::<_, String>(4)?,
-                row.get::<_, String>(5)?,
-                row.get::<_, String>(6)?,
-                row.get::<_, String>(7)?,
-                row.get::<_, String>(8)?,
-                row.get::<_, String>(9)?,
-                row.get::<_, String>(10)?,
-                row.get::<_, String>(11)?,
-                row.get::<_, String>(12)?,
-                row.get::<_, String>(13)?,
-                row.get::<_, i64>(14)?,
-                row.get::<_, String>(15)?,
-                row.get::<_, String>(16)?,
-            ))
-        })
-        .map_err(CommandError::database)?;
-    let mut output = Vec::new();
-    for row in rows {
-        let (
-            id,
-            name,
-            host,
-            port,
-            username,
-            auth_type,
-            icon,
-            vault_id,
-            inline,
-            proxy,
-            group_id,
-            tags,
-            options,
-            note,
-            sort_order,
-            created_at,
-            updated_at,
-        ) = row.map_err(CommandError::database)?;
-        let inline_credential = if inline.is_empty() {
-            None
-        } else {
-            let raw = encryptor.decrypt(&inline).map_err(|error| {
-                CommandError::new(
-                    "EXPORT_FAILED",
-                    format!("decode inline credential for profile {id}: {error}"),
-                )
-            })?;
-            Some(serde_json::from_str(&raw).map_err(|error| {
-                CommandError::new(
-                    "EXPORT_FAILED",
-                    format!("decode inline credential for profile {id}: {error}"),
-                )
-            })?)
-        };
-        let proxy_password = if proxy.is_empty() {
-            String::new()
-        } else {
-            encryptor.decrypt(&proxy).map_err(|error| {
-                CommandError::new(
-                    "EXPORT_FAILED",
-                    format!("decode proxy credential for profile {id}: {error}"),
-                )
-            })?
-        };
-        output.push(BackupProfile {
-            id,
-            name,
-            host,
-            port,
-            username,
-            auth_type,
-            icon,
-            vault_id,
-            inline_credential,
-            proxy_password,
-            group_id,
-            tags: serde_json::from_str(&tags).unwrap_or_default(),
-            options,
-            note,
-            sort_order,
-            created_at,
-            updated_at,
-        });
-    }
-    Ok(output)
-}
-
-fn export_snippets(transaction: &Transaction<'_>) -> Result<Vec<BackupSnippet>, CommandError> {
-    let mut statement = transaction
-        .prepare(
-            "SELECT id,name,content,COALESCE(description,''),COALESCE(tags,'[]'),\
-             is_global,created_at,updated_at FROM snippets ORDER BY name",
-        )
-        .map_err(CommandError::database)?;
-    let rows = statement
-        .query_map([], |row| {
-            let tags: String = row.get(4)?;
-            Ok(BackupSnippet {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                content: row.get(2)?,
-                description: row.get(3)?,
-                tags: serde_json::from_str(&tags).unwrap_or_default(),
-                is_global: row.get(5)?,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
-            })
-        })
-        .map_err(CommandError::database)?;
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(CommandError::database)
-}
-
-fn import_group(
-    transaction: &Transaction<'_>,
-    item: &BackupGroup,
-    strategy: &str,
-) -> Result<ImportAction, String> {
-    if strategy == STRATEGY_SKIP && exists(transaction, "groups", &item.id)? {
-        return Ok(ImportAction::Skipped);
-    }
-    let sql = if strategy == STRATEGY_OVERWRITE {
-        "INSERT OR REPLACE INTO groups (id,name,parent_id,icon,sort_order,created_at) \
-         VALUES (?1,?2,?3,?4,?5,?6)"
-    } else {
-        "INSERT INTO groups (id,name,parent_id,icon,sort_order,created_at) \
-         VALUES (?1,?2,?3,?4,?5,?6)"
-    };
-    let parent_id = (!item.parent_id.is_empty()).then_some(item.parent_id.as_str());
-    transaction
-        .execute(
-            sql,
-            params![
-                item.id,
-                item.name,
-                parent_id,
-                item.icon,
-                item.sort_order,
-                item.created_at
-            ],
-        )
-        .map_err(|error| error.to_string())?;
-    Ok(ImportAction::Imported)
-}
-
-fn import_vault(
-    transaction: &Transaction<'_>,
-    item: &BackupVaultItem,
-    strategy: &str,
-    encryptor: &Encryptor,
-) -> Result<ImportAction, String> {
-    if strategy == STRATEGY_SKIP && exists(transaction, "vault", &item.id)? {
-        return Ok(ImportAction::Skipped);
-    }
-    let credential = item
-        .credential
-        .as_ref()
-        .ok_or_else(|| format!("vault item {} has no credential", item.id))?;
-    let (plaintext, fingerprint) = encode_plaintext(credential, &item.entry_type)?;
-    let encrypted = encryptor
-        .encrypt(&plaintext)
-        .map_err(|error| error.to_string())?;
-    let sql = if strategy == STRATEGY_OVERWRITE {
-        "INSERT OR REPLACE INTO vault \
-         (id,type,data,fingerprint,name,username,remark,created_at,updated_at) \
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)"
-    } else {
-        "INSERT INTO vault (id,type,data,fingerprint,name,username,remark,created_at,updated_at) \
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)"
-    };
-    transaction
-        .execute(
-            sql,
-            params![
-                item.id,
-                item.entry_type,
-                encrypted,
-                fingerprint,
-                item.name,
-                normalize_vault_username(&item.entry_type, &item.username),
-                item.remark,
-                item.created_at,
-                item.updated_at,
-            ],
-        )
-        .map_err(|error| error.to_string())?;
-    Ok(ImportAction::Imported)
-}
-
-fn import_profile(
-    transaction: &Transaction<'_>,
-    item: &BackupProfile,
-    strategy: &str,
-    encryptor: &Encryptor,
-) -> Result<ImportAction, String> {
-    if strategy == STRATEGY_SKIP && exists(transaction, "profiles", &item.id)? {
-        return Ok(ImportAction::Skipped);
-    }
-    let inline = match item.inline_credential.as_ref() {
-        Some(credential) => {
-            let raw = serde_json::to_string(credential).map_err(|error| error.to_string())?;
-            if raw == "{}" {
-                String::new()
-            } else {
-                encryptor.encrypt(&raw).map_err(|error| error.to_string())?
-            }
-        }
-        None => String::new(),
-    };
-    let proxy = if item.proxy_password.is_empty() {
-        String::new()
-    } else {
-        encryptor
-            .encrypt(&item.proxy_password)
-            .map_err(|error| error.to_string())?
-    };
-    let tags = serde_json::to_string(&item.tags).map_err(|error| error.to_string())?;
-    let sql = if strategy == STRATEGY_OVERWRITE {
-        "INSERT OR REPLACE INTO profiles \
-         (id,name,host,port,username,auth_type,icon,vault_id,inline_credential,\
-          proxy_credential,group_id,tags,options,note,sort_order,created_at,updated_at) \
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)"
-    } else {
-        "INSERT INTO profiles \
-         (id,name,host,port,username,auth_type,icon,vault_id,inline_credential,\
-          proxy_credential,group_id,tags,options,note,sort_order,created_at,updated_at) \
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)"
-    };
-    transaction
-        .execute(
-            sql,
-            params![
-                item.id,
-                item.name,
-                item.host,
-                item.port,
-                item.username,
-                item.auth_type,
-                item.icon,
-                item.vault_id,
-                inline,
-                proxy,
-                item.group_id,
-                tags,
-                item.options,
-                item.note,
-                item.sort_order,
-                item.created_at,
-                item.updated_at,
-            ],
-        )
-        .map_err(|error| error.to_string())?;
-    Ok(ImportAction::Imported)
-}
-
-fn import_snippet(
-    transaction: &Transaction<'_>,
-    item: &BackupSnippet,
-    strategy: &str,
-) -> Result<ImportAction, String> {
-    if strategy == STRATEGY_SKIP && exists(transaction, "snippets", &item.id)? {
-        return Ok(ImportAction::Skipped);
-    }
-    let tags = serde_json::to_string(&item.tags).map_err(|error| error.to_string())?;
-    let sql = if strategy == STRATEGY_OVERWRITE {
-        "INSERT OR REPLACE INTO snippets \
-         (id,name,content,description,tags,is_global,created_at,updated_at) \
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8)"
-    } else {
-        "INSERT INTO snippets (id,name,content,description,tags,is_global,created_at,updated_at) \
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8)"
-    };
-    transaction
-        .execute(
-            sql,
-            params![
-                item.id,
-                item.name,
-                item.content,
-                item.description,
-                tags,
-                item.is_global,
-                item.created_at,
-                item.updated_at,
-            ],
-        )
-        .map_err(|error| error.to_string())?;
-    Ok(ImportAction::Imported)
-}
-
-fn exists(transaction: &Transaction<'_>, table: &str, id: &str) -> Result<bool, String> {
-    let query = format!("SELECT EXISTS(SELECT 1 FROM {table} WHERE id=?1)");
-    transaction
-        .query_row(&query, [id], |row| row.get(0))
-        .map_err(|error| error.to_string())
-}
-
-fn normalize_vault_usernames(transaction: &Transaction<'_>) -> Result<(), rusqlite::Error> {
-    transaction.execute_batch(
-        "UPDATE vault SET username='' WHERE type!='password' AND username!='';
-         UPDATE vault SET username=TRIM(username) WHERE type='password';
-         UPDATE vault SET username=(
-             SELECT MIN(TRIM(p.username)) FROM profiles p
-             WHERE p.auth_type='vault' AND p.vault_id=vault.id AND TRIM(p.username)!=''
-         ) WHERE type='password' AND TRIM(username)='' AND (
-             SELECT COUNT(DISTINCT TRIM(p.username)) FROM profiles p
-             WHERE p.auth_type='vault' AND p.vault_id=vault.id AND TRIM(p.username)!=''
-         )=1;
-         UPDATE profiles SET username=(
-             SELECT v.username FROM vault v WHERE v.id=profiles.vault_id
-         ), updated_at=CURRENT_TIMESTAMP
-         WHERE auth_type='vault' AND EXISTS(
-             SELECT 1 FROM vault v WHERE v.id=profiles.vault_id AND v.type='password'
-             AND TRIM(v.username)!='' AND profiles.username!=v.username
-         );",
-    )
 }
 
 fn topo_sort_groups(groups: &[BackupGroup]) -> Result<Vec<usize>, String> {
@@ -920,41 +398,6 @@ fn stats(payload: &BackupPayload) -> BackupStats {
     }
 }
 
-fn normalize_vault_username(entry_type: &str, username: &str) -> String {
-    if entry_type == "password" {
-        username.trim().to_owned()
-    } else {
-        String::new()
-    }
-}
-
-#[derive(Clone, Copy)]
-enum ImportAction {
-    Skipped,
-    Imported,
-}
-
-#[derive(Clone, Copy)]
-enum Resource {
-    Group,
-    Vault,
-    Profile,
-    Snippet,
-}
-
-fn add_result(result: &mut BackupImportResult, resource: Resource, action: ImportAction) {
-    let target = match action {
-        ImportAction::Skipped => &mut result.skipped,
-        ImportAction::Imported => &mut result.imported,
-    };
-    match resource {
-        Resource::Group => target.groups += 1,
-        Resource::Vault => target.vault += 1,
-        Resource::Profile => target.profiles += 1,
-        Resource::Snippet => target.snippets += 1,
-    }
-}
-
 fn result_error<T>(result: Result<T, CommandError>) -> String {
     result
         .err()
@@ -965,12 +408,15 @@ fn result_error<T>(result: Result<T, CommandError>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusqlite::params;
+
+    use crate::backup::model::{BackupProfile, BackupVaultItem};
     use crate::{
         backup::{format::encrypt_backup_with_nonce, model::zero_time},
-        vault::Credential,
+        vault::{encode_plaintext, Credential},
     };
 
-    fn state() -> (tempfile::TempDir, BackupService) {
+    fn state() -> (tempfile::TempDir, BackupService, Database, Encryptor) {
         let directory = tempfile::tempdir().unwrap();
         let database = Database::initialize(directory.path().join("xcontrol.db")).unwrap();
         let encryptor = Encryptor::load_or_create(directory.path().join("key")).unwrap();
@@ -981,7 +427,16 @@ mod tests {
             ProfileService::initialize(database.clone(), encryptor.clone(), vault.clone()).unwrap();
         (
             directory,
-            BackupService::new(database, encryptor, audit, groups, profiles, vault),
+            BackupService::new(
+                database.clone(),
+                encryptor.clone(),
+                audit,
+                groups,
+                profiles,
+                vault,
+            ),
+            database,
+            encryptor,
         )
     }
 
@@ -1014,8 +469,8 @@ mod tests {
 
     #[test]
     fn plain_export_preview_and_import_round_trip() {
-        let (directory, state) = state();
-        let connection = state.database.connect().unwrap();
+        let (directory, state, database, _) = state();
+        let connection = database.connect().unwrap();
         connection
             .execute(
                 "INSERT INTO groups (id,name,icon,sort_order,created_at) \
@@ -1050,9 +505,9 @@ mod tests {
 
     #[test]
     fn credentials_proxy_and_vault_usernames_round_trip() {
-        let (source_directory, source) = state();
-        let connection = source.database.connect().unwrap();
-        let password_data = source.encryptor.encrypt("vault-secret").unwrap();
+        let (source_directory, source, source_database, source_encryptor) = state();
+        let connection = source_database.connect().unwrap();
+        let password_data = source_encryptor.encrypt("vault-secret").unwrap();
         let key_credential = Credential {
             password: String::new(),
             private_key: "private-key-material".into(),
@@ -1061,7 +516,7 @@ mod tests {
         };
         let (key_plaintext, key_fingerprint) =
             encode_plaintext(&key_credential, "private_key").unwrap();
-        let key_data = source.encryptor.encrypt(&key_plaintext).unwrap();
+        let key_data = source_encryptor.encrypt(&key_plaintext).unwrap();
         connection
             .execute(
                 "INSERT INTO vault \
@@ -1071,11 +526,10 @@ mod tests {
                 params![password_data, key_data, key_fingerprint],
             )
             .unwrap();
-        let inline = source
-            .encryptor
+        let inline = source_encryptor
             .encrypt(r#"{"password":"inline-secret"}"#)
             .unwrap();
-        let proxy = source.encryptor.encrypt("proxy-secret").unwrap();
+        let proxy = source_encryptor.encrypt("proxy-secret").unwrap();
         connection
             .execute(
                 "INSERT INTO profiles \
@@ -1101,14 +555,15 @@ mod tests {
         let path = source_directory.path().join("credentials.xcbackup");
         std::fs::write(&path, bytes).unwrap();
 
-        let (_destination_directory, destination) = state();
+        let (_destination_directory, destination, destination_database, destination_encryptor) =
+            state();
         let result = destination
             .import(path.to_str().unwrap(), STRATEGY_SKIP, "")
             .unwrap();
         assert_eq!(result.imported.vault, 2);
         assert_eq!(result.imported.profiles, 2);
 
-        let connection = destination.database.connect().unwrap();
+        let connection = destination_database.connect().unwrap();
         let (vault_data, vault_username): (String, String) = connection
             .query_row(
                 "SELECT data,username FROM vault WHERE id='v-password'",
@@ -1117,7 +572,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(
-            destination.encryptor.decrypt(&vault_data).unwrap(),
+            destination_encryptor.decrypt(&vault_data).unwrap(),
             "vault-secret"
         );
         assert_eq!(vault_username, "deploy");
@@ -1135,10 +590,10 @@ mod tests {
             )
             .unwrap();
         let decoded: Credential =
-            serde_json::from_str(&destination.encryptor.decrypt(&inline).unwrap()).unwrap();
+            serde_json::from_str(&destination_encryptor.decrypt(&inline).unwrap()).unwrap();
         assert_eq!(decoded.password, "inline-secret");
         assert_eq!(
-            destination.encryptor.decrypt(&proxy).unwrap(),
+            destination_encryptor.decrypt(&proxy).unwrap(),
             "proxy-secret"
         );
         assert!(options.contains("SHA256:test"));
@@ -1221,7 +676,7 @@ mod tests {
 
     #[test]
     fn encrypted_backup_maps_password_errors() {
-        let (directory, state) = state();
+        let (directory, state, _, _) = state();
         let bytes = state.export_bytes(MODE_ENCRYPTED, "secret").unwrap();
         let path = directory.path().join("encrypted.xcbackup");
         std::fs::write(&path, bytes).unwrap();

@@ -85,11 +85,12 @@ class SessionKeepalivePlugin(private val activity: Activity) : Plugin(activity) 
                 put("message", "未授予通知权限，Android 后台会话保活可能受限")
             })
         }
+        val networkSnapshot = synchronized(this) { networkGeneration to networkState }
         invoke.resolve(JSObject().apply {
             put("started", true)
             put("notificationPermission", notificationPermission)
-            put("networkGeneration", networkGeneration)
-            put("networkState", networkState)
+            put("networkGeneration", networkSnapshot.first)
+            put("networkState", networkSnapshot.second)
         })
     }
 
@@ -104,16 +105,17 @@ class SessionKeepalivePlugin(private val activity: Activity) : Plugin(activity) 
         ).filter { capabilities?.hasTransport(it.first) == true }.joinToString("+") { it.second }
         val state = if (online) "online" else "offline"
         val signature = "$state:$transports"
-        synchronized(this) {
+        val generation = synchronized(this) {
             if (signature == networkSignature) return
             networkSignature = signature
             networkState = state
             networkGeneration += 1
+            networkGeneration
         }
         activity.runOnUiThread {
             trigger("network-change", JSObject().apply {
                 put("online", online)
-                put("generation", networkGeneration)
+                put("generation", generation)
                 put("transport", transports)
             })
         }
@@ -132,9 +134,12 @@ class SessionKeepalivePlugin(private val activity: Activity) : Plugin(activity) 
                 activity,
                 Manifest.permission.POST_NOTIFICATIONS,
             ) == PackageManager.PERMISSION_GRANTED
+        val networkSnapshot = synchronized(this) { networkGeneration to networkState }
         invoke.resolve(JSObject().apply {
             put("running", RemoteSessionService.running)
             put("notificationPermission", notificationPermission)
+            put("networkGeneration", networkSnapshot.first)
+            put("networkState", networkSnapshot.second)
         })
     }
 

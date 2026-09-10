@@ -25,9 +25,6 @@ import type { SessionApiError } from '@/types/session'
 
 type ChannelStatus = 'connecting' | 'connected' | 'disconnected'
 
-const RECONNECT_BACKOFF = [1000, 2000, 4000, 8000, 16000, 30000, 30000, 30000, 30000, 30000]
-const MAX_RECONNECT_ATTEMPTS = RECONNECT_BACKOFF.length
-
 interface TerminalPaneProps {
   tab: {
     id: string
@@ -88,8 +85,8 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   const handleCompleteResponseRef = useRef<(payload: CompleteResponsePayload) => void>(() => {})
   const handleOutputDataRef = useRef<(data: string) => void>(() => {})
 
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isReconnectingRef = useRef(false)
+  const reconnectRequestPendingRef = useRef(false)
 
   const cwd = useSessionStore((state) => state.tabs.find((item) => item.id === tab.id)?.cwd)
   const cwdRef = useRef(cwd)
@@ -169,68 +166,50 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     onResize: handleTerminalResize,
   })
 
-  const clearReconnectTimer = useCallback(() => {
-    if (reconnectTimerRef.current !== null) {
-      clearTimeout(reconnectTimerRef.current)
-      reconnectTimerRef.current = null
-    }
+  const resetReconnectState = useCallback(() => {
     isReconnectingRef.current = false
+    reconnectRequestPendingRef.current = false
   }, [])
 
-  const startAutoReconnect = useCallback(
-    (tabId: string, profileId: string, reason: string) => {
-      if (isReconnectingRef.current) return
-      isReconnectingRef.current = true
-
-      const attempt = (index: number) => {
-        if (index >= MAX_RECONNECT_ATTEMPTS) {
-          isReconnectingRef.current = false
-          markTabError(tabId, reason, '自动重连失败，请手动重新连接')
-          setDialogStatus('error')
-          return
-        }
-
-        const delay = RECONNECT_BACKOFF[index]
-        const nextRetryAt = Date.now() + delay
-        markTabReconnecting(tabId, index + 1, nextRetryAt)
-
-        reconnectTimerRef.current = setTimeout(async () => {
-          reconnectTimerRef.current = null
-          try {
-            beginLocalConnection(`正在发起第 ${index + 1} 次重连请求`)
-            // Request the PTY with the terminal's real size instead of the
-            // 80x24 default, so full-screen apps render correctly from the
-            // first frame after reconnect.
-            const { cols, rows } = getSize()
-            const currentSessionId = useSessionStore.getState().tabs
-              .find((candidate) => candidate.id === tabId)?.sessionId
-            const resp = currentSessionId
-              ? await sessionApi.reconnect(currentSessionId)
-              : await sessionApi.create({ profile_id: profileId, cols, rows })
-            updateTabStatus(tabId, 'connecting', resp.session_id)
-            isReconnectingRef.current = false
-          } catch {
-            attempt(index + 1)
-          }
-        }, delay)
-      }
-
-      attempt(0)
-    },
-    [beginLocalConnection, getSize, markTabError, markTabReconnecting, updateTabStatus],
-  )
-
-  const reconnectNow = useCallback(() => {
-    clearReconnectTimer()
-    startAutoReconnect(tab.id, tab.profileId, tab.errorReason || 'unknown')
-  }, [clearReconnectTimer, startAutoReconnect, tab.errorReason, tab.id, tab.profileId])
+  const reconnectNow = useCallback(async () => {
+    if (reconnectRequestPendingRef.current) return
+    reconnectRequestPendingRef.current = true
+    isReconnectingRef.current = true
+    beginLocalConnection('正在请求 Rust 恢复远程会话')
+    try {
+      const { cols, rows } = getSize()
+      const currentSessionId = useSessionStore.getState().tabs
+        .find((candidate) => candidate.id === tab.id)?.sessionId
+      const response = currentSessionId
+        ? await sessionApi.reconnect(currentSessionId)
+        : await sessionApi.create({ profile_id: tab.profileId, cols, rows })
+      updateTabStatus(tab.id, 'connecting', response.session_id)
+      reconnectRequestPendingRef.current = false
+    } catch (cause) {
+      resetReconnectState()
+      const error = cause as SessionApiError
+      const message = error?.error?.message || '无法恢复远程会话'
+      markTabError(tab.id, tab.errorReason || 'unknown', message)
+      setConnectionError(message)
+      setDialogStatus('error')
+    }
+  }, [
+    beginLocalConnection,
+    getSize,
+    markTabError,
+    resetReconnectState,
+    tab.errorReason,
+    tab.id,
+    tab.profileId,
+    updateTabStatus,
+  ])
 
   const currentHostKeyFingerprint = hostKeyPrompt.current
 
   const handleCancel = useCallback(() => {
-    clearReconnectTimer()
+    resetReconnectState()
     closeTab(tab.id)
-  }, [clearReconnectTimer, closeTab, tab.id])
+  }, [closeTab, resetReconnectState, tab.id])
 
   const decideHostKey = useCallback(async (
     decision: 'trust_once' | 'trust_permanently' | 'reject',
@@ -292,7 +271,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
         case 'metadata': {
           const meta = msg.payload as MetaPayload
           updateTabStatus(tab.id, 'connected', meta.session_id)
-          clearReconnectTimer()
+          resetReconnectState()
           clearTabError(tab.id)
           clearTabHostKeyPrompt(tab.id)
           hasSpecificError.current = false
@@ -334,7 +313,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
         }
 
         case 'exit':
-          clearReconnectTimer()
+          resetReconnectState()
           updateTabStatus(tab.id, 'disconnected')
           writeln('\r\n\x1b[33m[会话已结束]\x1b[0m')
           break
@@ -362,12 +341,12 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
       }
     },
     [
-      clearReconnectTimer,
       clearTabError,
       clearTabHostKeyPrompt,
       fit,
       markTabReconnecting,
       tab.id,
+      resetReconnectState,
       updateTabCwd,
       updateTabStatus,
       write,
@@ -510,10 +489,6 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
 
   useEffect(() => {
     return () => {
-      if (reconnectTimerRef.current !== null) {
-        clearTimeout(reconnectTimerRef.current)
-        reconnectTimerRef.current = null
-      }
       if (fontSizeHintTimeoutRef.current !== null) {
         clearTimeout(fontSizeHintTimeoutRef.current)
         fontSizeHintTimeoutRef.current = null

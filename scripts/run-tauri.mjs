@@ -18,11 +18,13 @@ if (!/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(ve
   process.exit(1)
 }
 
-const executable = process.platform === 'win32' ? 'tauri.cmd' : 'tauri'
+const cli = fileURLToPath(new URL('../node_modules/@tauri-apps/cli/tauri.js', import.meta.url))
 const args = [command, '--config', JSON.stringify({ version }), ...process.argv.slice(3)]
 console.log(`[XControl] Tauri ${command} 版本: ${version}`)
 
-const result = spawnSync(executable, args, {
+// Invoke the JavaScript entrypoint with the current Node executable. Windows
+// cannot spawn a .cmd shim directly with shell=false and returns EINVAL.
+const result = spawnSync(process.execPath, [cli, ...args], {
   cwd: root,
   env: process.env,
   stdio: 'inherit',

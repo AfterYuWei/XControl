@@ -15,6 +15,7 @@ import { saveTextToDisk } from '@/lib/desktop'
 import { getPlatformCapabilities, isMobileRuntime } from '@/lib/platform'
 import { documentApi, pickDocumentText } from '@/api/document'
 import { normalizeVaultUsername } from '@/lib/vaultUsername'
+import { writeClipboardText } from '@/lib/clipboard'
 import { VAULT_TYPE_LABELS, type VaultCreateRequest, type VaultItem, type VaultType } from '@/types/vault'
 import { VaultPasswordGenerator } from './VaultPasswordGenerator'
 
@@ -71,31 +72,6 @@ function isSameForm(left: VaultCreateRequest, right: VaultCreateRequest): boolea
     left.public_key === right.public_key &&
     left.passphrase === right.passphrase
   )
-}
-
-async function writeClipboardText(text: string): Promise<void> {
-  try {
-    if (navigator.clipboard) {
-      await navigator.clipboard.writeText(text)
-      return
-    }
-  } catch {
-    // Some desktop/webview contexts expose Clipboard API but deny access.
-  }
-
-  const textarea = document.createElement('textarea')
-  textarea.value = text
-  textarea.setAttribute('readonly', '')
-  textarea.style.position = 'fixed'
-  textarea.style.opacity = '0'
-  document.body.appendChild(textarea)
-  textarea.select()
-
-  try {
-    if (!document.execCommand('copy')) throw new Error('Copy command failed')
-  } finally {
-    textarea.remove()
-  }
 }
 
 function PasswordEditorSection({

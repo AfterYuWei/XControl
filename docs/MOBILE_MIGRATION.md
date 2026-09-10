@@ -9,13 +9,13 @@
 | --- | --- | --- | --- | --- |
 | Profile / Group / Snippet / Audit | ✅ | 编译接入 | 编译接入 | 共享 Rust command 已注册 |
 | SSH / SFTP Rust 核心 | ✅ | ✅ | ✅ | 同 ID 恢复、主机密钥确认、交互认证已接入 |
-| Vault / SQLite / Backup / Sync | ✅ | ✅（文件交换） | ✅（文件交换） | 备份导入导出已接 DocumentGateway；安全存储待阶段 5 |
+| Vault / SQLite / Backup / Sync | ✅ | ✅ | ✅ | 密文格式不变；Android Keystore / iOS Keychain 保存主密钥 |
 | 平台能力发现 | ✅ | ✅ | ✅ | `platform_capabilities`，禁止 UA 推断 |
 | 桌面窗口、拖出、updater | ✅ | 不支持 | 不支持 | capability 隔离 |
 | OAuth deep link | ✅ | 配置完成 | 配置完成 | 真机回调待验收 |
 | 系统文档选择器 | ✅ | ✅（待真机） | ✅（待真机） | SAF / Document Picker 先复制到私有暂存区，领域层仅接收不透明引用 |
 | 360 秒后台窗口 | 不适用 | ✅（待真机） | ✅（待真机） | Android 前台服务；iOS 逻辑恢复窗口 |
-| Keystore / Keychain | 不适用 | 待阶段 5 | 待阶段 5 | 密文格式保持不变 |
+| Keystore / Keychain | 不适用 | ✅（待真机） | ✅（待真机） | Keystore AES-GCM 包装 / Keychain ThisDeviceOnly；旧密钥验证后迁移 |
 | 移动布局和终端工具栏 | 不适用 | ✅ | ✅ | 独立 MobileLayout、底部导航、动态视口与触控工具栏 |
 
 ## 平台边界
@@ -28,6 +28,14 @@
 - DocumentGateway 在上传、下载导出、私钥和备份流程结束后清理暂存文件，并在冷启动时清扫
   异常退出遗留文件。
 - 移动 SFTP 默认单栏远端浏览，并发上限为 2；桌面双栏、拖放与并发上限 5 保持不变。
+- `MasterKeyStore` 在 Android 使用 Keystore AES-GCM 包装主密钥，在 iOS 使用 Keychain
+  `AfterFirstUnlockThisDeviceOnly`；SQLite schema 与 AES-256-GCM 密文表示均不改变。
+- 移动旧密钥迁移会先验证 Vault、Profile、同步 Provider 和同步密码的全部已有密文，再写入并
+  回读安全存储，最后删除旧文件；任一步失败均保留旧文件。
+- 密码和私钥复制后显示 30 秒倒计时，仅当剪贴板仍等于应用写入值时清空，避免覆盖用户随后
+  复制的其他内容。
+- SSH Agent、窗口拖出、桌面调试日志与传统路径迁移继续由 desktop capability / `cfg(desktop)`
+  隔离，移动端既不注册对应命令也不显示入口。
 - Android/iOS 通过平台配置覆盖移动窗口、安全策略和最低系统版本。
 
 ## 本地工具链状态
@@ -57,7 +65,7 @@ npm run ios:build
 | 2 SSH 生命周期 | 代码完成 | 360 秒状态机、真实 SSH 探活、同 ID/退避重连、SSH/SFTP 指纹确认、keyboard-interactive；真机后台行为待发布门禁 |
 | 3 移动交互 | 代码完成 | 独立手机/平板布局、Android 返回键、Tauri Channel、16ms/32KiB 批量与 1MiB 重放 |
 | 4 DocumentGateway | 代码完成 | Android SAF、iOS Document Picker、私有暂存与路径校验；SFTP/私钥/备份导入导出已接入，真机 Provider/iCloud 测试待发布门禁 |
-| 5 安全存储 | 未开始 | — |
+| 5 安全存储 | 代码完成 | Android Keystore 包装、iOS Keychain、失败回滚迁移测试、敏感剪贴板条件清理与 Desktop-only 隔离；真机安全存储升级测试待发布门禁 |
 | 6 发布与可观测性 | 未开始 | — |
 
 ## 发布门禁

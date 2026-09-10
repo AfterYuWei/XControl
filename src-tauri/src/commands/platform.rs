@@ -31,10 +31,8 @@ pub(crate) fn platform_capabilities() -> PlatformCapabilities {
         app_updates: cfg!(desktop),
         drag_out: cfg!(desktop),
         native_file_paths: cfg!(desktop),
-        // These capabilities become true only when the corresponding mobile
-        // adapters are installed in later migration stages.
         document_picker: true,
-        secure_key_store: false,
+        secure_key_store: cfg!(mobile),
         biometric: false,
         background_mode: if cfg!(target_os = "android") {
             "android-foreground-service"

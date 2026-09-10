@@ -330,7 +330,7 @@ async fn authenticate_interactive(
     ))
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, desktop))]
 async fn authenticate_agent(
     handle: &mut client::Handle<ClientHandler>,
     username: &str,
@@ -360,7 +360,7 @@ async fn authenticate_agent(
     Err("SSH Agent 中没有可用的认证密钥".into())
 }
 
-#[cfg(not(unix))]
+#[cfg(not(all(unix, desktop)))]
 async fn authenticate_agent(
     _handle: &mut client::Handle<ClientHandler>,
     _username: &str,

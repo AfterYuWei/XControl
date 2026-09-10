@@ -1596,6 +1596,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-document-gateway",
  "tauri-plugin-drag",
+ "tauri-plugin-master-key-store",
  "tauri-plugin-opener",
  "tauri-plugin-process",
  "tauri-plugin-session-keepalive",
@@ -5968,6 +5969,16 @@ dependencies = [
  "thiserror 2.0.20",
  "toml 1.1.5+spec-1.1.0",
  "url",
+]
+
+[[package]]
+name = "tauri-plugin-master-key-store"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.20",
 ]
 
 [[package]]

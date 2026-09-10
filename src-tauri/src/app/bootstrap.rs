@@ -16,6 +16,7 @@ pub(crate) fn run() {
             .plugin(tauri_plugin_deep_link::init())
             .plugin(tauri_plugin_session_keepalive::init())
             .plugin(tauri_plugin_document_gateway::init())
+            .plugin(tauri_plugin_master_key_store::init())
             .invoke_handler(tauri::generate_handler![
                 commands::platform_capabilities,
                 commands::app_lifecycle_status,
@@ -132,8 +133,12 @@ pub(crate) fn run() {
                     data_dir.join("eizhu.db"),
                 )
                 .map_err(|error| std::io::Error::other(error.to_string()))?;
-                let encryptor = vault::Encryptor::load_or_create(data_dir.join("key"))
-                    .map_err(|error| std::io::Error::other(error.to_string()))?;
+                let encryptor = crate::infrastructure::platform::master_key_store::load_or_create(
+                    app.handle(),
+                    &database,
+                    &data_dir.join("key"),
+                )
+                .map_err(|error| std::io::Error::other(error.to_string()))?;
                 let audit = crate::audit::AuditRepository::new(database.clone());
                 let vault =
                     vault::VaultService::new(database.clone(), encryptor.clone(), audit.clone());

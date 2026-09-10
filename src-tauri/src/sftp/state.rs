@@ -454,6 +454,23 @@ impl SftpService {
         }
     }
 
+    pub(crate) async fn reconnect_active(&self) -> Result<(), CommandError> {
+        let sessions = self
+            .sessions
+            .read()
+            .await
+            .values()
+            .filter(|session| session.profile_id != "local")
+            .cloned()
+            .collect::<Vec<_>>();
+        for session in sessions {
+            if session.data.read().await.status == "connected" {
+                self.reconnect(&session.id).await?;
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) async fn suspend_for_background_limit(&self) {
         let tasks = self
             .connection_tasks

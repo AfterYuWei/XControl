@@ -62,8 +62,13 @@ pub(crate) async fn app_network_update(
     let snapshot = lifecycle.update_network(online, generation, Utc::now().timestamp_millis());
     log_lifecycle("network_change", &snapshot);
     if online && !snapshot.expired && snapshot.network_generation != before.network_generation {
-        sessions.probe_active().await;
-        sftp.probe_active().await;
+        if generation.is_some() {
+            sessions.reconnect_active().await?;
+            sftp.reconnect_active().await?;
+        } else {
+            sessions.probe_active().await;
+            sftp.probe_active().await;
+        }
     }
     Ok(snapshot)
 }
@@ -136,6 +141,14 @@ pub(crate) async fn app_lifecycle_update(
             Ok(snapshot)
         }
         LifecyclePhase::Foreground => {
+            let before = lifecycle.snapshot(now);
+            let native = native_keepalive_status(&app)?;
+            let network_changed = native.network_state.as_deref().is_some_and(|state| {
+                lifecycle
+                    .update_network(state == "online", Some(native.network_generation), now)
+                    .network_generation
+                    != before.network_generation
+            });
             stop_native_keepalive(&app)?;
             let (snapshot, expired) = lifecycle.enter_foreground(now);
             log_lifecycle("entered_foreground", &snapshot);
@@ -144,8 +157,12 @@ pub(crate) async fn app_lifecycle_update(
             if expired {
                 sessions.reconnect_suspended().await?;
                 sftp.reconnect_suspended().await?;
+            } else if network_changed {
+                sessions.reconnect_active().await?;
+                sftp.reconnect_active().await?;
             } else {
                 sessions.probe_active().await;
+                sftp.probe_active().await;
             }
             Ok(snapshot)
         }

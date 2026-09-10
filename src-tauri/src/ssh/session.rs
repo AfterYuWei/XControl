@@ -1234,6 +1234,21 @@ impl SshService {
         }
     }
 
+    pub(crate) async fn reconnect_active(&self) -> Result<(), CommandError> {
+        let ids = self
+            .manager
+            .sessions()
+            .await
+            .into_iter()
+            .filter(|session| session.status() == "connected")
+            .map(|session| session.id().to_owned())
+            .collect::<Vec<_>>();
+        for id in ids {
+            self.reconnect(&id).await?;
+        }
+        Ok(())
+    }
+
     pub(crate) async fn suspend_for_background_limit(&self) {
         self.manager.suspend_all().await;
     }

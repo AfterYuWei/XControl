@@ -336,7 +336,14 @@ impl SftpService {
                     if persist {
                         if let Err(error) = self.profiles.persist_host_key(profile_id, fingerprint)
                         {
-                            eprintln!("persist SFTP host key failed: {error}");
+                            crate::app::log_runtime_event(
+                                "sftp_host_key_persist_failed",
+                                &session.id,
+                                "unknown",
+                                0,
+                                0,
+                                Some(&error.to_string()),
+                            );
                         }
                     }
                 }

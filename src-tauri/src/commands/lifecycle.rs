@@ -203,16 +203,13 @@ pub(crate) async fn app_background_expired(
 }
 
 fn log_lifecycle(event: &str, snapshot: &LifecycleSnapshot) {
-    eprintln!(
-        "{}",
-        serde_json::json!({
-            "event": event,
-            "platform": super::platform::current_platform(),
-            "session_id": "",
-            "lifecycle_state": snapshot.state,
-            "network_generation": snapshot.network_generation,
-            "background_elapsed_seconds": snapshot.background_elapsed_seconds,
-        })
+    crate::app::log_runtime_event(
+        event,
+        "",
+        snapshot.state,
+        snapshot.network_generation,
+        snapshot.background_elapsed_seconds,
+        None,
     );
 }
 

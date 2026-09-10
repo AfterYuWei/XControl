@@ -267,7 +267,7 @@ export function ConnectionDialog({
         showCloseButton={false}
         onEscapeKeyDown={(event) => !canCloseByClick && event.preventDefault()}
         onPointerDownOutside={(event) => !canCloseByClick && event.preventDefault()}
-        className="flex h-[560px] w-full max-w-[860px] flex-col gap-0 overflow-hidden p-0 text-[var(--fg)]"
+        className="flex h-[min(560px,calc(100dvh-2rem))] w-[min(860px,calc(100vw-2rem))] max-w-none flex-col gap-0 overflow-hidden p-0 text-[var(--fg)]"
         style={{
           borderRadius: 'var(--r-lg)',
         }}

@@ -940,3 +940,33 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* 窄窗口下把侧栏改成横向分类，给设置内容保留可用宽度。 */
+@media (max-width: 680px) {
+  .settings-layout {
+    flex-direction: column;
+  }
+
+  .settings-nav {
+    width: 100%;
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .settings-nav-item {
+    width: auto;
+    flex: 0 0 auto;
+  }
+
+  .settings-field {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settings-select,
+  .settings-theme-btn {
+    width: 100%;
+  }
+}

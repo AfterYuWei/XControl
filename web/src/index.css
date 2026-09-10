@@ -153,13 +153,50 @@
   --statusbar-h: 24px;
   color-scheme: light;
 
-  /* Terminal container fallbacks (overridden dynamically per active terminal theme) */
+  /* A+C boundary system — chromeless tonal planes with one active light seam. */
+  --surface-app: #f4f5f6;
+  --surface-chrome: #f8f8f9;
+  --surface-sidebar: #eef0f2;
+  --surface-workspace: #f7f8f9;
+  --surface-panel: #ffffff;
+  --surface-overlay: #ffffff;
+  --edge-window: rgba(20, 24, 31, 0.16);
+  --edge-panel: rgba(20, 24, 31, 0.13);
+  --edge-panel-strong: rgba(20, 24, 31, 0.19);
+  --edge-soft: rgba(20, 24, 31, 0.075);
+  --edge-highlight: rgba(255, 255, 255, 0.92);
+  --separator-chrome: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--edge-soft) 7%,
+    var(--edge-panel) 24%,
+    var(--edge-panel) 76%,
+    var(--edge-soft) 93%,
+    transparent 100%
+  );
+  --seam-active: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--accent) 18%, transparent) 18%,
+    color-mix(in srgb, var(--accent) 72%, white) 50%,
+    color-mix(in srgb, var(--accent) 18%, transparent) 82%,
+    transparent 100%
+  );
+  --shadow-workspace:
+    inset 0 1px 0 var(--edge-highlight),
+    0 1px 2px rgba(20, 24, 31, 0.07),
+    0 14px 30px -26px rgba(20, 24, 31, 0.30);
+  --shadow-overlay:
+    inset 0 1px 0 var(--edge-highlight),
+    0 1px 2px rgba(20, 24, 31, 0.13),
+    0 18px 46px -18px rgba(20, 24, 31, 0.30),
+    0 46px 100px -40px rgba(20, 24, 31, 0.46);
+
+  /* Terminal palette is dynamic; its frame remains application-owned. */
   --term-bg: #0A0A0A;
-  --surface-border: #d2d2d6;
+  --surface-border: var(--edge-panel-strong);
   --term-border: var(--surface-border);
-  --term-shadow:
-    0 2px 6px rgba(0, 0, 0, 0.12),
-    0 12px 28px -20px rgba(0, 0, 0, 0.34);
+  --term-shadow: var(--shadow-workspace);
 
   /* Hairline shadow system — DESIGN.md 三层阴影规范
      Level 0 (flat): 1px hairline only
@@ -175,13 +212,10 @@
     0 2px 5px rgba(0, 0, 0, 0.10),
     0 12px 28px -12px rgba(0, 0, 0, 0.20),
     0 0 0 1px rgba(0, 0, 0, 0.12);
-  --shadow-modal:
-    0 4px 10px rgba(0, 0, 0, 0.12),
-    0 24px 56px -20px rgba(0, 0, 0, 0.26),
-    0 0 0 1px rgba(0, 0, 0, 0.12);
-  --dialog-bg: var(--bg-panel);
-  --dialog-border: color-mix(in srgb, var(--border) 94%, rgba(0, 0, 0, 0.08));
-  --dialog-surface-top: var(--dialog-bg);
+  --shadow-modal: var(--shadow-overlay);
+  --dialog-bg: var(--surface-overlay);
+  --dialog-border: var(--edge-panel-strong);
+  --dialog-overlay: rgba(18, 20, 24, 0.38);
   --btn-primary-border: color-mix(in srgb, var(--accent-hi) 78%, white 22%);
   --btn-primary-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
   --btn-outline-bg: var(--bg-panel);
@@ -247,12 +281,48 @@
   --gradient-ship-end: #f9cb28;
   color-scheme: dark;
 
+  --surface-app: #08090b;
+  --surface-chrome: #111216;
+  --surface-sidebar: #0d0e11;
+  --surface-workspace: #090a0c;
+  --surface-panel: #111216;
+  --surface-overlay: #141519;
+  --edge-window: rgba(255, 255, 255, 0.12);
+  --edge-panel: rgba(255, 255, 255, 0.10);
+  --edge-panel-strong: rgba(255, 255, 255, 0.145);
+  --edge-soft: rgba(255, 255, 255, 0.058);
+  --edge-highlight: rgba(255, 255, 255, 0.055);
+  --separator-chrome: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--edge-soft) 7%,
+    var(--edge-panel) 24%,
+    var(--edge-panel) 76%,
+    var(--edge-soft) 93%,
+    transparent 100%
+  );
+  --seam-active: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--accent-hi) 16%, transparent) 18%,
+    color-mix(in srgb, var(--accent-hi) 78%, white) 50%,
+    color-mix(in srgb, var(--accent-hi) 16%, transparent) 82%,
+    transparent 100%
+  );
+  --shadow-workspace:
+    inset 0 1px 0 var(--edge-highlight),
+    0 1px 2px rgba(0, 0, 0, 0.68),
+    0 18px 42px -30px rgba(0, 0, 0, 0.96);
+  --shadow-overlay:
+    inset 0 1px 0 rgba(255, 255, 255, 0.065),
+    0 1px 2px rgba(0, 0, 0, 0.78),
+    0 20px 52px -18px rgba(0, 0, 0, 0.88),
+    0 50px 112px -42px rgba(0, 0, 0, 1);
+
   --term-bg: #0A0A0A;
-  --surface-border: #2c2d33;
+  --surface-border: var(--edge-panel-strong);
   --term-border: var(--surface-border);
-  --term-shadow:
-    0 3px 8px rgba(0, 0, 0, 0.48),
-    0 16px 34px -22px rgba(0, 0, 0, 0.9);
+  --term-shadow: var(--shadow-workspace);
 
   /* Dark surfaces use neutral graphite boundaries. Avoid bright white
      highlight rings, which read as a halo around dialogs. */
@@ -266,13 +336,10 @@
     0 3px 8px rgba(0, 0, 0, 0.54),
     0 18px 40px -20px rgba(0, 0, 0, 0.92),
     0 0 0 1px rgba(52, 53, 60, 0.84);
-  --shadow-modal:
-    0 6px 16px rgba(0, 0, 0, 0.62),
-    0 30px 72px -28px rgba(0, 0, 0, 0.96),
-    0 0 0 1px rgba(52, 53, 60, 0.90);
-  --dialog-bg: #0d0d10;
-  --dialog-border: #2c2d33;
-  --dialog-surface-top: var(--dialog-bg);
+  --shadow-modal: var(--shadow-overlay);
+  --dialog-bg: var(--surface-overlay);
+  --dialog-border: var(--edge-panel-strong);
+  --dialog-overlay: rgba(0, 0, 0, 0.58);
   --btn-primary-border: color-mix(in srgb, var(--accent-hi) 84%, white 16%);
   --btn-primary-shadow:
     0 1px 1px rgba(0, 0, 0, 0.36),

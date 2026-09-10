@@ -466,3 +466,24 @@ Cards are rectangles at 12–16px radius; marketing buttons and category tabs ar
 - Don't set body copy in pure black (`#000000`) — the brand's ink is #171717 and body steps to `{colors.body}`.
 - Don't add a second decorative system — the mesh gradient is the only flourish; everything else is ink on white.
 - Don't loosen the display tracking — large Geist headings carry tight negative letter-spacing by design.
+
+## XControl 应用边界系统（A+C）
+
+XControl 的桌面端采用“无框色阶 + 单一活跃光缝”的边界模型。边界首先由相邻表面的明度差表达，只有需要明确层级或交互归属时才使用描边和阴影。强调色不参与大面积结构，只标记当前活跃终端。
+
+### 表面层级
+
+1. **App**：`--surface-app` 是窗口最外层底色；窗口轮廓只使用 `--edge-window`。
+2. **Chrome**：标题栏、状态栏使用 `--surface-chrome`，与内容之间使用两端淡出的 `--separator-chrome`，不使用贯穿全宽的硬分割线。
+3. **Workspace**：主工作区使用 `--surface-workspace`；连接侧栏用 `--surface-sidebar` 形成色阶区分，不再添加完整矩形描边。
+4. **Active surface**：终端和 SFTP 工作面使用 `--surface-panel` / 动态终端底色、`--edge-panel` 和 `--shadow-workspace`。只有当前终端允许出现 `--seam-active` 光缝。
+5. **Overlay**：Dialog、AlertDialog、编辑器弹窗、SFTP 选择器与命令面板统一使用 `--surface-overlay`、`--edge-panel-strong`、`--r-xl` 和 `--shadow-overlay`。
+
+### 使用规则
+
+- 新增弹窗必须从共享 `DialogContent` / `AlertDialogContent` 继承外框；业务组件只定义尺寸和内部布局。
+- 必须自绘弹窗壳时，也只能组合 overlay 级语义变量，不得写独立的 RGB 边框或单层投影。
+- 终端主题只控制终端内部底色；终端外框、投影与活跃状态仍属于应用主题。
+- 光缝是稀缺状态信号，不用于 SFTP、侧栏、普通面板或所有弹窗。
+- 内部表单、列表和分区继续使用原有 `--border` / `--border-subtle`；外层边界不得反向污染内部控件。
+- 桌面弹窗按任务密度设置宽高，并保留 `1rem` 视口安全边距；不得用移动端比例作为桌面默认比例。

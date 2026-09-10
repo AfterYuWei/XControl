@@ -131,7 +131,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[900px] h-[620px] max-w-[95vw] max-h-[90vh] p-0 overflow-hidden flex flex-col">
+      <DialogContent className="flex h-[min(620px,calc(100dvh-2rem))] w-[min(900px,calc(100vw-2rem))] max-w-none flex-col overflow-hidden p-0">
         <DialogHeader className="px-6 pt-5 pb-0">
           <DialogTitle>设置</DialogTitle>
         </DialogHeader>

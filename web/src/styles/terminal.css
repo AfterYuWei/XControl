@@ -24,6 +24,19 @@
   border: 1px solid var(--term-border);
   box-shadow: var(--term-shadow);
 }
+.term-wrap:not(.sftp-aware)::before {
+  content: '';
+  position: absolute;
+  z-index: 5;
+  top: -1px;
+  left: 14%;
+  width: 72%;
+  height: 2px;
+  background: var(--seam-active);
+  box-shadow: 0 1px 10px color-mix(in srgb, var(--accent) 18%, transparent);
+  opacity: 0.62;
+  pointer-events: none;
+}
 /* The xterm mount fills the already-padded content box. Keeping padding off
    this element prevents FitAddon from counting rows for space it cannot use. */
 .term-host {
@@ -40,9 +53,10 @@
   height: 100%;
   padding: 32px 20px;
   text-align: center;
-  background: var(--bg-panel);
+  background: var(--surface-panel);
+  border: 1px solid var(--edge-panel);
   border-radius: var(--r-lg);
-  box-shadow: var(--shadow-surface);
+  box-shadow: var(--shadow-workspace);
   margin: 24px;
 }
 .term-empty-icon {

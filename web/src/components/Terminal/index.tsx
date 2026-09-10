@@ -25,7 +25,6 @@ export function TerminalView() {
   // The outer boundary follows the application chrome rather than the terminal
   // palette, so light terminal themes remain distinct from the surrounding UI.
   const termBorder = 'var(--surface-border)'
-  const termShadow = 'var(--term-shadow)'
 
   return (
     <div
@@ -33,7 +32,6 @@ export function TerminalView() {
       style={{
         '--term-bg': termBg,
         '--term-border': termBorder,
-        '--term-shadow': termShadow,
       } as CSSProperties}
     >
       <div className="flex-1 relative overflow-hidden">

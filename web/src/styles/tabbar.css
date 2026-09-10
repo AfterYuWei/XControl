@@ -3,10 +3,10 @@
   height: var(--tabbar-h);
   display: flex;
   align-items: center;
-  background: var(--bg-panel);
+  background: var(--surface-panel);
   /* Shares the same border-bottom as .sidebar-hdr so the top toolbar band
      reads as one continuous bar across the whole window. */
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--edge-soft);
   flex-shrink: 0;
   padding: 0 6px;
   gap: 2px;
@@ -200,4 +200,3 @@
 [data-tip]:hover::after {
   opacity: 1;
 }
-

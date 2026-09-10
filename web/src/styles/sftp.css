@@ -10,12 +10,12 @@
   background: var(--bg);
   overflow: hidden;
 }
-/* When a SFTP tab is active, .term-wrap.sftp-aware uses the app bg instead of
-   the fixed terminal-dark bg so the SFTP chrome matches the global theme. */
+/* SFTP occupies the same workspace frame as a terminal, but without the
+   active terminal light seam. */
 .term-wrap.sftp-aware {
-  background: var(--bg);
-  border-color: var(--border-subtle);
-  box-shadow: none;
+  background: var(--surface-panel);
+  border-color: var(--edge-panel);
+  box-shadow: var(--shadow-workspace);
   padding: 0;
 }
 
@@ -893,8 +893,9 @@ body.ptr-dragging * {
 .sftp-picker {
   width: 440px;
   max-width: 92vw;
-  background: var(--bg-panel);
-  border-radius: var(--r-lg);
+  background: var(--surface-overlay);
+  border: 1px solid var(--edge-panel-strong);
+  border-radius: var(--r-xl);
   box-shadow: var(--shadow-modal);
   overflow: hidden;
 }
@@ -1071,8 +1072,9 @@ body.ptr-dragging * {
   max-height: calc(100vh - 80px);
   display: flex;
   flex-direction: column;
-  background: var(--bg-panel);
-  border-radius: var(--r-lg);
+  background: var(--surface-overlay);
+  border: 1px solid var(--edge-panel-strong);
+  border-radius: var(--r-xl);
   box-shadow: var(--shadow-modal);
   overflow: hidden;
 }

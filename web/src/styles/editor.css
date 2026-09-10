@@ -3,13 +3,10 @@
 .editor-dialog {
   display: flex;
   flex-direction: column;
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 0 0 1px rgba(0, 0, 0, 0.05),
-    0 8px 24px rgba(0, 0, 0, 0.15);
+  background: var(--surface-overlay);
+  border: 1px solid var(--edge-panel-strong);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-overlay);
   overflow: hidden;
   width: 85vw;
   height: 85vh;

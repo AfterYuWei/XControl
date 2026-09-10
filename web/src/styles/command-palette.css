@@ -2,8 +2,8 @@
 .pal {
   width: 500px;
   max-height: 400px;
-  background: var(--bg-panel);
-  border-radius: var(--r-lg);
+  background: var(--surface-overlay);
+  border-radius: var(--r-xl);
   overflow: hidden;
   box-shadow: var(--shadow-modal);
   display: flex;

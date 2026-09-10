@@ -4,6 +4,8 @@
   flex-direction: column;
   height: 100vh;
   overflow: hidden;
+  background: var(--surface-app);
+  border: 1px solid var(--edge-window);
 }
 
 /* ===== HEADER (full width, left/center/right) ===== */
@@ -11,14 +13,24 @@
   height: var(--tabbar-h);
   display: flex;
   align-items: center;
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border);
+  background: var(--surface-chrome);
+  border-bottom: 0;
   flex-shrink: 0;
   padding: 0 8px;
   gap: 4px;
   position: relative;
   z-index: 30;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  box-shadow: none;
+}
+.xcontrol-header::after {
+  content: '';
+  position: absolute;
+  right: 4%;
+  bottom: 0;
+  left: 4%;
+  height: 1px;
+  background: var(--separator-chrome);
+  pointer-events: none;
 }
 /* 桌面环境：自定义标题栏。
    Tauri 下窗口拖拽由 Layout 组件的 data-tauri-drag-region 属性实现（Tauri 机制，
@@ -26,8 +38,7 @@
    配色完全由前端 CSS 主题变量控制，跟随应用深浅主题切换。
    关闭按钮悬停保留 Windows 原生红色 #E81123（见 .tb-close）。 */
 .xcontrol-header.titlebar.is-desktop {
-  background: var(--bg-panel);
-  border-bottom-color: var(--border);
+  background: var(--surface-chrome);
   color: var(--fg);
   /* 右侧留出窗口控制按钮的空间，避免遮挡 */
   padding-right: 0;
@@ -244,6 +255,7 @@
      The terminal area compensates by removing its own top/bottom margin. */
   padding: 8px 0;
   align-items: stretch;
+  background: var(--surface-workspace);
 }
 
 /* ===== SIDEBAR — Tabby / Warp inspired layout ===== */
@@ -252,21 +264,26 @@
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: var(--bg-panel);
-  border-right: 1px solid var(--border);
+  background: var(--surface-sidebar);
+  border: 0;
   z-index: 30;
-  transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.15s ease;
+  transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+    margin-left 0.22s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.15s ease;
   overflow: hidden;
-  border-radius: 0 var(--r-lg) var(--r-lg) 0;
+  border-radius: var(--r-lg);
   align-self: stretch;
   min-height: 0;
-  box-shadow: var(--shadow-surface);
+  margin-left: 8px;
+  box-shadow:
+    inset -1px 0 0 var(--edge-soft),
+    inset 0 1px 0 var(--edge-highlight);
 }
 .xcontrol-sidebar.collapsed {
   width: 0;
   opacity: 0;
   border-right: none;
   overflow: hidden;
+  margin-left: 0;
 }
 
 /* Sidebar resize handle */
@@ -306,7 +323,7 @@
   align-items: center;
   gap: 3px;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--edge-soft);
 }
 /* Shared icon button used in the sidebar header (collapse / new connection).
    Matches the tabbar .tab-act sizing for visual consistency. */
@@ -654,4 +671,5 @@
   min-width: 0;
   min-height: 0;
   align-self: stretch;
+  background: var(--surface-workspace);
 }

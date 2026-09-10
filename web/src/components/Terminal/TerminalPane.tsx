@@ -156,7 +156,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     fontFamilyCN,
     terminalTheme,
     onData: (data) => {
-      if (tab.sessionId && channelStatusRef.current === 'connected') {
+      if (tab.sessionId && tab.status === 'connected' && channelStatusRef.current === 'connected') {
         const consumed = handleDataRef.current(data)
         if (!consumed) sendInputRef.current(data)
       }
@@ -267,8 +267,6 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
 
         case 'metadata': {
           const meta = msg.payload as MetaPayload
-          reset()
-          clear()
           updateTabStatus(tab.id, 'connected', meta.session_id)
           clearReconnectTimer()
           clearTabError(tab.id)
@@ -332,12 +330,10 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
       }
     },
     [
-      clear,
       clearReconnectTimer,
       clearTabError,
       clearTabHostKeyPrompt,
       fit,
-      reset,
       startAutoReconnect,
       tab.id,
       tab.profileId,
@@ -352,6 +348,10 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     sessionId: tab.sessionId || '',
     onMessage: handleSessionMessage,
     onOpen: () => {
+      // Live events remain queued until onOpen and the initial replay finish,
+      // so this clears only the previous session, never the new login banner.
+      reset()
+      clear()
       // fit() reports the resulting size through onResize, which forwards
       // it to the backend. Delayed slightly so the container has settled.
       setTimeout(() => {

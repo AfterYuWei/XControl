@@ -48,8 +48,19 @@ export function useSessionChannel(options: UseSessionChannelOptions) {
 
     const attach = async () => {
       try {
+        // After the backend flips a session to `attached`, new output is sent
+        // as live events and is no longer included in the attach response.
+        // Queue those events until the initial replay has been dispatched so
+        // metadata can never overtake terminal output such as the login banner.
+        let attaching = true
+        const pendingEvents: SessionEvent[] = []
         unlisten = await listen<SessionEvent>('xcontrol-session-message', (event) => {
-          if (event.payload.session_id === sessionId) dispatch(event.payload)
+          if (event.payload.session_id !== sessionId) return
+          if (attaching) {
+            pendingEvents.push(event.payload)
+          } else {
+            dispatch(event.payload)
+          }
         })
         if (disposed) {
           unlisten()
@@ -60,6 +71,8 @@ export function useSessionChannel(options: UseSessionChannelOptions) {
         setStatus('connected')
         callbacksRef.current.onOpen?.()
         initial.forEach(dispatch)
+        attaching = false
+        pendingEvents.forEach(dispatch)
       } catch (error) {
         if (disposed) return
         setStatus('disconnected')

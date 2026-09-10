@@ -23,11 +23,16 @@ use crate::{
 };
 
 const COMPLETE_TIMEOUT: Duration = Duration::from_millis(400);
+const SHELL_DETECT_TIMEOUT: Duration = Duration::from_secs(10);
 const PRE_ATTACH_OUTPUT_LIMIT: usize = 1024 * 1024;
-const OSC7_SETUP: &str = concat!(
-    r#" __tdcwd(){ printf "\033]7;file://%s\007\033]1337;RemoteUser=%s\007" "$(pwd -P 2>/dev/null)" "$(id -un 2>/dev/null)";};case "${PROMPT_COMMAND-}" in *__tdcwd*) ;; *) PROMPT_COMMAND="__tdcwd${PROMPT_COMMAND:+;$PROMPT_COMMAND}";;esac;__tdcwd"#,
-    "\n"
-);
+const OSC7_BOOTSTRAP_ACK: &[u8] = b"\x1b]1337;XControlOsc7Ready\x07";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RemoteShell {
+    Bash,
+    Zsh,
+    Fish,
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ConnectionLogEntry {
@@ -490,6 +495,10 @@ impl SshService {
         cols: u32,
         rows: u32,
     ) -> Result<(), SshError> {
+        session.stage("starting_shell", "info", "正在识别远程 Shell");
+        let osc7_setup = detect_remote_shell(&route.handle)
+            .await
+            .map(osc7_setup_command);
         let mut channel = route
             .handle
             .channel_open_session()
@@ -526,21 +535,33 @@ impl SshService {
                 .await;
         }
 
-        session.connected("starting_shell", "远程 Shell 已启动，等待终端附着");
+        session.stage(
+            "starting_shell",
+            "info",
+            "远程 Shell 已启动，正在初始化终端",
+        );
         for (profile_id, fingerprint) in &route.host_keys {
             let _ = self.profiles.persist_host_key(profile_id, fingerprint);
         }
         let _ = self.profiles.update_last_used(&session.profile_id);
         let _ = self.audit.record(&session.profile_id, "connect", "");
-        session.connected("ready", "终端已就绪，开始接收远程输出");
-        let metadata = session.metadata();
-        session.emit_message(&metadata.message_type, &metadata.data, metadata.payload);
-        channel
-            .data_bytes(OSC7_SETUP.as_bytes().to_vec())
-            .await
-            .map_err(|error| format!("初始化终端目录跟踪: {error}"))?;
-
-        let mut filter = TerminalOutputFilter::default();
+        // Hold incomplete startup lines until the setup acknowledgement arrives.
+        // This makes the injected command invisible even when a slow-starting
+        // shell echoes or redraws the queued input after rendering its prompt.
+        // Unknown shells are left untouched rather than receiving incompatible
+        // syntax in their interactive input stream.
+        let (mut filter, mut terminal_ready) = if let Some(command) = osc7_setup {
+            channel
+                .data_bytes(format!("{command}\n").into_bytes())
+                .await
+                .map_err(|error| format!("初始化终端目录跟踪: {error}"))?;
+            (TerminalOutputFilter::with_osc7_bootstrap(&command), false)
+        } else {
+            session.connected("ready", "终端已就绪，远程 Shell 不支持自动目录跟踪");
+            let metadata = session.metadata();
+            session.emit_message(&metadata.message_type, &metadata.data, metadata.payload);
+            (TerminalOutputFilter::default(), true)
+        };
         let mut exit_code = 0_u32;
         let mut normal_exit = false;
         loop {
@@ -591,6 +612,16 @@ impl SshService {
                     Some(ChannelMsg::Data { data })
                     | Some(ChannelMsg::ExtendedData { data, .. }) => {
                         let output = filter.push(&data);
+                        if output.osc7_ready && !terminal_ready {
+                            terminal_ready = true;
+                            session.connected("ready", "终端已就绪，开始接收远程输出");
+                            let metadata = session.metadata();
+                            session.emit_message(
+                                &metadata.message_type,
+                                &metadata.data,
+                                metadata.payload,
+                            );
+                        }
                         if let Some(cwd) = output.cwd {
                             session.emit_message("cwd", "", Some(json!({"path":cwd})));
                         }
@@ -741,6 +772,56 @@ impl SshService {
     }
 }
 
+async fn detect_remote_shell(handle: &client::Handle<ClientHandler>) -> Option<RemoteShell> {
+    let output = timeout(SHELL_DETECT_TIMEOUT, async {
+        let mut channel = handle.channel_open_session().await.ok()?;
+        channel.exec(true, r#"printf '%s\n' "$SHELL""#).await.ok()?;
+        let mut output = Vec::new();
+        while let Some(message) = channel.wait().await {
+            if let ChannelMsg::Data { data } = message {
+                output.extend_from_slice(&data);
+            }
+        }
+        Some(String::from_utf8_lossy(&output).into_owned())
+    })
+    .await
+    .ok()??;
+
+    classify_remote_shell(&output)
+}
+
+fn classify_remote_shell(output: &str) -> Option<RemoteShell> {
+    output.lines().rev().find_map(|line| {
+        let name = line
+            .trim()
+            .rsplit('/')
+            .next()
+            .unwrap_or_default()
+            .trim_start_matches('-');
+        match name {
+            "bash" => Some(RemoteShell::Bash),
+            "zsh" => Some(RemoteShell::Zsh),
+            "fish" => Some(RemoteShell::Fish),
+            _ => None,
+        }
+    })
+}
+
+fn osc7_setup_command(shell: RemoteShell) -> String {
+    let hook = match shell {
+        RemoteShell::Bash => {
+            r#" __xcontrol_osc7(){ printf "\033]7;file://%s\007" "$(pwd -P 2>/dev/null)";};case "${PROMPT_COMMAND-}" in *__xcontrol_osc7*) ;; *) PROMPT_COMMAND="__xcontrol_osc7${PROMPT_COMMAND:+;$PROMPT_COMMAND}";;esac;__xcontrol_osc7"#
+        }
+        RemoteShell::Zsh => {
+            r#" __xcontrol_osc7(){ printf "\033]7;file://%s\007" "$(pwd -P 2>/dev/null)";};autoload -Uz add-zsh-hook;add-zsh-hook -d precmd __xcontrol_osc7 2>/dev/null;add-zsh-hook precmd __xcontrol_osc7;__xcontrol_osc7"#
+        }
+        RemoteShell::Fish => {
+            r#" function __xcontrol_osc7 --on-variable PWD --on-event fish_prompt;printf '\033]7;file://%s\007' (pwd -P 2>/dev/null);end;__xcontrol_osc7"#
+        }
+    };
+    format!(r#"{hook};printf "\033]1337;XControlOsc7Ready\007""#)
+}
+
 async fn run_completion(
     handle: &client::Handle<ClientHandler>,
     script: String,
@@ -782,14 +863,23 @@ fn shell_quote(value: &str) -> String {
 struct TerminalOutputFilter {
     utf8_carry: Vec<u8>,
     osc7_buffer: Vec<u8>,
+    osc7_bootstrap: Option<Osc7BootstrapFilter>,
 }
 
 struct FilteredOutput {
     data: String,
     cwd: Option<String>,
+    osc7_ready: bool,
 }
 
 impl TerminalOutputFilter {
+    fn with_osc7_bootstrap(setup_command: &str) -> Self {
+        Self {
+            osc7_bootstrap: Some(Osc7BootstrapFilter::new(setup_command)),
+            ..Self::default()
+        }
+    }
+
     fn push(&mut self, input: &[u8]) -> FilteredOutput {
         let mut bytes = std::mem::take(&mut self.utf8_carry);
         bytes.extend_from_slice(input);
@@ -806,6 +896,18 @@ impl TerminalOutputFilter {
             self.osc7_buffer.drain(..start);
         }
         let cwd = extract_osc7(&mut self.osc7_buffer);
+        let mut osc7_ready = false;
+        let bytes = match self.osc7_bootstrap.as_mut() {
+            Some(bootstrap) => {
+                let (data, complete) = bootstrap.push(&bytes);
+                if complete {
+                    self.osc7_bootstrap = None;
+                    osc7_ready = true;
+                }
+                data
+            }
+            None => bytes,
+        };
         let mut data = String::from_utf8_lossy(&bytes).into_owned();
         for stale in [
             "-bash: 2004h: command not found\n",
@@ -815,8 +917,79 @@ impl TerminalOutputFilter {
         ] {
             data = data.replace(stale, "");
         }
-        FilteredOutput { data, cwd }
+        FilteredOutput {
+            data,
+            cwd,
+            osc7_ready,
+        }
     }
+}
+
+struct Osc7BootstrapFilter {
+    pending_line: Vec<u8>,
+    setup_command: Vec<u8>,
+}
+
+impl Osc7BootstrapFilter {
+    fn new(setup_command: &str) -> Self {
+        Self {
+            pending_line: Vec::new(),
+            setup_command: setup_command.trim_start().as_bytes().to_vec(),
+        }
+    }
+
+    /// Buffers only the current incomplete terminal line. Complete banner lines
+    /// are released immediately, while any line containing the injected setup
+    /// command is discarded. The binary acknowledgement cannot be confused with
+    /// the command's printable `\\033` text and removes all timing assumptions.
+    fn push(&mut self, input: &[u8]) -> (Vec<u8>, bool) {
+        self.pending_line.extend_from_slice(input);
+
+        if let Some(ack_start) = find_bytes(&self.pending_line, OSC7_BOOTSTRAP_ACK) {
+            let ack_end = ack_start + OSC7_BOOTSTRAP_ACK.len();
+            let mut complete = std::mem::take(&mut self.pending_line);
+            complete.drain(ack_start..ack_end);
+            return (
+                strip_osc7_setup_echoes(&complete, &self.setup_command),
+                true,
+            );
+        }
+
+        let Some(line_end) = self.pending_line.iter().rposition(|byte| *byte == b'\n') else {
+            return (Vec::new(), false);
+        };
+        let tail = self.pending_line.split_off(line_end + 1);
+        let complete_lines = std::mem::replace(&mut self.pending_line, tail);
+        (
+            strip_osc7_setup_echoes(&complete_lines, &self.setup_command),
+            false,
+        )
+    }
+}
+
+fn strip_osc7_setup_echoes(input: &[u8], target: &[u8]) -> Vec<u8> {
+    let mut output = Vec::with_capacity(input.len());
+    let mut start = 0;
+
+    for (index, byte) in input.iter().enumerate() {
+        if *byte != b'\n' {
+            continue;
+        }
+        let line = &input[start..=index];
+        if find_bytes(line, target).is_none() {
+            output.extend_from_slice(line);
+        }
+        start = index + 1;
+    }
+
+    if start < input.len() {
+        let line = &input[start..];
+        if find_bytes(line, target).is_none() {
+            output.extend_from_slice(line);
+        }
+    }
+
+    output
 }
 
 fn extract_osc7(buffer: &mut Vec<u8>) -> Option<String> {
@@ -916,7 +1089,73 @@ mod tests {
 
     #[test]
     fn osc_setup_uses_shell_quotes_not_literal_backslashes() {
-        assert!(OSC7_SETUP.contains("printf \"\\033]7;"));
-        assert!(!OSC7_SETUP.contains("printf \\\\\""));
+        for shell in [RemoteShell::Bash, RemoteShell::Zsh, RemoteShell::Fish] {
+            let command = osc7_setup_command(shell);
+            assert!(command.contains("printf \"\\033]7;") || command.contains("printf '\\033]7;"));
+            assert!(!command.contains("printf \\\\\\\""));
+            assert!(command.contains("XControlOsc7Ready"));
+        }
+    }
+
+    #[test]
+    fn classifies_supported_remote_shell_paths() {
+        assert_eq!(
+            classify_remote_shell("/bin/bash\n"),
+            Some(RemoteShell::Bash)
+        );
+        assert_eq!(
+            classify_remote_shell("/usr/bin/zsh\r\n"),
+            Some(RemoteShell::Zsh)
+        );
+        assert_eq!(
+            classify_remote_shell("/opt/fish/bin/fish\n"),
+            Some(RemoteShell::Fish)
+        );
+        assert_eq!(classify_remote_shell("/bin/tcsh\n"), None);
+    }
+
+    #[test]
+    fn hides_chunked_and_repeated_osc7_setup_echoes_without_losing_banner() {
+        let setup_command = osc7_setup_command(RemoteShell::Bash);
+        let mut filter = TerminalOutputFilter::with_osc7_bootstrap(&setup_command);
+        let echoed = format!("{setup_command}\r\n");
+        let first_packet = format!("Welcome to Ubuntu\r\nroot@host:~#{echoed}");
+        let split = first_packet.len() - 19;
+
+        let first = filter.push(&first_packet.as_bytes()[..split]);
+        assert_eq!(first.data, "Welcome to Ubuntu\r\n");
+
+        let mut second_packet = first_packet.as_bytes()[split..].to_vec();
+        second_packet.extend_from_slice(b"Startup completed after a slow profile\r\n");
+        second_packet.extend_from_slice(format!("root@host:~#{echoed}").as_bytes());
+        second_packet.extend_from_slice(b"\x1b]7;file:///root\x07");
+        second_packet.extend_from_slice(OSC7_BOOTSTRAP_ACK);
+        second_packet.extend_from_slice(b"root@host:~# ");
+        let second = filter.push(&second_packet);
+
+        assert_eq!(second.cwd.as_deref(), Some("/root"));
+        assert!(second.osc7_ready);
+        assert_eq!(
+            second.data,
+            "Startup completed after a slow profile\r\n\x1b]7;file:///root\x07root@host:~# "
+        );
+        assert!(!second.data.contains("__tdcwd"));
+    }
+
+    #[test]
+    fn preserves_startup_output_when_setup_is_not_echoed() {
+        let setup_command = osc7_setup_command(RemoteShell::Bash);
+        let mut filter = TerminalOutputFilter::with_osc7_bootstrap(&setup_command);
+        let mut packet = b"Welcome\r\n\x1b]7;file:///srv/app\x07".to_vec();
+        packet.extend_from_slice(OSC7_BOOTSTRAP_ACK);
+        packet.extend_from_slice(b"user@host:/srv/app$ ");
+
+        let output = filter.push(&packet);
+
+        assert_eq!(output.cwd.as_deref(), Some("/srv/app"));
+        assert_eq!(
+            output.data,
+            "Welcome\r\n\x1b]7;file:///srv/app\x07user@host:/srv/app$ "
+        );
     }
 }

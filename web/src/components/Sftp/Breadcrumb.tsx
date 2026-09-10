@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight, Home } from 'lucide-react'
 import { dropPayloadAttr } from '@/lib/dragRegistry'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 import type { SftpDropTarget } from '@/store/sftp'
 
 interface BreadcrumbProps {
@@ -119,7 +120,10 @@ export function Breadcrumb({ path, onNavigate, dropTargetPath, makeDropTarget }:
     >
       <Home size={13} className="sftp-crumb-home" />
       <span key={root.path} className="sftp-crumb-seg-wrap">
-        <button
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
           className={`sftp-crumb-seg ${dropTargetPath === root.path ? 'drop-target' : ''}`}
           onClick={() => onNavigate(root.path)}
           title={root.path}
@@ -129,25 +133,31 @@ export function Breadcrumb({ path, onNavigate, dropTargetPath, makeDropTarget }:
           })()}
         >
           {root.label}
-        </button>
+        </Button>
       </span>
       {collapsed > 0 && (
         <span className="sftp-crumb-seg-wrap">
           <ChevronRight size={12} className="sftp-crumb-sep" />
-          <button
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
             className="sftp-crumb-seg sftp-crumb-ellipsis"
             onClick={openEditor}
             title={path}
             aria-label="展开完整路径"
           >
             …
-          </button>
+          </Button>
         </span>
       )}
       {rest.map((s, i) => (
         <span key={s.path} className="sftp-crumb-seg-wrap">
           {i > 0 && <ChevronRight size={12} className="sftp-crumb-sep" />}
-          <button
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
             className={`sftp-crumb-seg ${dropTargetPath === s.path ? 'drop-target' : ''}`}
             onClick={() => onNavigate(s.path)}
             title={s.path}
@@ -157,7 +167,7 @@ export function Breadcrumb({ path, onNavigate, dropTargetPath, makeDropTarget }:
             })()}
           >
             {s.label}
-          </button>
+          </Button>
         </span>
       ))}
     </div>

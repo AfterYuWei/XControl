@@ -3,6 +3,7 @@ import { X, Plus } from 'lucide-react'
 import { resolveServerIcon } from '@/lib/serverIcons'
 import { useSftpStore } from './storeContext'
 import { dropPayloadAttr } from '@/lib/dragRegistry'
+import { Button } from '@/components/ui/button'
 import { type PaneSide, type SftpDropTarget, type SftpTab } from '@/store/sftp'
 
 interface PaneTabsProps {
@@ -74,7 +75,10 @@ export function PaneTabs({ pane, onPickServer }: PaneTabsProps) {
             >
               <Icon size={12} className="sftp-ptab-icon" />
               <span className="sftp-ptab-name">{tab.server.name}</span>
-              <button
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
                 className="sftp-ptab-x"
                 aria-label={`断开 ${tab.server.name}`}
                 onClick={(e) => {
@@ -83,18 +87,21 @@ export function PaneTabs({ pane, onPickServer }: PaneTabsProps) {
                 }}
               >
                 <X size={11} />
-              </button>
+              </Button>
             </div>
           )
         })}
-        <button
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
           className="sftp-ptab-add"
           title="连接新服务器"
           aria-label="连接新服务器"
           onClick={onPickServer}
         >
           <Plus size={13} />
-        </button>
+        </Button>
       </div>
     </div>
   )

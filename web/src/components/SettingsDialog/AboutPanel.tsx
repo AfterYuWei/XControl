@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { OptionSelect } from '@/components/OptionSelect'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Info, RefreshCw, Download } from 'lucide-react'
 import { isTauri } from '@/lib/desktop'
 import { appVersion, buildChannel, checkForUpdates, downloadAndInstallUpdate, type UpdateCheckResult } from '@/lib/updater'
@@ -92,16 +92,17 @@ export function AboutPanel() {
             <span className="settings-field-label">更新通道</span>
             <span className="settings-field-desc">正式版优先稳定性；测试版可提前获取最新修复</span>
           </div>
-          <OptionSelect
-            options={channelOptions}
+          <Select
             value={updateChannel}
-            onChange={(value) => {
+            onValueChange={(value) => {
               setUpdateChannel(value as UpdateChannel)
               setResult(null)
             }}
             disabled={checking || downloading}
-            className="settings-select"
-          />
+          >
+            <SelectTrigger className="settings-select"><SelectValue placeholder="请选择" /></SelectTrigger>
+            <SelectContent>{channelOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+          </Select>
         </div>
       )}
 

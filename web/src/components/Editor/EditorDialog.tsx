@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
-import { FileX } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Button } from '@/components/ui/button'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { useEditorStore, useActiveTab } from '@/store/editor'
 import { CodeEditor } from './CodeEditor'
 import { EditorToolbar } from './EditorToolbar'
@@ -117,38 +119,19 @@ export function EditorDialog() {
           error={activeTab.error}
         />
 
-        {confirmClose && (
-          <div className="editor-confirm">
-            <div className="editor-confirm-body">
-              <FileX size={18} className="editor-confirm-icon" />
-              <div>
-                <div className="editor-confirm-title">放弃未保存的修改？</div>
-                <div className="editor-confirm-desc">
-                  关闭编辑器将丢失当前未保存的更改。点击"重新加载"可恢复到服务端版本。
-                </div>
-              </div>
-            </div>
-            <div className="editor-confirm-actions">
-              <Button type="button" variant="outline" className="editor-btn" onClick={() => setConfirmClose(false)}>
-                继续编辑
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="editor-btn"
-                onClick={() => {
-                  reloadFile(activeTabId!)
-                  setConfirmClose(false)
-                }}
-              >
-                重新加载
-              </Button>
-              <Button type="button" variant="destructive" className="editor-btn danger" onClick={closeAll}>
-                放弃修改
-              </Button>
-            </div>
-          </div>
-        )}
+        <AlertDialog open={confirmClose} onOpenChange={setConfirmClose}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>放弃未保存的修改？</AlertDialogTitle>
+              <AlertDialogDescription>关闭编辑器将丢失当前未保存的更改。重新加载可恢复到服务端版本。</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>继续编辑</AlertDialogCancel>
+              <AlertDialogAction className="border bg-background text-foreground hover:bg-accent" onClick={() => void reloadFile(activeTabId!)}>重新加载</AlertDialogAction>
+              <AlertDialogAction className="bg-destructive text-white hover:bg-destructive/90" onClick={closeAll}>放弃修改</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
         </div>
       </DialogContent>
     </Dialog>

@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { OptionSelect } from '@/components/OptionSelect'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { vaultApi } from '@/api/vault'
 import { useVaultStore } from '@/store/vault'
@@ -162,7 +162,10 @@ export function VaultGenerateDialog({ open, onOpenChange }: VaultGenerateDialogP
 
                   <div className="pf-field">
                     <Label className="pf-label">密钥算法</Label>
-                    <OptionSelect options={ALGO_OPTIONS} value={algo} onChange={(value) => setAlgo(value)} />
+                    <Select value={algo} onValueChange={setAlgo}>
+                      <SelectTrigger className="w-full"><SelectValue placeholder="请选择" /></SelectTrigger>
+                      <SelectContent>{ALGO_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+                    </Select>
                   </div>
 
                   <div className="pf-field">

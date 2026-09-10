@@ -11,6 +11,11 @@ import { resolveGroupIcon } from '@/lib/groupIcons'
 import { usePointerDrag } from '@/hooks/usePointerDrag'
 import { dropPayloadAttr } from '@/lib/dragRegistry'
 import { SftpContextMenu } from '@/components/Sftp/SftpContextMenu'
+import { Button } from '@/components/ui/button'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import type { Profile } from '@/types/profile'
 import type { Group } from '@/types/group'
 
@@ -44,6 +49,8 @@ export function Sidebar() {
   const [showGroupForm, setShowGroupForm] = useState(false)
   const [editingGroup, setEditingGroup] = useState<Group | null>(null)
   const [groupFormParent, setGroupFormParent] = useState<string>('')
+  const [profileToDelete, setProfileToDelete] = useState<Profile | null>(null)
+  const [groupToDelete, setGroupToDelete] = useState<Group | null>(null)
 
   // Context menus
   const [profileMenu, setProfileMenu] = useState<{ x: number; y: number; profile: Profile } | null>(null)
@@ -175,16 +182,21 @@ export function Sidebar() {
     setProfileMenu(null)
   }
 
-  const handleDeleteProfile = async (profile: Profile) => {
-    if (confirm(`确定删除连接 "${profile.name}"?`)) {
-      try {
-        await deleteProfile(profile.id)
-        toast.success('连接已删除')
-      } catch (err) {
-        toast.error((err as Error).message || '删除失败')
-      }
-    }
+  const handleDeleteProfile = (profile: Profile) => {
+    setProfileToDelete(profile)
     setProfileMenu(null)
+  }
+
+  const confirmDeleteProfile = async () => {
+    if (!profileToDelete) return
+    try {
+      await deleteProfile(profileToDelete.id)
+      toast.success('连接已删除')
+    } catch (err) {
+      toast.error((err as Error).message || '删除失败')
+    } finally {
+      setProfileToDelete(null)
+    }
   }
 
   const handleProfileContextMenu = (e: React.MouseEvent, profile: Profile) => {
@@ -217,7 +229,7 @@ export function Sidebar() {
     setGroupMenu(null)
   }
 
-  const handleDeleteGroup = async (group: Group) => {
+  const handleDeleteGroup = (group: Group) => {
     setGroupMenu(null)
     // Front-end guard: backend also enforces 409, but this gives instant UX.
     const count = profiles.filter((p) => p.group_id === group.id).length
@@ -225,13 +237,18 @@ export function Sidebar() {
       toast.warning(`该分组下仍有 ${count} 台服务器，请先移动或删除后再删除分组`)
       return
     }
-    if (confirm(`确定删除分组 "${group.name}"?`)) {
-      try {
-        await deleteGroup(group.id)
-        toast.success('分组已删除')
-      } catch (err) {
-        toast.error((err as Error).message || '删除失败')
-      }
+    setGroupToDelete(group)
+  }
+
+  const confirmDeleteGroup = async () => {
+    if (!groupToDelete) return
+    try {
+      await deleteGroup(groupToDelete.id)
+      toast.success('分组已删除')
+    } catch (err) {
+      toast.error((err as Error).message || '删除失败')
+    } finally {
+      setGroupToDelete(null)
     }
   }
 
@@ -309,7 +326,10 @@ export function Sidebar() {
           <span className="srv-nm">{profile.name}</span>
           <span className="srv-meta">{meta}</span>
         </div>
-        <button
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
           className="srv-edit-btn"
           title="编辑服务器"
           aria-label="编辑服务器"
@@ -319,7 +339,7 @@ export function Sidebar() {
           }}
         >
           <Edit size={12} />
-        </button>
+        </Button>
       </div>
     )
   }
@@ -334,7 +354,10 @@ export function Sidebar() {
               <span className="sidebar-title-text">服务器管理</span>
               <span className="grp-cnt">{profiles.length}</span>
             </span>
-            <button
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
               className="grp-add-btn"
               title="新增服务器"
               aria-label="新增服务器"
@@ -344,7 +367,7 @@ export function Sidebar() {
               }}
             >
               <Plus size={13} />
-            </button>
+            </Button>
           </div>
 
           <div className="sidebar-body" onContextMenu={handleBlankContextMenu} onClick={() => setSelectedProfileId(null)}>
@@ -493,22 +516,26 @@ export function Sidebar() {
           Each segment is a tall transparent hit area wrapping a thin line so
           the visible stroke stays delicate while the click target is generous. */}
       <div className="sidebar-pager">
-        <button
+        <Button
+          type="button"
+          variant="ghost"
           className={`pager-hit ${currentPage === 0 ? 'active' : ''}`}
           aria-label="第 1 页"
           aria-current={currentPage === 0}
           onClick={() => setPage(effectiveTabId || GLOBAL_PAGE_KEY, 0)}
         >
           <span className="pager-line" />
-        </button>
-        <button
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
           className={`pager-hit ${currentPage === 1 ? 'active' : ''}`}
           aria-label="第 2 页"
           aria-current={currentPage === 1}
           onClick={() => setPage(effectiveTabId || GLOBAL_PAGE_KEY, 1)}
         >
           <span className="pager-line" />
-        </button>
+        </Button>
       </div>
 
       {/* Profile form dialog */}
@@ -527,6 +554,32 @@ export function Sidebar() {
         group={editingGroup}
         defaultParentId={groupFormParent}
       />
+
+      <AlertDialog open={profileToDelete !== null} onOpenChange={(open) => !open && setProfileToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除连接？</AlertDialogTitle>
+            <AlertDialogDescription>确定删除连接「{profileToDelete?.name}」？此操作无法撤销。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-white hover:bg-destructive/90" onClick={() => void confirmDeleteProfile()}>删除</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={groupToDelete !== null} onOpenChange={(open) => !open && setGroupToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除分组？</AlertDialogTitle>
+            <AlertDialogDescription>确定删除分组「{groupToDelete?.name}」？此操作无法撤销。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-white hover:bg-destructive/90" onClick={() => void confirmDeleteGroup()}>删除</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

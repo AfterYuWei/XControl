@@ -4,7 +4,7 @@ import { terminalThemes } from '@/lib/terminalThemes'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
-import { OptionSelect } from '@/components/OptionSelect'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -174,12 +174,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     <Label className="settings-field-label">主题</Label>
                     <span className="settings-field-desc">选择界面配色方案</span>
                   </div>
-                  <OptionSelect
-                    options={themeOptions}
-                    value={theme}
-                    onChange={(v) => setTheme(v as 'light' | 'dark' | 'system')}
-                    className="settings-select"
-                  />
+                  <Select value={theme} onValueChange={(value) => setTheme(value as 'light' | 'dark' | 'system')}>
+                    <SelectTrigger className="settings-select"><SelectValue placeholder="请选择" /></SelectTrigger>
+                    <SelectContent>{themeOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+                  </Select>
                 </div>
 
                 {/* 界面字体 */}
@@ -191,12 +189,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     </Label>
                     <span className="settings-field-desc">软件界面使用的字体</span>
                   </div>
-                  <OptionSelect
-                    options={appFontFamilyOptions}
-                    value={appFontFamily}
-                    onChange={setAppFontFamily}
-                    className="settings-select"
-                  />
+                  <Select value={appFontFamily} onValueChange={setAppFontFamily}>
+                    <SelectTrigger className="settings-select"><SelectValue placeholder="请选择" /></SelectTrigger>
+                    <SelectContent>{appFontFamilyOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+                  </Select>
                 </div>
 
                 {/* 界面字体大小 */}
@@ -267,12 +263,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     </Label>
                     <span className="settings-field-desc">等宽字体，用于显示代码和英文字符</span>
                   </div>
-                  <OptionSelect
-                    options={terminalFontFamilyOptions}
-                    value={fontFamily}
-                    onChange={setFontFamily}
-                    className="settings-select"
-                  />
+                  <Select value={fontFamily} onValueChange={setFontFamily}>
+                    <SelectTrigger className="settings-select"><SelectValue placeholder="请选择" /></SelectTrigger>
+                    <SelectContent>{terminalFontFamilyOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+                  </Select>
                 </div>
 
                 {/* 终端字体（中文） */}
@@ -284,12 +278,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     </Label>
                     <span className="settings-field-desc">中文字体，用于显示中文字符</span>
                   </div>
-                  <OptionSelect
-                    options={terminalFontFamilyCNOptions}
-                    value={fontFamilyCN}
-                    onChange={setFontFamilyCN}
-                    className="settings-select"
-                  />
+                  <Select value={fontFamilyCN} onValueChange={setFontFamilyCN}>
+                    <SelectTrigger className="settings-select"><SelectValue placeholder="请选择" /></SelectTrigger>
+                    <SelectContent>{terminalFontFamilyCNOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+                  </Select>
                 </div>
 
                 {/* 终端字体大小 */}

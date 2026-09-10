@@ -3,8 +3,12 @@ import { Loader2, Plus, TestTube2, Trash2, ExternalLink, ShieldCheck, Cloud, Dat
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { OptionSelect } from '@/components/OptionSelect'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { toast } from 'sonner'
 import { openExternal } from '@/lib/desktop'
 import { syncApi } from '@/api/sync'
@@ -47,6 +51,7 @@ export function ProviderSection({ providers, onChanged }: Props) {
   const [adding, setAdding] = useState(false)
   const [form, setForm] = useState<ProviderConfig>(emptyForm('webdav'))
   const [busy, setBusy] = useState(false)
+  const [providerToDelete, setProviderToDelete] = useState<SyncProviderMeta | null>(null)
 
   const patch = (k: keyof ProviderConfig, v: unknown) =>
     setForm((f) => ({ ...f, [k]: v }))
@@ -116,14 +121,18 @@ export function ProviderSection({ providers, onChanged }: Props) {
     }
   }
 
-  const handleDelete = async (p: SyncProviderMeta) => {
-    if (!window.confirm(`删除云服务「${p.name}」？云端已有版本不会被删除。`)) return
+  const handleDelete = (p: SyncProviderMeta) => setProviderToDelete(p)
+
+  const confirmDelete = async () => {
+    if (!providerToDelete) return
     try {
-      await syncApi.deleteProvider(p.id)
+      await syncApi.deleteProvider(providerToDelete.id)
       toast.success('已删除')
       onChanged()
     } catch (err) {
       toast.error('删除失败', { description: errMessage(err) })
+    } finally {
+      setProviderToDelete(null)
     }
   }
 
@@ -184,8 +193,10 @@ export function ProviderSection({ providers, onChanged }: Props) {
         <div className="backup-card" style={{ marginTop: 8 }}>
           <div className="backup-row">
             <Label className="backup-row-label">类型</Label>
-            <OptionSelect options={typeOptions} value={form.type}
-              onChange={(v) => setForm(emptyForm(v as ProviderType))} className="settings-select" />
+            <Select value={form.type} onValueChange={(value) => setForm(emptyForm(value as ProviderType))}>
+              <SelectTrigger className="settings-select"><SelectValue placeholder="请选择" /></SelectTrigger>
+              <SelectContent>{typeOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+            </Select>
           </div>
           <div className="backup-row">
             <Label className="backup-row-label">名称</Label>
@@ -285,6 +296,19 @@ export function ProviderSection({ providers, onChanged }: Props) {
           <div className="settings-field-desc">凭证（密码 / SecretKey / Token）将使用本机密钥加密存储</div>
         </div>
       )}
+
+      <AlertDialog open={providerToDelete !== null} onOpenChange={(open) => !open && setProviderToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除云服务？</AlertDialogTitle>
+            <AlertDialogDescription>删除「{providerToDelete?.name}」的本地配置；云端已有版本不会被删除。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-white hover:bg-destructive/90" onClick={() => void confirmDelete()}>删除</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

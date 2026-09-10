@@ -7,6 +7,7 @@ import { CommandPalette } from '@/components/CommandPalette'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { Toaster } from '@/components/ui/sonner'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 import { useProfileStore } from '@/store/profile'
 import { useSessionStore } from '@/store/session'
 import { useSettingsStore } from '@/store/settings'
@@ -172,7 +173,9 @@ export function Layout() {
         {/* 左：折叠侧边栏 + SFTP。
             容器空白区域可拖拽窗口；具体按钮无 drag 属性保持可点击。 */}
         <div className="header-left" data-tauri-drag-region={desktop || undefined}>
-          <button
+          <Button
+            type="button"
+            variant="ghost"
             className="hdr-icon-btn"
             title={sidebarCollapsed ? '展开侧边栏 (⌘B)' : '折叠侧边栏 (⌘B)'}
             aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -190,8 +193,10 @@ export function Layout() {
               </svg>
             )}
             <span className="hdr-icon-btn-label">侧栏</span>
-          </button>
-          <button
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
             className="hdr-icon-btn"
             title="SFTP 文件管理"
             aria-label="打开 SFTP 文件管理"
@@ -199,8 +204,10 @@ export function Layout() {
           >
             <FolderUp size={14} />
             <span className="hdr-icon-btn-label">SFTP</span>
-          </button>
-          <button
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
             className="hdr-icon-btn"
             title="Vaults"
             aria-label="打开 Vault"
@@ -208,7 +215,7 @@ export function Layout() {
           >
             <KeyRound size={14} />
             <span className="hdr-icon-btn-label">Vaults</span>
-          </button>
+          </Button>
         </div>
 
         {/* 中：全局搜索服务器与 Vault 密钥。容器空白区域可拖拽，搜索框本身正常交互 */}
@@ -232,14 +239,17 @@ export function Layout() {
               }}
             />
             {globalSearch && (
-              <button
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
                 className="header-search-clear"
                 title="清除搜索"
                 aria-label="清除搜索"
                 onClick={clearGlobalSearch}
               >
                 <X size={13} />
-              </button>
+              </Button>
             )}
             {searchOpen && globalSearch.trim() && (
               <div className="header-search-results" role="listbox" aria-label="全局搜索结果">
@@ -251,9 +261,10 @@ export function Layout() {
                       <div className="header-search-group">
                         <div className="header-search-group-title">服务器</div>
                         {profileResults.map((profile) => (
-                          <button
+                          <Button
                             key={profile.id}
                             type="button"
+                            variant="ghost"
                             className="header-search-result"
                             role="option"
                             onClick={() => handleProfileResult(profile)}
@@ -263,7 +274,7 @@ export function Layout() {
                               <strong>{profile.name}</strong>
                               <small>{profile.username}@{profile.host}:{profile.port}</small>
                             </span>
-                          </button>
+                          </Button>
                         ))}
                       </div>
                     )}
@@ -271,9 +282,10 @@ export function Layout() {
                       <div className="header-search-group">
                         <div className="header-search-group-title">密钥</div>
                         {vaultResults.map((item) => (
-                          <button
+                          <Button
                             key={item.id}
                             type="button"
+                            variant="ghost"
                             className="header-search-result"
                             role="option"
                             onClick={() => handleVaultResult(item)}
@@ -287,7 +299,7 @@ export function Layout() {
                                   : `密码 · ${item.username || '需补充用户名'}`}
                               </small>
                             </span>
-                          </button>
+                          </Button>
                         ))}
                       </div>
                     )}
@@ -303,7 +315,9 @@ export function Layout() {
         {/* 右：设置 + 主题切换。容器空白区域可拖拽 */}
         <div className="header-right" data-tauri-drag-region={desktop || undefined}>
           <ThemeToggle className="hdr-icon-btn" showLabel buttonLabel="主题" />
-          <button
+          <Button
+            type="button"
+            variant="ghost"
             className="hdr-icon-btn"
             data-tip="设置"
             aria-label="设置"
@@ -311,14 +325,16 @@ export function Layout() {
           >
             <Settings size={13} />
             <span className="hdr-icon-btn-label">设置</span>
-          </button>
+          </Button>
         </div>
 
         {/* 窗口控制按钮：仅 Windows/Linux 桌面环境渲染（macOS 用系统交通灯）。
             Windows 原生风格，关闭悬停变红。控制按钮区在 CSS 中声明 no-drag */}
         {showControls && (
           <div className="titlebar-controls">
-            <button
+            <Button
+              type="button"
+              variant="ghost"
               className="tb-btn tb-min"
               title="最小化"
               aria-label="Minimize"
@@ -327,8 +343,10 @@ export function Layout() {
               <svg width="10" height="10" viewBox="0 0 10 10">
                 <line x1="0" y1="5" x2="10" y2="5" stroke="currentColor" strokeWidth="1" />
               </svg>
-            </button>
-            <button
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
               className="tb-btn tb-max"
               title={maximized ? '还原' : '最大化'}
               aria-label={maximized ? 'Restore' : 'Maximize'}
@@ -346,8 +364,10 @@ export function Layout() {
                   <rect x="0.5" y="0.5" width="9" height="9" />
                 </svg>
               )}
-            </button>
-            <button
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
               className="tb-btn tb-close"
               title="关闭"
               aria-label="Close"
@@ -357,7 +377,7 @@ export function Layout() {
                 <line x1="0" y1="0" x2="10" y2="10" stroke="currentColor" strokeWidth="1" />
                 <line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" strokeWidth="1" />
               </svg>
-            </button>
+            </Button>
           </div>
         )}
       </header>

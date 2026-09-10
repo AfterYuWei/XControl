@@ -9,6 +9,7 @@ import { useSidebarDetailStore } from '@/store/sidebarDetail'
 import { useServerDetailStore } from '@/store/serverDetail'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 import { useServerMetrics } from '@/hooks/useServerMetrics'
 import { EditorDialog } from '@/components/Editor/EditorDialog'
 import { SftpContextMenu, type MenuItem } from '@/components/Sftp/SftpContextMenu'
@@ -341,7 +342,9 @@ export function ServerDetail({
 
       {/* File browser header — outside the scroll area */}
       <div className="sdetail-file-hdr">
-        <button
+        <Button
+          type="button"
+          variant="ghost"
           className="psec-title sdetail-collapse-hdr sdetail-file-toggle"
           onClick={() => toggleFiles(tabId)}
           aria-label={detail.filesCollapsed ? '展开文件管理' : '折叠文件管理'}
@@ -349,21 +352,27 @@ export function ServerDetail({
         >
           <Folder size={11} className="psec-title-icon" />
           <span className="psec-title-text">文件管理</span>
-        </button>
+        </Button>
         {!detail.filesCollapsed && isConnected && (
           <div className="sdetail-file-actions">
             {/* Follow shell CWD toggle */}
             {tab?.cwd && (
-              <button
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
                 className={`sdetail-act-btn${detail.followShellCwd ? ' sdetail-act-btn-active' : ''}`}
                 title={detail.followShellCwd ? '自动跟随已开启：点击关闭' : '自动跟随已关闭：点击开启'}
                 onClick={() => toggleFollowShellCwd(tabId)}
               >
                 <Crosshair size={12} />
-              </button>
+              </Button>
             )}
             {serverDetail.selected.size > 0 && (
-              <button
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
                 className="sdetail-act-btn sdetail-act-btn-danger"
                 title="删除选中"
                 onClick={() => {
@@ -374,22 +383,28 @@ export function ServerDetail({
                 }}
               >
                 <Trash2 size={12} />
-              </button>
+              </Button>
             )}
-            <button
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
               className="sdetail-act-btn"
               title="刷新"
               onClick={() => refresh(profileId)}
             >
               <RefreshCw size={12} />
-            </button>
-            <button
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
               className="sdetail-act-btn"
               title={serverDetail.showHidden ? '隐藏隐藏文件' : '显示隐藏文件'}
               onClick={() => toggleShowHidden(profileId)}
             >
               {serverDetail.showHidden ? <EyeOff size={12} /> : <Eye size={12} />}
-            </button>
+            </Button>
           </div>
         )}
       </div>
@@ -479,7 +494,9 @@ export function ServerDetail({
       <div className="sdetail-bottom">
         {/* System Metrics */}
         <div className="psec sdetail-bottom-sec">
-          <button
+          <Button
+            type="button"
+            variant="ghost"
             className="psec-title sdetail-collapse-hdr"
             onClick={() => toggleMetrics(tabId)}
             aria-label={detail.metricsCollapsed ? '展开系统指标' : '折叠系统指标'}
@@ -487,7 +504,7 @@ export function ServerDetail({
           >
             <Cpu size={11} className="psec-title-icon" />
             <span className="psec-title-text">系统指标</span>
-          </button>
+          </Button>
           {!detail.metricsCollapsed && (
             <div className="psec-body">
               <DetailTooltip
@@ -587,7 +604,9 @@ export function ServerDetail({
 
         {/* Server Info */}
         <div className="psec sdetail-bottom-sec">
-          <button
+          <Button
+            type="button"
+            variant="ghost"
             className="psec-title sdetail-collapse-hdr"
             onClick={() => toggleInfo(tabId)}
             aria-label={detail.infoCollapsed ? '展开服务器信息' : '折叠服务器信息'}
@@ -595,7 +614,7 @@ export function ServerDetail({
           >
             <HardDrive size={11} className="psec-title-icon" />
             <span className="psec-title-text">服务器信息</span>
-          </button>
+          </Button>
           {!detail.infoCollapsed && (
             <div className="psec-body">
               <div className="info-row">

@@ -3,7 +3,11 @@ import { DatabaseBackup, Download, Upload, AlertTriangle, FileJson, Loader2 } fr
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { OptionSelect } from '@/components/OptionSelect'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { toast } from 'sonner'
 import {
   exportBackup,
@@ -44,6 +48,7 @@ export function BackupPanel() {
   const [needsPassword, setNeedsPassword] = useState(false)
   const [strategy, setStrategy] = useState<ImportStrategy>('skip')
   const [busy, setBusy] = useState(false)
+  const [plainExportPending, setPlainExportPending] = useState(false)
 
   const resetImport = () => {
     setFile(null)
@@ -51,6 +56,20 @@ export function BackupPanel() {
     setPreview(null)
     setNeedsPassword(false)
     setStrategy('skip')
+  }
+
+  const runExport = async () => {
+    setExporting(true)
+    try {
+      await exportBackup(mode, mode === 'encrypted' ? exportPwd : undefined)
+      toast.success('备份文件已开始下载')
+      setExportPwd('')
+      setExportPwd2('')
+    } catch (err) {
+      toast.error('导出失败', { description: errMessage(err) })
+    } finally {
+      setExporting(false)
+    }
   }
 
   // ── Export ──
@@ -66,20 +85,10 @@ export function BackupPanel() {
       }
     }
     if (mode === 'plain') {
-      const ok = window.confirm('明文导出会在备份文件中以明文保存所有密码和私钥，任何拿到该文件的人都能直接使用。确认继续？')
-      if (!ok) return
+      setPlainExportPending(true)
+      return
     }
-    setExporting(true)
-    try {
-      await exportBackup(mode, mode === 'encrypted' ? exportPwd : undefined)
-      toast.success('备份文件已开始下载')
-      setExportPwd('')
-      setExportPwd2('')
-    } catch (err) {
-      toast.error('导出失败', { description: errMessage(err) })
-    } finally {
-      setExporting(false)
-    }
+    await runExport()
   }
 
   // ── Import ──
@@ -201,12 +210,10 @@ export function BackupPanel() {
       <div className="backup-card">
         <div className="backup-row">
           <Label className="backup-row-label">凭据处理</Label>
-          <OptionSelect
-            options={modeOptions}
-            value={mode}
-            onChange={(v) => setMode(v as CredentialMode)}
-            className="settings-select"
-          />
+          <Select value={mode} onValueChange={(value) => setMode(value as CredentialMode)}>
+            <SelectTrigger className="settings-select"><SelectValue placeholder="请选择" /></SelectTrigger>
+            <SelectContent>{modeOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+          </Select>
         </div>
         {mode === 'encrypted' && (
           <>
@@ -241,6 +248,19 @@ export function BackupPanel() {
           导出备份
         </Button>
       </div>
+
+      <AlertDialog open={plainExportPending} onOpenChange={setPlainExportPending}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>明文导出凭据？</AlertDialogTitle>
+            <AlertDialogDescription>备份文件将以明文保存所有密码和私钥，任何拿到文件的人都能直接使用。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-white hover:bg-destructive/90" onClick={() => void runExport()}>继续导出</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <div className="settings-divider" />
 
@@ -313,12 +333,10 @@ export function BackupPanel() {
                 )}
                 <div className="backup-row">
                   <Label className="backup-row-label">合并策略</Label>
-                  <OptionSelect
-                    options={strategyOptions}
-                    value={strategy}
-                    onChange={(v) => setStrategy(v as ImportStrategy)}
-                    className="settings-select"
-                  />
+                  <Select value={strategy} onValueChange={(value) => setStrategy(value as ImportStrategy)}>
+                    <SelectTrigger className="settings-select"><SelectValue placeholder="请选择" /></SelectTrigger>
+                    <SelectContent>{strategyOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+                  </Select>
                 </div>
                 <Button onClick={handleImport} disabled={busy} className="backup-action">
                   {busy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}

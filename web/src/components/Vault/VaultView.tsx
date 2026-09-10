@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Plus, KeyRound, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { OptionSelect } from '@/components/OptionSelect'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -76,11 +76,10 @@ export function VaultView() {
           Vaults
         </span>
         <div className="vault-toolbar-filter">
-          <OptionSelect
-            options={FILTER_OPTIONS}
-            value={filterType}
-            onChange={(v) => setFilterType(v as typeof filterType)}
-          />
+          <Select value={filterType} onValueChange={(value) => setFilterType(value as typeof filterType)}>
+            <SelectTrigger className="w-full"><SelectValue placeholder="请选择" /></SelectTrigger>
+            <SelectContent>{FILTER_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+          </Select>
         </div>
         <Input
           type="text"

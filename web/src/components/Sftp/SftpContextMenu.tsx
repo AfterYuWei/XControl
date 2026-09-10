@@ -31,7 +31,7 @@ export function SftpContextMenu({ x, y, items, onClose }: SftpContextMenuProps) 
       <ContextMenuTrigger asChild>
         <span className="pointer-events-none fixed size-px" style={{ left: x, top: y }} />
       </ContextMenuTrigger>
-      <ContextMenuContent className="min-w-[168px]" sideOffset={0} collisionPadding={8}>
+      <ContextMenuContent className="min-w-[168px]" collisionPadding={8}>
         {items.map((item) =>
           item.divider ? (
             <ContextMenuSeparator key={item.id} />

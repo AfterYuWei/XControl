@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { OptionSelect } from '@/components/OptionSelect'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { vaultApi } from '@/api/vault'
@@ -277,7 +277,6 @@ function VaultFormDialogInner({ item, onOpenChange }: VaultFormDialogInnerProps)
     const text = mode === 'content' ? publicKey : buildPublicKeyImportCommand(publicKey)
     try {
       await writeClipboardText(text)
-      setCopyMenuOpen(false)
       toast.success(mode === 'content' ? '公钥内容已复制' : '公钥导入指令已复制')
     } catch {
       toast.error('复制失败，请检查剪贴板权限')
@@ -339,12 +338,10 @@ function VaultFormDialogInner({ item, onOpenChange }: VaultFormDialogInnerProps)
 
           <div className="pf-field">
             <Label className="pf-label">类型</Label>
-            <OptionSelect
-              options={TYPE_OPTIONS}
-              value={form.type}
-              onChange={(value) => updateField('type', value as VaultType)}
-              disabled={isEditing}
-            />
+            <Select value={form.type} onValueChange={(value) => updateField('type', value as VaultType)} disabled={isEditing}>
+              <SelectTrigger className="w-full"><SelectValue placeholder="请选择" /></SelectTrigger>
+              <SelectContent>{TYPE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+            </Select>
           </div>
 
           {form.type === 'password' ? (

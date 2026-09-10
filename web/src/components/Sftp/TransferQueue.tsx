@@ -12,6 +12,7 @@ import {
   Copy,
 } from 'lucide-react'
 import { useSftpStore } from './storeContext'
+import { Button } from '@/components/ui/button'
 import type { TransferTask } from '@/types/sftp'
 
 function formatSize(bytes: number): string {
@@ -73,7 +74,10 @@ export function TransferQueue() {
         </div>
         <div className="sftp-tx-hdr-right">
           {done.length > 0 && (
-            <button
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
               className="sftp-tx-clear"
               title="清除已完成"
               onClick={(e) => {
@@ -83,7 +87,7 @@ export function TransferQueue() {
             >
               <Trash2 size={12} />
               清除
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -115,7 +119,10 @@ export function TransferQueue() {
                   {task.status === 'transferring' ? formatSpeed(task.speed) : meta.label}
                 </span>
                 {(task.status === 'transferring' || task.status === 'queued') && (
-                  <button
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
                     className="sftp-tx-cancel"
                     title="取消"
                     onClick={(e) => {
@@ -124,7 +131,7 @@ export function TransferQueue() {
                     }}
                   >
                     <X size={12} />
-                  </button>
+                  </Button>
                 )}
               </div>
             )

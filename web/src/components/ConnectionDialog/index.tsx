@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Check, Loader2, ShieldAlert, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { ServerIcon } from '@/lib/serverIcons'
 import type { ConnectionLogEntry } from '@/types/sessionMessage'
 
@@ -256,22 +257,22 @@ export function ConnectionDialog({
   const canCloseByClick = status !== 'connecting' && status !== 'reconnecting' && status !== 'hostkey'
 
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center px-4 py-6">
-      <div
-        className="absolute inset-0 bg-black/35"
-        onClick={() => {
-          if (canCloseByClick) onOpenChange(false)
-        }}
-      />
-
-      <div
-        className="relative z-50 flex h-[560px] w-full max-w-[860px] flex-col overflow-hidden border bg-[var(--bg-panel)] text-[var(--fg)]"
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && canCloseByClick) onOpenChange(false)
+      }}
+    >
+      <DialogContent
+        showCloseButton={false}
+        onEscapeKeyDown={(event) => !canCloseByClick && event.preventDefault()}
+        onPointerDownOutside={(event) => !canCloseByClick && event.preventDefault()}
+        className="flex h-[560px] w-full max-w-[860px] flex-col gap-0 overflow-hidden p-0 text-[var(--fg)]"
         style={{
-          borderColor: 'var(--border)',
           borderRadius: 'var(--r-lg)',
-          boxShadow: 'var(--shadow-modal)',
         }}
       >
+        <DialogTitle className="sr-only">连接进度</DialogTitle>
         <div className="shrink-0 border-b border-[var(--border)] px-4 py-3.5">
           <div className="flex items-start justify-between gap-4">
             <div className="flex min-w-0 items-start gap-3">
@@ -539,7 +540,7 @@ export function ConnectionDialog({
             )}
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

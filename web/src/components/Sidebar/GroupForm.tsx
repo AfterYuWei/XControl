@@ -9,7 +9,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { OptionSelect } from '@/components/OptionSelect'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useProfileStore } from '@/store/profile'
 import { toast } from 'sonner'
 import { GROUP_ICONS } from '@/lib/groupIcons'
@@ -92,11 +92,12 @@ export function GroupForm({ open, onOpenChange, group, defaultParentId }: GroupF
 
           <div className="space-y-2">
             <Label htmlFor="group-parent">父分组</Label>
-            <OptionSelect
-              options={parentOptions}
-              value={parentId}
-              onChange={setParentId}
-            />
+            <Select value={parentId || '__none__'} onValueChange={(value) => setParentId(value === '__none__' ? '' : value)}>
+              <SelectTrigger className="w-full"><SelectValue placeholder="请选择" /></SelectTrigger>
+              <SelectContent>
+                {parentOptions.map((option) => <SelectItem key={option.value || '__none__'} value={option.value || '__none__'}>{option.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-2">
@@ -106,9 +107,11 @@ export function GroupForm({ open, onOpenChange, group, defaultParentId }: GroupF
                 const Selected = def.Icon
                 const active = (icon || 'folder') === def.key
                 return (
-                  <button
+                  <Button
                     key={def.key}
                     type="button"
+                    variant="ghost"
+                    size="icon-sm"
                     title={def.label}
                     onClick={() => setIcon(def.key)}
                     className={`flex h-8 w-8 items-center justify-center rounded-md border transition-colors ${
@@ -120,7 +123,7 @@ export function GroupForm({ open, onOpenChange, group, defaultParentId }: GroupF
                     aria-pressed={active}
                   >
                     <Selected size={15} />
-                  </button>
+                  </Button>
                 )
               })}
             </div>

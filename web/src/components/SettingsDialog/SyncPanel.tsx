@@ -7,8 +7,12 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { OptionSelect } from '@/components/OptionSelect'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { toast } from 'sonner'
 import { syncApi } from '@/api/sync'
 import type {
@@ -31,6 +35,10 @@ const retentionOptions = [
 ]
 
 type HeroTone = 'ok' | 'warning' | 'idle' | 'muted'
+type PendingAction =
+  | { kind: 'restore'; version: SyncVersion }
+  | { kind: 'delete'; version: SyncVersion; force: boolean; description: string }
+  | { kind: 'resolve'; choice: 'keep_local' | 'use_cloud'; description: string }
 
 export function SyncPanel() {
   const [status, setStatus] = useState<SyncStatus | null>(null)
@@ -45,6 +53,7 @@ export function SyncPanel() {
   const [busyVersionId, setBusyVersionId] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [resolving, setResolving] = useState(false)
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null)
 
   const refresh = useCallback(async () => {
     try {
@@ -86,8 +95,9 @@ export function SyncPanel() {
     }
   }
 
-  const handleRestore = async (v: SyncVersion) => {
-    if (!window.confirm(`将当前数据恢复为 v${v.version}（${new Date(v.created_at).toLocaleString()}）？\n现有数据会被覆盖，此操作会生成一个新版本。`)) return
+  const handleRestore = (version: SyncVersion) => setPendingAction({ kind: 'restore', version })
+
+  const restoreVersion = async (v: SyncVersion) => {
     setBusyVersionId(v.id)
     try {
       await syncApi.restoreVersion(v.id)
@@ -100,11 +110,14 @@ export function SyncPanel() {
     }
   }
 
-  const handleDelete = async (v: SyncVersion, force: boolean) => {
+  const handleDelete = (v: SyncVersion, force: boolean) => {
     const hint = v.synced_to.length === 0 && !force
       ? ''
-      : `\n该版本${v.synced_to.length === 0 ? '未同步到云端，删除后不可恢复！' : '将仅从本地删除。'}`
-    if (!window.confirm(`删除版本 v${v.version}？${hint}`)) return
+      : `该版本${v.synced_to.length === 0 ? '未同步到云端，删除后不可恢复！' : '将仅从本地删除。'}`
+    setPendingAction({ kind: 'delete', version: v, force, description: `删除版本 v${v.version}？${hint ? ` ${hint}` : ''}` })
+  }
+
+  const deleteVersion = async (v: SyncVersion, force: boolean) => {
     setBusyVersionId(v.id)
     try {
       await syncApi.deleteVersion(v.id, force)
@@ -113,10 +126,7 @@ export function SyncPanel() {
     } catch (err) {
       const msg = errMessage(err)
       if (msg.includes('尚未同步') && !force) {
-        if (window.confirm(`${msg}\n\n确定强制删除？`)) {
-          await handleDelete(v, true)
-          return
-        }
+        setPendingAction({ kind: 'delete', version: v, force: true, description: `${msg} 确定强制删除？` })
       } else {
         toast.error('删除失败', { description: msg })
       }
@@ -137,13 +147,16 @@ export function SyncPanel() {
     }
   }
 
-  const handleResolve = async (choice: 'keep_local' | 'use_cloud') => {
+  const handleResolve = (choice: 'keep_local' | 'use_cloud') => {
     const c = status?.conflict
     if (!c) return
     const msg = choice === 'keep_local'
       ? `保留本地 v${c.local.version}，以其为基准生成新版本并同步到云端 v${Math.max(c.local.version, c.cloud.version) + 1}？`
       : `采用云端 v${c.cloud.version}（本地数据将被覆盖），然后生成新版本同步双端？`
-    if (!window.confirm(msg)) return
+    setPendingAction({ kind: 'resolve', choice, description: msg })
+  }
+
+  const resolveConflict = async (choice: 'keep_local' | 'use_cloud') => {
     setResolving(true)
     try {
       await syncApi.resolveConflict(choice)
@@ -154,6 +167,15 @@ export function SyncPanel() {
     } finally {
       setResolving(false)
     }
+  }
+
+  const runPendingAction = async () => {
+    const action = pendingAction
+    setPendingAction(null)
+    if (!action) return
+    if (action.kind === 'restore') await restoreVersion(action.version)
+    else if (action.kind === 'delete') await deleteVersion(action.version, action.force)
+    else await resolveConflict(action.choice)
   }
 
   const patch = <K extends keyof SyncSettings>(key: K, value: SyncSettings[K]) => {
@@ -361,24 +383,30 @@ export function SyncPanel() {
               <Label className="settings-field-label">同步模式</Label>
               <span className="settings-field-desc">手动模式仅在点击按钮时同步；自动模式双向保持一致</span>
             </div>
-            <OptionSelect options={syncModeOptions} value={settings.sync_mode}
-              onChange={(v) => patch('sync_mode', v as SyncSettings['sync_mode'])} className="settings-select" />
+            <Select value={settings.sync_mode} onValueChange={(value) => patch('sync_mode', value as SyncSettings['sync_mode'])}>
+              <SelectTrigger className="settings-select"><SelectValue placeholder="请选择" /></SelectTrigger>
+              <SelectContent>{syncModeOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+            </Select>
           </div>
           <div className="settings-field">
             <div className="settings-field-info">
               <Label className="settings-field-label">版本冲突</Label>
               <span className="settings-field-desc">本地与云端分叉时的处理方式</span>
             </div>
-            <OptionSelect options={conflictOptions} value={settings.conflict_policy}
-              onChange={(v) => patch('conflict_policy', v as SyncSettings['conflict_policy'])} className="settings-select" />
+            <Select value={settings.conflict_policy} onValueChange={(value) => patch('conflict_policy', value as SyncSettings['conflict_policy'])}>
+              <SelectTrigger className="settings-select"><SelectValue placeholder="请选择" /></SelectTrigger>
+              <SelectContent>{conflictOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+            </Select>
           </div>
           <div className="settings-field">
             <div className="settings-field-info">
               <Label className="settings-field-label">云端清理</Label>
               <span className="settings-field-desc">本地清理旧版本时云端的行为（M2 生效）</span>
             </div>
-            <OptionSelect options={retentionOptions} value={settings.cloud_retention}
-              onChange={(v) => patch('cloud_retention', v as SyncSettings['cloud_retention'])} className="settings-select" />
+            <Select value={settings.cloud_retention} onValueChange={(value) => patch('cloud_retention', value as SyncSettings['cloud_retention'])}>
+              <SelectTrigger className="settings-select"><SelectValue placeholder="请选择" /></SelectTrigger>
+              <SelectContent>{retentionOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+            </Select>
           </div>
           <div className="settings-field">
             <div className="settings-field-info">
@@ -529,6 +557,30 @@ export function SyncPanel() {
           </tbody>
         </table>
       )}
+
+      <AlertDialog open={pendingAction !== null} onOpenChange={(open) => !open && setPendingAction(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingAction?.kind === 'restore' ? '恢复历史版本？' : pendingAction?.kind === 'resolve' ? '解决同步冲突？' : '删除历史版本？'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingAction?.kind === 'restore'
+                ? `将当前数据恢复为 v${pendingAction.version.version}（${new Date(pendingAction.version.created_at).toLocaleString()}）。现有数据会被覆盖，并生成一个新版本。`
+                : pendingAction?.description}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              className={pendingAction?.kind === 'delete' ? 'bg-destructive text-white hover:bg-destructive/90' : undefined}
+              onClick={() => void runPendingAction()}
+            >
+              {pendingAction?.kind === 'restore' ? '恢复' : pendingAction?.kind === 'resolve' ? '确认解决' : '删除'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

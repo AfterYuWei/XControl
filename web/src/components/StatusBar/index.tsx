@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { FolderUp, ChevronLeft, ChevronRight, KeyRound, Plus } from 'lucide-react'
 import { useSessionStore } from '@/store/session'
+import { Button } from '@/components/ui/button'
 
 export function StatusBar() {
   const { tabs, activeTabId, setActiveTab, closeTab, openDraftTab } = useSessionStore()
@@ -103,13 +104,16 @@ export function StatusBar() {
       {/* Left: session switching */}
       <div className="status-left">
         {canScrollLeft && (
-          <button
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
             className="sb-arrow sb-arrow-left"
             aria-label="向左滚动标签"
             onClick={() => scrollBy('left')}
           >
             <ChevronLeft size={12} />
-          </button>
+          </Button>
         )}
         <div className="status-tabs" ref={scrollRef}>
           {tabs.map((tab) => {
@@ -139,7 +143,10 @@ export function StatusBar() {
                 <span className={`sb-dot ${dc}`} aria-hidden="true" />
               )}
               <span className="sb-name">{isSftp ? 'SFTP' : isVault ? 'Vaults' : tab.profileName}</span>
-              <button
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
                 className="sb-x"
                 aria-label={`关闭会话 ${tab.profileName}`}
                 onClick={(e) => {
@@ -148,11 +155,13 @@ export function StatusBar() {
                 }}
               >
                 ×
-              </button>
+              </Button>
             </div>
           )
         })}
-          <button
+          <Button
+            variant="ghost"
+            size="icon-xs"
             className="sb-tab sb-tab-add"
             type="button"
             aria-label="新建连接标签页"
@@ -160,16 +169,19 @@ export function StatusBar() {
             onClick={() => openDraftTab()}
           >
             <Plus size={11} aria-hidden="true" />
-          </button>
+          </Button>
         </div>
         {canScrollRight && (
-          <button
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
             className="sb-arrow sb-arrow-right"
             aria-label="向右滚动标签"
             onClick={() => scrollBy('right')}
           >
             <ChevronRight size={12} />
-          </button>
+          </Button>
         )}
       </div>
 

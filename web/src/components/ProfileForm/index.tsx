@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { CheckCircle2, Eye, EyeOff, LoaderCircle, Network, ShieldAlert, Upload, XCircle } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { OptionSelect } from '@/components/OptionSelect'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useProfileStore } from '@/store/profile'
@@ -367,11 +367,10 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
 
           <div className="pf-field">
             <Label className="pf-label">认证方式</Label>
-            <OptionSelect
-              options={authOptions}
-              value={form.auth_type}
-              onChange={handleAuthTypeChange}
-            />
+            <Select value={form.auth_type} onValueChange={handleAuthTypeChange}>
+              <SelectTrigger className="w-full"><SelectValue placeholder="请选择" /></SelectTrigger>
+              <SelectContent>{authOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+            </Select>
           </div>
 
           {form.auth_type === 'vault' ? (
@@ -400,15 +399,17 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
                       placeholder={isEditing ? '留空则不修改' : ''}
                       className="pf-input-mono"
                     />
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="icon-sm"
                       className="pf-inline-action"
                       onClick={() => setPasswordVisible((value) => !value)}
                       aria-label={passwordVisible ? '隐藏密码' : '显示密码'}
                       title={passwordVisible ? '隐藏密码' : '显示密码'}
                     >
                       {passwordVisible ? <EyeOff size={14} /> : <Eye size={14} />}
-                    </button>
+                    </Button>
                   </div>
                 </div>
               )}
@@ -420,15 +421,17 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
                       <Label htmlFor="private_key" className="pf-label">
                         私钥
                       </Label>
-                      <button
+                      <Button
                         type="button"
+                        variant="outline"
+                        size="sm"
                         className="pf-upload-btn"
                         onClick={() => privateKeyFileRef.current?.click()}
                         disabled={uploadingKey}
                       >
                         <Upload size={13} />
                         {uploadingKey ? '读取中...' : '上传文件'}
-                      </button>
+                      </Button>
                     </div>
                     <Input
                       ref={privateKeyFileRef}
@@ -459,7 +462,10 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
 
           <div className="pf-field">
             <Label className="pf-label">连接方式</Label>
-            <OptionSelect options={proxyOptions} value={proxy.type} onChange={handleProxyTypeChange} />
+            <Select value={proxy.type} onValueChange={handleProxyTypeChange}>
+              <SelectTrigger className="w-full"><SelectValue placeholder="请选择" /></SelectTrigger>
+              <SelectContent>{proxyOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+            </Select>
           </div>
 
           {(proxy.type === 'socks5' || proxy.type === 'http') && (
@@ -510,19 +516,21 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
                       placeholder={isEditing && profile?.proxy?.has_password ? '已保存，留空则不修改' : '可选'}
                       className="pf-input-mono"
                     />
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="icon-sm"
                       className="pf-inline-action"
                       onClick={() => setProxyPasswordVisible((value) => !value)}
                       aria-label={proxyPasswordVisible ? '隐藏代理密码' : '显示代理密码'}
                     >
                       {proxyPasswordVisible ? <EyeOff size={14} /> : <Eye size={14} />}
-                    </button>
+                    </Button>
                   </div>
                   {isEditing && profile?.proxy?.has_password && proxy.password === undefined && (
-                    <button type="button" className="pf-clear-secret" onClick={() => updateProxy({ username: '', password: '' })}>
+                    <Button type="button" variant="link" className="pf-clear-secret" onClick={() => updateProxy({ username: '', password: '' })}>
                       清除代理认证
-                    </button>
+                    </Button>
                   )}
                 </div>
               </div>
@@ -533,11 +541,10 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
           {proxy.type === 'jump' && (
             <div className="pf-field">
               <Label className="pf-label">跳板服务器</Label>
-              <OptionSelect
-                options={jumpProfileOptions}
-                value={proxy.jump_profile_id || ''}
-                onChange={(value) => updateProxy({ jump_profile_id: value })}
-              />
+              <Select value={proxy.jump_profile_id || '__none__'} onValueChange={(value) => updateProxy({ jump_profile_id: value === '__none__' ? '' : value })}>
+                <SelectTrigger className="w-full"><SelectValue placeholder="请选择" /></SelectTrigger>
+                <SelectContent>{jumpProfileOptions.map((option) => <SelectItem key={option.value || '__none__'} value={option.value || '__none__'}>{option.label}</SelectItem>)}</SelectContent>
+              </Select>
               <div className="pf-help-text">跳板机使用其自身 SSH 凭据和代理配置，支持最多 5 层递归链路。</div>
             </div>
           )}
@@ -577,11 +584,10 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
 
           <div className="pf-field">
             <Label className="pf-label">分组</Label>
-            <OptionSelect
-              options={groupOptions}
-              value={form.group_id || ''}
-              onChange={(value) => setForm({ ...form, group_id: value })}
-            />
+            <Select value={form.group_id || '__none__'} onValueChange={(value) => setForm({ ...form, group_id: value === '__none__' ? '' : value })}>
+              <SelectTrigger className="w-full"><SelectValue placeholder="请选择" /></SelectTrigger>
+              <SelectContent>{groupOptions.map((option) => <SelectItem key={option.value || '__none__'} value={option.value || '__none__'}>{option.label}</SelectItem>)}</SelectContent>
+            </Select>
           </div>
 
           <div className="pf-field">

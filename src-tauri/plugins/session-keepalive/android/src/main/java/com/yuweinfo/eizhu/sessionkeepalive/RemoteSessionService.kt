@@ -17,6 +17,7 @@ class RemoteSessionService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        running = true
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             getSystemService(NotificationManager::class.java).createNotificationChannel(
                 NotificationChannel(
@@ -67,6 +68,7 @@ class RemoteSessionService : Service() {
     }
 
     override fun onDestroy() {
+        running = false
         handler.removeCallbacks(timeout)
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
@@ -75,6 +77,9 @@ class RemoteSessionService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
+        @Volatile
+        var running: Boolean = false
+            private set
         const val ACTION_START = "com.yuweinfo.eizhu.sessionkeepalive.START"
         const val ACTION_STOP = "com.yuweinfo.eizhu.sessionkeepalive.STOP"
         const val ACTION_DISCONNECT_ALL = "com.yuweinfo.eizhu.sessionkeepalive.DISCONNECT_ALL"

@@ -7,6 +7,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import app.tauri.annotation.Command
@@ -24,6 +27,16 @@ class StartArgs {
 
 @TauriPlugin(permissions = [Manifest.permission.POST_NOTIFICATIONS])
 class SessionKeepalivePlugin(private val activity: Activity) : Plugin(activity) {
+    private val connectivity = activity.getSystemService(ConnectivityManager::class.java)
+    private var networkGeneration = 0L
+    private var networkSignature = ""
+    private var networkState = "unknown"
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) = publishNetworkState()
+        override fun onLost(network: Network) = publishNetworkState()
+        override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) =
+            publishNetworkState()
+    }
     private val disconnectReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == RemoteSessionService.ACTION_DISCONNECT_REQUESTED) {
@@ -39,9 +52,12 @@ class SessionKeepalivePlugin(private val activity: Activity) : Plugin(activity) 
             IntentFilter(RemoteSessionService.ACTION_DISCONNECT_REQUESTED),
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
+        connectivity.registerDefaultNetworkCallback(networkCallback)
+        publishNetworkState()
     }
 
     override fun onDestroy() {
+        connectivity.unregisterNetworkCallback(networkCallback)
         activity.unregisterReceiver(disconnectReceiver)
     }
 
@@ -65,17 +81,61 @@ class SessionKeepalivePlugin(private val activity: Activity) : Plugin(activity) 
                 arrayOf(Manifest.permission.POST_NOTIFICATIONS),
                 NOTIFICATION_PERMISSION_REQUEST,
             )
+            trigger("notification-limited", JSObject().apply {
+                put("message", "未授予通知权限，Android 后台会话保活可能受限")
+            })
         }
         invoke.resolve(JSObject().apply {
             put("started", true)
             put("notificationPermission", notificationPermission)
+            put("networkGeneration", networkGeneration)
+            put("networkState", networkState)
         })
+    }
+
+    private fun publishNetworkState() {
+        val capabilities = connectivity.getNetworkCapabilities(connectivity.activeNetwork)
+        val online = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        val transports = listOf(
+            NetworkCapabilities.TRANSPORT_WIFI to "wifi",
+            NetworkCapabilities.TRANSPORT_CELLULAR to "cellular",
+            NetworkCapabilities.TRANSPORT_ETHERNET to "ethernet",
+            NetworkCapabilities.TRANSPORT_VPN to "vpn",
+        ).filter { capabilities?.hasTransport(it.first) == true }.joinToString("+") { it.second }
+        val state = if (online) "online" else "offline"
+        val signature = "$state:$transports"
+        synchronized(this) {
+            if (signature == networkSignature) return
+            networkSignature = signature
+            networkState = state
+            networkGeneration += 1
+        }
+        activity.runOnUiThread {
+            trigger("network-change", JSObject().apply {
+                put("online", online)
+                put("generation", networkGeneration)
+                put("transport", transports)
+            })
+        }
     }
 
     @Command
     fun stop(invoke: Invoke) {
         activity.stopService(Intent(activity, RemoteSessionService::class.java))
         invoke.resolve()
+    }
+
+    @Command
+    fun status(invoke: Invoke) {
+        val notificationPermission =
+            android.os.Build.VERSION.SDK_INT < 33 || ActivityCompat.checkSelfPermission(
+                activity,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) == PackageManager.PERMISSION_GRANTED
+        invoke.resolve(JSObject().apply {
+            put("running", RemoteSessionService.running)
+            put("notificationPermission", notificationPermission)
+        })
     }
 
     companion object {

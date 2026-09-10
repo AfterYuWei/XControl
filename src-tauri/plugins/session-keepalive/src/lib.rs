@@ -12,7 +12,7 @@ mod desktop;
 mod mobile;
 
 pub use error::{Error, Result};
-pub use models::{KeepaliveRequest, KeepaliveResponse};
+pub use models::{KeepaliveRequest, KeepaliveResponse, KeepaliveStatus};
 
 #[cfg(desktop)]
 use desktop::SessionKeepalive;

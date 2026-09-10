@@ -1127,8 +1127,17 @@ impl SshService {
             .await?;
         receiver
             .await
-            .map_err(|_| CommandError::new("SESSION_CLOSED", "SSH probe was interrupted"))?
-            .map_err(|error| CommandError::new("SSH_PROBE_FAILED", error))
+            .map_err(|_| {
+                CommandError::new("SESSION_CLOSED", "SSH probe was interrupted")
+                    .retryable()
+                    .with_session(id, "probe")
+            })?
+            .map_err(|error| {
+                CommandError::new("SSH_PROBE_FAILED", error)
+                    .retryable()
+                    .with_session(id, "probe")
+                    .with_details(serde_json::json!({"timeout_seconds": 5}))
+            })
     }
 
     pub(crate) async fn complete(
@@ -1190,6 +1199,23 @@ impl SshService {
                 )
             })
             .count()
+    }
+
+    pub(crate) async fn latest_reason(&self) -> Option<String> {
+        self.manager
+            .sessions()
+            .await
+            .into_iter()
+            .filter_map(|session| {
+                let snapshot = session.snapshot();
+                if snapshot.error.is_empty() {
+                    return None;
+                }
+                let at = snapshot.logs.last().map_or(0, |entry| entry.at);
+                Some((at, snapshot.error))
+            })
+            .max_by_key(|(at, _)| *at)
+            .map(|(_, reason)| reason)
     }
 
     pub(crate) async fn probe_active(&self) {

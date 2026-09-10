@@ -66,7 +66,7 @@ npm run ios:build
 | 3 移动交互 | 代码完成 | 独立手机/平板布局、Android 返回键、Tauri Channel、16ms/32KiB 批量与 1MiB 重放 |
 | 4 DocumentGateway | 代码完成 | Android SAF、iOS Document Picker、私有暂存与路径校验；SFTP/私钥/备份导入导出已接入，真机 Provider/iCloud 测试待发布门禁 |
 | 5 安全存储 | 代码完成 | Android Keystore 包装、iOS Keychain、失败回滚迁移测试、敏感剪贴板条件清理与 Desktop-only 隔离；真机安全存储升级测试待发布门禁 |
-| 6 发布与可观测性 | 未开始 | — |
+| 6 发布与可观测性 | 代码完成 | debug APK/release AAB/R8、iOS Simulator/签名 Archive CI；移动诊断页及结构化生命周期字段；真机与商店审核见 `MOBILE_RELEASE.md` |
 
 ## 发布门禁
 

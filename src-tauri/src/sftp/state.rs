@@ -403,6 +403,57 @@ impl SftpService {
         count
     }
 
+    pub(crate) async fn latest_reason(&self) -> Option<String> {
+        let sessions = self
+            .sessions
+            .read()
+            .await
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        for session in sessions {
+            let reason = session.data.read().await.error.clone();
+            if !reason.is_empty() {
+                return Some(reason);
+            }
+        }
+        None
+    }
+
+    pub(crate) async fn probe_active(&self) {
+        let sessions = self
+            .sessions
+            .read()
+            .await
+            .values()
+            .filter(|session| session.profile_id != "local")
+            .cloned()
+            .collect::<Vec<_>>();
+        for session in sessions {
+            let (status, backend, home_dir) = {
+                let data = session.data.read().await;
+                (
+                    data.status.clone(),
+                    data.backend.clone(),
+                    data.home_dir.clone(),
+                )
+            };
+            if status != "connected" {
+                continue;
+            }
+            let healthy = if let Some(backend) = backend {
+                tokio::time::timeout(std::time::Duration::from_secs(5), backend.stat(&home_dir))
+                    .await
+                    .is_ok_and(|result| result.is_ok())
+            } else {
+                false
+            };
+            if !healthy {
+                let _ = self.reconnect(&session.id).await;
+            }
+        }
+    }
+
     pub(crate) async fn suspend_for_background_limit(&self) {
         let tasks = self
             .connection_tasks

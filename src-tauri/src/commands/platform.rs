@@ -45,7 +45,7 @@ pub(crate) fn platform_capabilities() -> PlatformCapabilities {
     }
 }
 
-const fn current_platform() -> &'static str {
+pub(crate) const fn current_platform() -> &'static str {
     if cfg!(target_os = "android") {
         "android"
     } else if cfg!(target_os = "ios") {

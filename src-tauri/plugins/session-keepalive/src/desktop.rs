@@ -1,7 +1,7 @@
 use serde::de::DeserializeOwned;
 use tauri::{plugin::PluginApi, AppHandle, Runtime};
 
-use crate::{KeepaliveRequest, KeepaliveResponse};
+use crate::{KeepaliveRequest, KeepaliveResponse, KeepaliveStatus};
 
 pub struct SessionKeepalive<R: Runtime>(AppHandle<R>);
 
@@ -21,5 +21,10 @@ impl<R: Runtime> SessionKeepalive<R> {
     pub fn stop(&self) -> crate::Result<()> {
         let _ = &self.0;
         Ok(())
+    }
+
+    pub fn status(&self) -> crate::Result<KeepaliveStatus> {
+        let _ = &self.0;
+        Ok(KeepaliveStatus::default())
     }
 }

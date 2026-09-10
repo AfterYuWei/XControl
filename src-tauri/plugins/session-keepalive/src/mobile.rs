@@ -4,7 +4,7 @@ use tauri::{
     AppHandle, Runtime,
 };
 
-use crate::{KeepaliveRequest, KeepaliveResponse};
+use crate::{KeepaliveRequest, KeepaliveResponse, KeepaliveStatus};
 
 #[cfg(target_os = "ios")]
 tauri::ios_plugin_binding!(init_plugin_session_keepalive);
@@ -34,5 +34,9 @@ impl<R: Runtime> SessionKeepalive<R> {
 
     pub fn stop(&self) -> crate::Result<()> {
         self.0.run_mobile_plugin("stop", ()).map_err(Into::into)
+    }
+
+    pub fn status(&self) -> crate::Result<KeepaliveStatus> {
+        self.0.run_mobile_plugin("status", ()).map_err(Into::into)
     }
 }

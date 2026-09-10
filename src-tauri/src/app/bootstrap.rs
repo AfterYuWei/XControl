@@ -20,6 +20,8 @@ pub(crate) fn run() {
             .invoke_handler(tauri::generate_handler![
                 commands::platform_capabilities,
                 commands::app_lifecycle_status,
+                commands::app_network_update,
+                commands::app_diagnostics,
                 commands::app_lifecycle_update,
                 commands::app_background_expired,
                 commands::app_disconnect_all_sessions,
@@ -213,6 +215,8 @@ fn desktop_run() {
         .invoke_handler(tauri::generate_handler![
             commands::platform_capabilities,
             commands::app_lifecycle_status,
+            commands::app_network_update,
+            commands::app_diagnostics,
             commands::app_lifecycle_update,
             commands::app_background_expired,
             commands::app_disconnect_all_sessions,

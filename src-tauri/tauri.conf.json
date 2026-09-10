@@ -2,7 +2,6 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "eizhu",
   "mainBinaryName": "eizhu",
-  "version": "1.0.0",
   "identifier": "com.yuweinfo.eizhu",
   "build": {
     "beforeDevCommand": "npm --prefix web run dev",

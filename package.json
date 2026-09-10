@@ -1,7 +1,6 @@
 {
   "name": "eizhu",
   "private": true,
-  "version": "1.0.0",
   "description": "eizhu 桌面版构建编排（Tauri 2，见 docs/TAURI_MIGRATION.md）",
   "scripts": {
     "tauri": "tauri",

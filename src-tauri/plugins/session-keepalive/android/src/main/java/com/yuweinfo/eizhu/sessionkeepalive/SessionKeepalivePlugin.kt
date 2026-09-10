@@ -39,8 +39,11 @@ class SessionKeepalivePlugin(private val activity: Activity) : Plugin(activity) 
     }
     private val disconnectReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == RemoteSessionService.ACTION_DISCONNECT_REQUESTED) {
-                trigger("disconnect-all", JSObject().apply { put("source", "notification") })
+            when (intent?.action) {
+                RemoteSessionService.ACTION_DISCONNECT_REQUESTED ->
+                    trigger("disconnect-all", JSObject().apply { put("source", "notification") })
+                RemoteSessionService.ACTION_WINDOW_EXPIRED ->
+                    trigger("expired", JSObject().apply { put("reason", "logic-window") })
             }
         }
     }
@@ -49,7 +52,10 @@ class SessionKeepalivePlugin(private val activity: Activity) : Plugin(activity) 
         ContextCompat.registerReceiver(
             activity,
             disconnectReceiver,
-            IntentFilter(RemoteSessionService.ACTION_DISCONNECT_REQUESTED),
+            IntentFilter().apply {
+                addAction(RemoteSessionService.ACTION_DISCONNECT_REQUESTED)
+                addAction(RemoteSessionService.ACTION_WINDOW_EXPIRED)
+            },
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         connectivity.registerDefaultNetworkCallback(networkCallback)

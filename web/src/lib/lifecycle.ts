@@ -59,12 +59,8 @@ export function installMobileLifecycle(): () => void {
   window.addEventListener('online', network)
   window.addEventListener('offline', network)
   const capabilities = getPlatformCapabilities()
-  const nativeEvent = capabilities.platform === 'android' ? 'disconnect-all' : 'expired'
-  void addPluginListener('session-keepalive', nativeEvent, () => {
-    const command = capabilities.platform === 'android'
-      ? 'app_disconnect_all_sessions'
-      : 'app_background_expired'
-    void invokeCommand(command)
+  void addPluginListener('session-keepalive', 'expired', () => {
+    void invokeCommand('app_background_expired')
   }).then((listener) => { nativeListeners.push(listener) }).catch(() => undefined)
   void addPluginListener<{ online: boolean; generation: number }>('session-keepalive', 'network-change', (event) => {
     void invokeCommand<LifecycleSnapshot>('app_network_update', {
@@ -73,6 +69,9 @@ export function installMobileLifecycle(): () => void {
     })
   }).then((listener) => { nativeListeners.push(listener) }).catch(() => undefined)
   if (capabilities.platform === 'android') {
+    void addPluginListener('session-keepalive', 'disconnect-all', () => {
+      void invokeCommand('app_disconnect_all_sessions')
+    }).then((listener) => { nativeListeners.push(listener) }).catch(() => undefined)
     void addPluginListener<{ message: string }>('session-keepalive', 'notification-limited', (event) => {
       window.dispatchEvent(new CustomEvent('eizhu:notification-limited', { detail: event.message }))
     }).then((listener) => { nativeListeners.push(listener) }).catch(() => undefined)

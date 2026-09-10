@@ -9,11 +9,14 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 
 class RemoteSessionService : Service() {
     private val handler = Handler(Looper.getMainLooper())
-    private val timeout = Runnable { stopSelf() }
+    private val timeout = Runnable { expireWindow() }
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var expirationSent = false
 
     override fun onCreate() {
         super.onCreate()
@@ -40,6 +43,8 @@ class RemoteSessionService : Service() {
 
         val count = intent?.getIntExtra(EXTRA_SESSION_COUNT, 0) ?: 0
         val duration = intent?.getLongExtra(EXTRA_DURATION_SECONDS, 360) ?: 360
+        val durationMillis = duration.coerceIn(1, 360) * 1_000
+        expirationSent = false
         val stopIntent = Intent(this, RemoteSessionService::class.java).apply {
             action = ACTION_DISCONNECT_ALL
         }
@@ -58,20 +63,34 @@ class RemoteSessionService : Service() {
             .addAction(0, "断开全部会话", stopAction)
             .build()
         startForeground(NOTIFICATION_ID, notification)
+        wakeLock?.let { if (it.isHeld) it.release() }
+        wakeLock = getSystemService(PowerManager::class.java)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:ssh-window")
+            .apply { acquire(durationMillis) }
         handler.removeCallbacks(timeout)
-        handler.postDelayed(timeout, duration.coerceAtMost(360) * 1_000)
+        handler.postDelayed(timeout, durationMillis)
         return START_NOT_STICKY
     }
 
     override fun onTimeout(startId: Int, fgsType: Int) {
-        stopSelf(startId)
+        expireWindow(startId)
     }
 
     override fun onDestroy() {
         running = false
         handler.removeCallbacks(timeout)
+        wakeLock?.let { if (it.isHeld) it.release() }
+        wakeLock = null
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
+    }
+
+    private fun expireWindow(startId: Int? = null) {
+        if (!expirationSent) {
+            expirationSent = true
+            sendBroadcast(Intent(ACTION_WINDOW_EXPIRED).setPackage(packageName))
+        }
+        if (startId == null) stopSelf() else stopSelf(startId)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -85,6 +104,8 @@ class RemoteSessionService : Service() {
         const val ACTION_DISCONNECT_ALL = "com.yuweinfo.eizhu.sessionkeepalive.DISCONNECT_ALL"
         const val ACTION_DISCONNECT_REQUESTED =
             "com.yuweinfo.eizhu.sessionkeepalive.DISCONNECT_REQUESTED"
+        const val ACTION_WINDOW_EXPIRED =
+            "com.yuweinfo.eizhu.sessionkeepalive.WINDOW_EXPIRED"
         const val EXTRA_SESSION_COUNT = "active_session_count"
         const val EXTRA_DURATION_SECONDS = "duration_seconds"
         private const val CHANNEL_ID = "eizhu_remote_sessions"

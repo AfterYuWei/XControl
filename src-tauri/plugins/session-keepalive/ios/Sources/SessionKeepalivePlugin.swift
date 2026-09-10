@@ -11,6 +11,7 @@ final class StartArgs: Decodable {
 
 final class SessionKeepalivePlugin: Plugin {
     private var taskIdentifier: UIBackgroundTaskIdentifier = .invalid
+    private var logicalExpiration: DispatchWorkItem?
     private let networkMonitor = NWPathMonitor()
     private let networkQueue = DispatchQueue(label: "com.yuweinfo.eizhu.network")
     private let networkLock = NSLock()
@@ -31,12 +32,22 @@ final class SessionKeepalivePlugin: Plugin {
     }
 
     @objc func start(_ invoke: Invoke) throws {
-        _ = try invoke.parseArgs(StartArgs.self)
+        let args = try invoke.parseArgs(StartArgs.self)
         endCurrentTask()
         taskIdentifier = UIApplication.shared.beginBackgroundTask(withName: "eizhu-ssh-window") {
             self.trigger("expired", data: ["reason": "system-expiration"])
             self.endCurrentTask()
         }
+        let expiration = DispatchWorkItem { [weak self] in
+            guard let self, self.taskIdentifier != .invalid else { return }
+            self.trigger("expired", data: ["reason": "logic-window"])
+            self.endCurrentTask()
+        }
+        logicalExpiration = expiration
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Double(min(args.durationSeconds, 360)),
+            execute: expiration
+        )
         invoke.resolve([
             "started": taskIdentifier != .invalid,
             "notificationPermission": true,
@@ -95,6 +106,8 @@ final class SessionKeepalivePlugin: Plugin {
     }
 
     private func endCurrentTask() {
+        logicalExpiration?.cancel()
+        logicalExpiration = nil
         guard taskIdentifier != .invalid else { return }
         UIApplication.shared.endBackgroundTask(taskIdentifier)
         taskIdentifier = .invalid

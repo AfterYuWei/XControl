@@ -24,7 +24,7 @@ use crate::{
     audit::AuditRepository,
     error::CommandError,
     profile::ProfileService,
-    ssh::transport::{connect_route, HostKeyVerifier},
+    ssh::transport::{connect_route, host_key_matches, HostKeyVerifier},
 };
 
 const MAX_EDITABLE_FILE_SIZE: usize = 10 * 1024 * 1024;
@@ -166,7 +166,7 @@ impl HostKeyVerifier for SftpHostKeyVerifier {
         current: &'a str,
     ) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>> {
         Box::pin(async move {
-            if known == current
+            if host_key_matches(known, current)
                 || self
                     .session
                     .trusted_once_host_keys

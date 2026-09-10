@@ -38,6 +38,10 @@ pub(crate) trait HostKeyVerifier: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>>;
 }
 
+pub(crate) fn host_key_matches(known: &str, current: &str) -> bool {
+    !known.is_empty() && known == current
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct AuthenticationPrompt {
     pub prompt: String,

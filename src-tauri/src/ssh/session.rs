@@ -17,8 +17,8 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 use super::transport::{
-    connect_route, AuthenticationRequest, AuthenticationResponder, ClientHandler, ConnectedRoute,
-    HostKeyVerifier,
+    connect_route, host_key_matches, AuthenticationRequest, AuthenticationResponder, ClientHandler,
+    ConnectedRoute, HostKeyVerifier,
 };
 use super::{session_manager::SessionManager, SessionEventSink, SshError};
 use crate::{
@@ -144,6 +144,46 @@ struct SessionDelivery {
     output_bytes: usize,
     messages: Vec<ClientMessage>,
     subscriptions: HashMap<String, Channel<ClientMessage>>,
+}
+
+impl SessionDelivery {
+    fn push_output(&mut self, message: ClientMessage) {
+        self.output_bytes = self.output_bytes.saturating_add(message.data.len());
+        if let Some(last) = self.messages.last_mut() {
+            if last.message_type == "output" {
+                last.data.push_str(&message.data);
+            } else {
+                self.messages.push(message);
+            }
+        } else {
+            self.messages.push(message);
+        }
+        while self.output_bytes > PRE_ATTACH_OUTPUT_LIMIT {
+            let Some(index) = self
+                .messages
+                .iter()
+                .position(|message| message.message_type == "output")
+            else {
+                self.output_bytes = 0;
+                break;
+            };
+            let excess = self.output_bytes - PRE_ATTACH_OUTPUT_LIMIT;
+            let length = self.messages[index].data.len();
+            if length <= excess {
+                self.output_bytes -= length;
+                self.messages.remove(index);
+            } else {
+                let boundary = self.messages[index]
+                    .data
+                    .char_indices()
+                    .map(|(offset, _)| offset)
+                    .find(|offset| *offset >= excess)
+                    .unwrap_or(length);
+                self.messages[index].data.drain(..boundary);
+                self.output_bytes -= boundary;
+            }
+        }
+    }
 }
 
 struct HostKeyDecision {
@@ -435,41 +475,7 @@ impl Session {
         let should_emit = {
             let mut delivery = self.delivery.lock().expect("delivery mutex poisoned");
             if message_type == "output" {
-                delivery.output_bytes = delivery.output_bytes.saturating_add(data.len());
-                if let Some(last) = delivery.messages.last_mut() {
-                    if last.message_type == "output" {
-                        last.data.push_str(data);
-                    } else {
-                        delivery.messages.push(message.clone());
-                    }
-                } else {
-                    delivery.messages.push(message.clone());
-                }
-                while delivery.output_bytes > PRE_ATTACH_OUTPUT_LIMIT {
-                    let Some(index) = delivery
-                        .messages
-                        .iter()
-                        .position(|message| message.message_type == "output")
-                    else {
-                        delivery.output_bytes = 0;
-                        break;
-                    };
-                    let excess = delivery.output_bytes - PRE_ATTACH_OUTPUT_LIMIT;
-                    let length = delivery.messages[index].data.len();
-                    if length <= excess {
-                        delivery.output_bytes -= length;
-                        delivery.messages.remove(index);
-                    } else {
-                        let boundary = delivery.messages[index]
-                            .data
-                            .char_indices()
-                            .map(|(offset, _)| offset)
-                            .find(|offset| *offset >= excess)
-                            .unwrap_or(length);
-                        delivery.messages[index].data.drain(..boundary);
-                        delivery.output_bytes -= boundary;
-                    }
-                }
+                delivery.push_output(message.clone());
             }
             delivery
                 .subscriptions
@@ -560,7 +566,7 @@ impl HostKeyVerifier for SessionHostKeyVerifier {
         current: &'a str,
     ) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>> {
         Box::pin(async move {
-            if known == current
+            if host_key_matches(known, current)
                 || self
                     .session
                     .trusted_once_host_keys
@@ -1620,6 +1626,33 @@ mod tests {
         assert!(RECONNECT_BACKOFF_SECONDS[5..]
             .iter()
             .all(|delay| *delay == 30));
+    }
+
+    #[test]
+    fn terminal_channel_batch_and_replay_limits_match_mobile_contract() {
+        assert_eq!(OUTPUT_BATCH_INTERVAL, Duration::from_millis(16));
+        assert_eq!(OUTPUT_BATCH_BYTES, 32 * 1024);
+        assert_eq!(PRE_ATTACH_OUTPUT_LIMIT, 1024 * 1024);
+
+        let mut delivery = SessionDelivery::default();
+        delivery.messages.push(ClientMessage {
+            session_id: "session-1".into(),
+            message_type: "connection_state".into(),
+            data: String::new(),
+            payload: None,
+        });
+        delivery.push_output(ClientMessage {
+            session_id: "session-1".into(),
+            message_type: "output".into(),
+            data: "中".repeat(PRE_ATTACH_OUTPUT_LIMIT / 3 + 100),
+            payload: None,
+        });
+
+        assert!(delivery.output_bytes <= PRE_ATTACH_OUTPUT_LIMIT);
+        assert_eq!(delivery.messages[0].message_type, "connection_state");
+        let replay = &delivery.messages[1].data;
+        assert!(replay.is_char_boundary(0));
+        assert!(replay.chars().all(|character| character == '中'));
     }
 
     #[test]

@@ -497,7 +497,9 @@ impl SftpService {
             if session.profile_id == "local" {
                 continue;
             }
-            self.transfers.cancel_session(&session.id).await;
+            self.transfers
+                .cancel_session_for_background(&session.id, self.events.as_ref())
+                .await;
             let mut data = session.data.write().await;
             if let Some(backend) = data.backend.take() {
                 backend.close().await;

@@ -14,7 +14,7 @@ on:
         required: true
         type: string
       tag:
-        description: 'GitHub Release 标签'
+        description: 'CI 为 GitHub Release 自动创建的标签'
         required: true
         type: string
       release_name:
@@ -22,7 +22,7 @@ on:
         required: true
         type: string
 
-# 同一 ref 的新构建取消旧的；group 与 main 分支的 Electron 工作流不同名，避免相互取消
+# 同一分支和通道的新构建取消旧构建。
 concurrency:
   group: build-desktop-tauri-${{ inputs.channel }}-${{ github.ref }}
   cancel-in-progress: true
@@ -222,7 +222,8 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # 发布：stable 版(tag)发正式 Release，pre 版(分支推送)发 prerelease Release
+  # 发布：main 分支发正式 Release，dev 分支发 prerelease Release。
+  # GitHub Release 必须关联 tag，该 tag 由 CI 生成，不再作为发版入口。
   release:
     needs: build
     runs-on: ubuntu-latest
@@ -279,14 +280,14 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag }}
-          # 分支推送创建的 tauri-* tag 必须落在本次 Tauri 提交；否则 action
+          # 分支推送创建的 tag 必须落在本次提交；否则 action
           # 会使用仓库默认分支 main 作为新标签目标。
           target_commitish: ${{ github.sha }}
           name: ${{ inputs.release_name }}
           body: |
             ## XControl ${{ inputs.version }}（Tauri 版）
 
-            ${{ inputs.channel == 'stable' && '### ✅ 正式版' || '### 🧪 测试版（基于 tauri 分支最新构建）' }}
+            ${{ inputs.channel == 'stable' && '### ✅ 正式版（main）' || '### 🧪 测试版（dev）' }}
 
             ### 安装包
 
@@ -300,7 +301,7 @@ jobs:
 
             ### 说明
 
-            - 本 Release 由 **tauri 分支** 的 Tauri 2 构建管线产出；main 分支仍发布 Electron 版
+            - 本 Release 由 **${{ inputs.channel == 'stable' && 'main' || 'dev' }} 分支**的 Tauri 2 构建管线产出
             - 从 Electron 版升级：连接配置、密钥、UI 偏好会被自动继承，无需手动迁移
             - Windows 新版安装程序支持直接覆盖升级，无需先卸载
             - **应用内更新**（设置 → 关于 → 检查更新）：Windows / macOS / Linux AppImage 支持；

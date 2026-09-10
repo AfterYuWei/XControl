@@ -1,12 +1,12 @@
 name: Quality
 
 # React + Rust/Tauri 质量门禁与桌面烟测。
-# branches 含 main 是为合并回 main 后无需修改本文件（per-ref 工作流机制见 build-desktop.yml 头部注释）。
+# dev 是测试分支，main 是受保护的正式发布分支。
 on:
   pull_request:
   push:
     branches:
-      - tauri
+      - dev
       - main
 
 permissions:

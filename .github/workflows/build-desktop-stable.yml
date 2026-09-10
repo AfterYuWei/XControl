@@ -2,15 +2,7 @@ name: Build Desktop Stable
 
 on:
   push:
-    tags:
-      - 'tauri-v*'
-      - 'v*'
-  workflow_dispatch:
-    inputs:
-      version:
-        description: '正式版 SemVer（例如 1.2.0）'
-        required: true
-        type: string
+    branches: [main]
 
 permissions:
   contents: write
@@ -23,26 +15,36 @@ jobs:
       tag: ${{ steps.meta.outputs.tag }}
       release_name: ${{ steps.meta.outputs.release_name }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - id: meta
         shell: bash
-        env:
-          MANUAL_VERSION: ${{ inputs.version }}
         run: |
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            TAG="${GITHUB_REF_NAME}"
-            VERSION="${TAG#tauri-v}"
-            VERSION="${VERSION#v}"
-          else
-            VERSION="$MANUAL_VERSION"
-            TAG="tauri-v${VERSION}"
-          fi
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "invalid SemVer: $VERSION" >&2
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "VERSION 必须是稳定版 SemVer（x.y.z），当前值: $VERSION" >&2
             exit 1
           fi
+          TAG="v${VERSION}"
+
+          # main 上的每个合并都是一次正式发版；必须先提升 VERSION，
+          # 防止不同提交复用同一应用版本或覆盖已有 Release。
+          set +e
+          git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null
+          STATUS=$?
+          set -e
+          if [ "$STATUS" -eq 0 ]; then
+            echo "正式版 ${VERSION} 已存在；合并到 main 前请先提升 VERSION" >&2
+            exit 1
+          elif [ "$STATUS" -ne 2 ]; then
+            echo "无法检查远端版本标记（git ls-remote 退出码 $STATUS）" >&2
+            exit "$STATUS"
+          fi
+
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "release_name=XControl $VERSION (Tauri Stable)" >> "$GITHUB_OUTPUT"
+          echo "release_name=XControl $VERSION" >> "$GITHUB_OUTPUT"
 
   build:
     needs: metadata

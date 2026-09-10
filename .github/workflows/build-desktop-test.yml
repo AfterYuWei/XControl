@@ -2,7 +2,7 @@ name: Build Desktop Test
 
 on:
   push:
-    branches: [tauri]
+    branches: [dev]
   workflow_dispatch:
 
 permissions:
@@ -16,15 +16,23 @@ jobs:
       tag: ${{ steps.meta.outputs.tag }}
       release_name: ${{ steps.meta.outputs.release_name }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - id: meta
         shell: bash
         run: |
+          BASE_VERSION="$(tr -d '[:space:]' < VERSION)"
+          if [[ ! "$BASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "VERSION 必须是 SemVer（x.y.z），当前值: $BASE_VERSION" >&2
+            exit 1
+          fi
           SHORT_SHA="${GITHUB_SHA::7}"
-          VERSION="0.0.0-test.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}.sha${SHORT_SHA}"
-          TAG="tauri-test-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          VERSION="${BASE_VERSION}-test.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+          TAG="test-v${VERSION}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "release_name=XControl Tauri Test #${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT} (${SHORT_SHA})" >> "$GITHUB_OUTPUT"
+          echo "release_name=XControl ${VERSION} (${SHORT_SHA})" >> "$GITHUB_OUTPUT"
 
   build:
     needs: metadata

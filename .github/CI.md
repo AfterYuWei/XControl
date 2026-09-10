@@ -1,54 +1,58 @@
-# GitHub Actions 自动构建（Tauri 分支）
+# GitHub Actions 发版流程
 
-tauri 分支的桌面安装包自动打包（Tauri 2）。tag 发正式版，tauri 分支推送发 carry 版（prerelease）。
-main 分支仍运行旧的 Electron 构建管线，两分支 CI 完全独立（per-ref 工作流机制，
-见 docs/TAURI_MIGRATION.md §15）。
+XControl 采用 `dev` / `main` 双分支晋级模型：`dev` 是测试通道，`main` 是正式通道。
+发版只由分支推送触发，不再通过人工创建 tag 触发。
 
-仓库地址：https://github.com/AfterYuWei/XControl
+> GitHub Release 底层必须关联 tag。工作流会在发布时自动创建 tag，
+> 它是 Release 的不可变标识，不是发版入口，无需人工维护。
 
-## 触发方式
+## 分支与通道
 
-| 触发 | 类型 | 版本号 | Release 标记 |
-|------|------|--------|-------------|
-| 推送 `tauri-v*` tag（tauri 分支提交上） | 正式版 | tag 去 `tauri-v` 前缀 | 正式发布 |
-| 推送 `tauri` 分支 | carry 版 | `0.0.0-pre.<日期>.<短commit>` | 预发布 (prerelease) |
-| 手动触发 | 可选 | 同上 | 同上 |
+| 推送分支 | 类型 | 版本号 | GitHub Release |
+|----------|------|--------|----------------|
+| `dev` | 测试版 | `<VERSION>-test.<run>.<attempt>` | Prerelease |
+| `main` | 正式版 | `<VERSION>` | 正式 Release |
+
+`VERSION` 是唯一的发版版本源，格式必须为 `x.y.z`。构建时会将计算后的版本
+注入 `tauri.conf.json`。正式版已存在时，`main` 发布会拒绝复用该版本号。
+
+## 推荐发版流程
+
+1. 日常开发通过功能分支 PR 合入 `dev`。
+2. `dev` 每次推送自动运行质量门禁，并发布三平台测试版。
+3. 进入发布候选阶段时，按 SemVer 提升 `VERSION`，完成回归后由 `dev` 提 PR 到 `main`。
+4. `main` 只通过该发布 PR 更新；合并后自动发布同版本正式版。
+5. 发布后将 `main` 同步回 `dev`，并将 `VERSION` 提升到下一个计划版本，
+   使后续测试版在 SemVer 上高于已发布的稳定版。
+
+建议在 GitHub 为 `main` 开启分支保护：禁止直接推送，要求 PR、`Quality` 全部通过
+且至少一人审批。`dev` 至少要求 `Quality` 通过。
 
 ## 产物
 
 | 平台 | 格式 | 应用内更新 |
 |------|------|-----------|
 | Windows (x64) | NSIS 安装程序 `.exe` | ✅ |
-| macOS (Apple Silicon) | DMG 镜像 + `.app.tar.gz`（更新资产） | ✅ |
+| macOS (Apple Silicon) | DMG 镜像 + `.app.tar.gz` | ✅ |
 | Linux (Debian/Ubuntu) | `.deb` | ❌（手动覆盖安装） |
 | Linux (Fedora/RHEL) | `.rpm` | ❌（手动覆盖安装） |
 | Linux (通用) | `.AppImage` | ✅ |
 
-应用内更新：设置 → 关于 → 检查更新（stable 通道，`latest.json` 只随正式版 Release 发布；
-carry 版在正式版发布时自动收到升级）。
-
-## 正式发布
-
-```bash
-# 1. tauri 分支代码就绪后打 tag 并推送
-git tag tauri-v1.1.0
-git push origin tauri-v1.1.0
-```
-
-合并回 main 后改用常规 `v*` tag（工作流触发条件已同时包含两套前缀，无需修改文件）。
+稳定版与测试版的 updater 清单分别为 `latest-stable-*` 和 `latest-test-*`，
+由固定的 `tauri-update-channel` Release 保存最新指针。
 
 ## Secrets（可选）
 
 | Secret | 说明 |
 |--------|------|
-| `TAURI_SIGNING_PRIVATE_KEY` | updater 签名私钥（`npx tauri signer generate` 生成的文件内容）。未配置时 CI 跳过签名，安装包正常出包，仅应用内更新不可用 |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | 私钥密码（空密码留空即可） |
-| `APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` / `APPLE_SIGNING_IDENTITY` | macOS 签名（.p12 base64）。未配置自动跳过 |
+| `TAURI_SIGNING_PRIVATE_KEY` | updater 签名私钥；未配置时仅应用内更新不可用 |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | 私钥密码（空密码留空） |
+| `APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` / `APPLE_SIGNING_IDENTITY` | macOS 签名 |
 | `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` | macOS 公证 |
 
 ## 本地验证
 
 ```bash
-npm run desktop:build    # 当前平台打包（产物在 src-tauri/target/release/bundle/）
-npm run desktop:smoke    # 烟测：XCONTROL_TAURI_SMOKE_OK
+npm run desktop:build
+npm run desktop:smoke
 ```

@@ -1,4 +1,4 @@
-//! XControl Tauri 2 application library.
+//! eizhu Tauri 2 application library.
 //!
 //! React communicates with the in-process Rust backend through fine-grained
 //! Tauri commands and events.

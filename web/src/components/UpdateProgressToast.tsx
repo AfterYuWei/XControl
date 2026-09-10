@@ -2,7 +2,7 @@ import { toast } from 'sonner'
 import type { UpdateDownloadProgress } from '@/lib/updater'
 import { UpdateProgressDetails } from '@/components/UpdateProgressDetails'
 
-const UPDATE_TOAST_ID = 'xcontrol-app-update'
+const UPDATE_TOAST_ID = 'eizhu-app-update'
 
 interface RunUpdateWithToastOptions {
   version?: string

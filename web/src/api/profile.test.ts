@@ -81,7 +81,7 @@ describe('profileApi', () => {
     ).rejects.toMatchObject({
       error: {
         code: 'TAURI_UNAVAILABLE',
-        message: '此功能需要 XControl 客户端，请使用 make dev 启动完整开发环境',
+        message: '此功能需要 eizhu 客户端，请使用 make dev 启动完整开发环境',
       },
     })
   })

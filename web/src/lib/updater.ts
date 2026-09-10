@@ -19,7 +19,7 @@ export type { UpdateChannel }
 
 /** 当前安装包的构建通道；开发环境按测试版处理。 */
 export const buildChannel: UpdateChannel =
-  import.meta.env.VITE_XCONTROL_CHANNEL === 'test' || import.meta.env.DEV ? 'test' : 'stable'
+  import.meta.env.VITE_EIZHU_CHANNEL === 'test' || import.meta.env.DEV ? 'test' : 'stable'
 
 export function isTestBuild(): boolean {
   return buildChannel === 'test'
@@ -27,7 +27,7 @@ export function isTestBuild(): boolean {
 
 function preferredUpdateChannel(): UpdateChannel {
   try {
-    const raw = localStorage.getItem('xcontrol-settings')
+    const raw = localStorage.getItem('eizhu-settings')
     const channel = raw ? JSON.parse(raw)?.state?.updateChannel : undefined
     return channel === 'test' || channel === 'stable' ? channel : buildChannel
   } catch {

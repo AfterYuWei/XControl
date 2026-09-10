@@ -14,7 +14,7 @@ const GDRIVE_SCOPE: &str = "https://www.googleapis.com/auth/drive.file";
 const ONEDRIVE_AUTH_URL: &str = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize";
 const ONEDRIVE_TOKEN_URL: &str = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
 const ONEDRIVE_SCOPE: &str = "Files.ReadWrite offline_access";
-pub const REDIRECT_BASE: &str = "xcontrol://oauth";
+pub const REDIRECT_BASE: &str = "eizhu://oauth";
 
 pub struct OAuthState {
     pub provider_id: String,
@@ -81,11 +81,8 @@ impl SyncService {
         let url = Url::parse(raw_url).map_err(|error| {
             CommandError::new("OAUTH_FAILED", format!("OAuth 回调地址无效: {error}"))
         })?;
-        if url.scheme() != "xcontrol" || url.host_str() != Some("oauth") {
-            return Err(CommandError::new(
-                "OAUTH_FAILED",
-                "不是 XControl OAuth 回调",
-            ));
+        if url.scheme() != "eizhu" || url.host_str() != Some("oauth") {
+            return Err(CommandError::new("OAUTH_FAILED", "不是 eizhu OAuth 回调"));
         }
         let provider_type = url.path().trim_matches('/');
         if provider_type != "gdrive" && provider_type != "onedrive" {
@@ -292,7 +289,7 @@ mod tests {
         let query = url
             .query_pairs()
             .collect::<std::collections::HashMap<_, _>>();
-        assert_eq!(query["redirect_uri"], "xcontrol://oauth/gdrive");
+        assert_eq!(query["redirect_uri"], "eizhu://oauth/gdrive");
         assert_eq!(query["state"], "state-abc");
         assert_eq!(query["access_type"], "offline");
     }

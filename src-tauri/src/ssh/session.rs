@@ -25,7 +25,7 @@ use crate::{
 const COMPLETE_TIMEOUT: Duration = Duration::from_millis(400);
 const SHELL_DETECT_TIMEOUT: Duration = Duration::from_secs(10);
 const PRE_ATTACH_OUTPUT_LIMIT: usize = 1024 * 1024;
-const OSC7_BOOTSTRAP_ACK: &[u8] = b"\x1b]1337;XControlOsc7Ready\x07";
+const OSC7_BOOTSTRAP_ACK: &[u8] = b"\x1b]1337;eizhuOsc7Ready\x07";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RemoteShell {
@@ -817,16 +817,16 @@ fn classify_remote_shell(output: &str) -> Option<RemoteShell> {
 fn osc7_setup_command(shell: RemoteShell) -> String {
     let hook = match shell {
         RemoteShell::Bash => {
-            r#" __xcontrol_osc7(){ printf "\033]7;file://%s\007" "$(pwd -P 2>/dev/null)";};case "${PROMPT_COMMAND-}" in *__xcontrol_osc7*) ;; *) PROMPT_COMMAND="__xcontrol_osc7${PROMPT_COMMAND:+;$PROMPT_COMMAND}";;esac;__xcontrol_osc7"#
+            r#" __eizhu_osc7(){ printf "\033]7;file://%s\007" "$(pwd -P 2>/dev/null)";};case "${PROMPT_COMMAND-}" in *__eizhu_osc7*) ;; *) PROMPT_COMMAND="__eizhu_osc7${PROMPT_COMMAND:+;$PROMPT_COMMAND}";;esac;__eizhu_osc7"#
         }
         RemoteShell::Zsh => {
-            r#" __xcontrol_osc7(){ printf "\033]7;file://%s\007" "$(pwd -P 2>/dev/null)";};autoload -Uz add-zsh-hook;add-zsh-hook -d precmd __xcontrol_osc7 2>/dev/null;add-zsh-hook precmd __xcontrol_osc7;__xcontrol_osc7"#
+            r#" __eizhu_osc7(){ printf "\033]7;file://%s\007" "$(pwd -P 2>/dev/null)";};autoload -Uz add-zsh-hook;add-zsh-hook -d precmd __eizhu_osc7 2>/dev/null;add-zsh-hook precmd __eizhu_osc7;__eizhu_osc7"#
         }
         RemoteShell::Fish => {
-            r#" function __xcontrol_osc7 --on-variable PWD --on-event fish_prompt;printf '\033]7;file://%s\007' (pwd -P 2>/dev/null);end;__xcontrol_osc7"#
+            r#" function __eizhu_osc7 --on-variable PWD --on-event fish_prompt;printf '\033]7;file://%s\007' (pwd -P 2>/dev/null);end;__eizhu_osc7"#
         }
     };
-    format!(r#"{hook};printf "\033]1337;XControlOsc7Ready\007""#)
+    format!(r#"{hook};printf "\033]1337;eizhuOsc7Ready\007""#)
 }
 
 async fn run_completion(
@@ -1100,7 +1100,7 @@ mod tests {
             let command = osc7_setup_command(shell);
             assert!(command.contains("printf \"\\033]7;") || command.contains("printf '\\033]7;"));
             assert!(!command.contains("printf \\\\\\\""));
-            assert!(command.contains("XControlOsc7Ready"));
+            assert!(command.contains("eizhuOsc7Ready"));
         }
     }
 

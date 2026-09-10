@@ -110,7 +110,7 @@ pub(super) fn migrate(connection: &Connection) -> Result<(), StorageError> {
                 VALUES (1,1,'idle');",
     )?;
 
-    // A pre-metadata XControl database may be opened on mobile where no Go
+    // A pre-metadata eizhu database may be opened on mobile where no Go
     // process has ever run. Keep the historical migration idempotent.
     add_column_if_missing(connection, "vault", "name", "TEXT NOT NULL DEFAULT ''")?;
     add_column_if_missing(connection, "vault", "remark", "TEXT DEFAULT ''")?;

@@ -403,10 +403,10 @@
   /* Smooth theme transition for all chrome elements — terminal container
      (.term-wrap and its descendants) is excluded to avoid animating the
      xterm canvas, which must stay fixed. */
-  .xcontrol-header,
-  .xcontrol-header *,
-  .xcontrol-sidebar,
-  .xcontrol-sidebar *,
+  .eizhu-header,
+  .eizhu-header *,
+  .eizhu-sidebar,
+  .eizhu-sidebar *,
   .tabbar,
   .tabbar *,
   .statusbar,

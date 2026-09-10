@@ -186,7 +186,7 @@ pub struct CloudIndex {
 impl Default for CloudIndex {
     fn default() -> Self {
         Self {
-            format: "xcontrol-sync-index".into(),
+            format: "eizhu-sync-index".into(),
             version: 1,
             device_id: String::new(),
             latest_version: 0,

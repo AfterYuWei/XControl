@@ -1,6 +1,6 @@
 //! SFTP 拖出到系统：远程文件物化到临时目录（移植自 Electron materializeRemoteDrag）。
 //!
-//! 流程：同名检测 → 创建 xcontrol-drag-* 临时目录 → Rust 进程内物化远程内容 → 校验文件落盘
+//! 流程：同名检测 → 创建 eizhu-drag-* 临时目录 → Rust 进程内物化远程内容 → 校验文件落盘
 //! → 返回本机路径列表 + 拖拽预览图标路径。临时目录 1 小时后清理；
 //! 启动时清扫 24 小时以上的残留目录（对应 Electron 的 sweepNativeDragTemps）。
 
@@ -16,7 +16,7 @@ use crate::sftp::SftpService;
 use super::PlatformError;
 
 /// 拖出临时目录前缀（与 Electron 保持一致，便于清扫历史残留）。
-const DRAG_TEMP_PREFIX: &str = "xcontrol-drag-";
+const DRAG_TEMP_PREFIX: &str = "eizhu-drag-";
 /// 拖拽预览图标（编译期内嵌，避免依赖打包后的资源文件）。
 const DRAG_ICON_PNG: &[u8] = include_bytes!("../../../../app-icon.png");
 
@@ -176,8 +176,8 @@ mod tests {
         // unix 下恒等
         #[cfg(unix)]
         {
-            let path = PathBuf::from("/tmp/xcontrol-drag-1");
-            assert_eq!(native_to_api(&path), "/tmp/xcontrol-drag-1");
+            let path = PathBuf::from("/tmp/eizhu-drag-1");
+            assert_eq!(native_to_api(&path), "/tmp/eizhu-drag-1");
         }
         // Windows 盘符语义用字符串级断言（跨平台可测）
         assert!(native_to_api(&PathBuf::from(if cfg!(windows) {

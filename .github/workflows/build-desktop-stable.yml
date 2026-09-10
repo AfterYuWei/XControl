@@ -44,7 +44,7 @@ jobs:
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "release_name=XControl $VERSION" >> "$GITHUB_OUTPUT"
+          echo "release_name=eizhu $VERSION" >> "$GITHUB_OUTPUT"
 
   build:
     needs: metadata

@@ -1,6 +1,6 @@
-# XControl 开发指南
+# eizhu 开发指南
 
-XControl 是基于 React、Tauri 2 与 Rust 的 SSH/SFTP 客户端。当前发布桌面版本，Rust
+eizhu 是基于 React、Tauri 2 与 Rust 的 SSH/SFTP 客户端。当前发布桌面版本，Rust
 核心与 Tauri mobile entry 为 Android/iOS 复用预留。所有业务领域都在 Tauri 进程内运行，
 前端通过细粒度 command 与 event 通信，不启动本地服务进程。
 
@@ -53,12 +53,12 @@ Rust 入口在 `src-tauri/src/lib.rs`，`app/bootstrap.rs` 按顺序初始化 SQ
 完整依赖、错误、所有权和移动端边界见 `docs/RUST_ARCHITECTURE.md`。
 
 React 的领域 API 位于 `web/src/api/`，统一使用 `invokeCommand`；实时消息由
-`xcontrol-session-message`、`xcontrol-sftp-message` 等 Tauri event 承载。
+`eizhu-session-message`、`eizhu-sftp-message` 等 Tauri event 承载。
 
 ## 数据与安全
 
-为兼容历史安装，数据仍保存在系统的 `XControl` 用户目录：SQLite 数据库为
-`xcontrol.db`，主密钥为 `key`。凭据只在 Rust 内存中解密，连接配置解析结构在析构时清零。
+数据保存在系统的 `eizhu` 用户目录：SQLite 数据库为
+`eizhu.db`，主密钥为 `key`。凭据只在 Rust 内存中解密，连接配置解析结构在析构时清零。
 SSH 主机密钥以 SHA-256 指纹验证；未知指纹在成功连接后保存，变化时要求用户确认。
 
 ## 前端约定

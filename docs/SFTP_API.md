@@ -27,7 +27,7 @@ SFTP 由 `src-tauri/src/sftp/` 实现，React 封装位于 `web/src/api/sftp.ts`
 - `sftp_list_transfers`、`sftp_cancel_transfer`、`sftp_clear_completed_transfers`。
 
 冲突策略为 `ask`、`overwrite`、`rename`、`skip`。进度通过
-`xcontrol-sftp-message` event 推送，任务状态仍可轮询，最多同时执行五个传输。
+`eizhu-sftp-message` event 推送，任务状态仍可轮询，最多同时执行五个传输。
 
 ## 连接能力
 

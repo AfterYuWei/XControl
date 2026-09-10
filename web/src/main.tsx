@@ -60,7 +60,7 @@ function renderFatal(message: string) {
   content.style.cssText = 'max-width:560px;'
   const title = document.createElement('h2')
   title.style.cssText = 'margin:0 0 12px;font-size:18px;'
-  title.textContent = 'XControl 运行失败'
+  title.textContent = 'eizhu 运行失败'
   const detail = document.createElement('p')
   detail.style.cssText = 'margin:0 0 16px;color:#a3a3a3;font-size:13px;line-height:1.7;'
   detail.textContent = message

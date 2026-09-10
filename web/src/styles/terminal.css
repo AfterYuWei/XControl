@@ -12,7 +12,7 @@
   isolation: isolate;
   position: relative;
   background: var(--term-bg);
-  /* Top/bottom margin removed: the vertical gap is provided by .xcontrol-body's
+  /* Top/bottom margin removed: the vertical gap is provided by .eizhu-body's
      padding so the sidebar and panel share the same spacing. */
   margin: 0 8px;
   min-height: 0;

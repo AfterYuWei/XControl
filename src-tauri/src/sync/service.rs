@@ -182,7 +182,7 @@ impl SyncService {
             return Ok(None);
         }
         let number = self.inner.repository.next_version()?;
-        let filename = format!("v{number:06}-{}.xcbackup", &hash[..12]);
+        let filename = format!("v{number:06}-{}.eizhubackup", &hash[..12]);
         let path = self.inner.backup_dir.join(filename);
         write_private_file(&path, &bytes).map_err(|error| {
             CommandError::new("SYNC_FAILED", format!("write version file: {error}"))
@@ -404,7 +404,7 @@ mod tests {
 
     fn state() -> (tempfile::TempDir, SyncService) {
         let directory = tempfile::tempdir().unwrap();
-        let database = Database::initialize(directory.path().join("xcontrol.db")).unwrap();
+        let database = Database::initialize(directory.path().join("eizhu.db")).unwrap();
         let encryptor = Encryptor::load_or_create(directory.path().join("key")).unwrap();
         let audit = AuditRepository::new(database.clone());
         let groups = GroupService::new(database.clone());

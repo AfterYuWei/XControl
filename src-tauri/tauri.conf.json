@@ -1,9 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "XControl",
-  "mainBinaryName": "XControl",
+  "productName": "eizhu",
+  "mainBinaryName": "eizhu",
   "version": "1.0.0",
-  "identifier": "com.yuweinfo.xcontrol",
+  "identifier": "com.yuweinfo.eizhu",
   "build": {
     "beforeDevCommand": "npm --prefix web run dev",
     "devUrl": "http://localhost:5173",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "XControl",
+        "title": "eizhu",
         "width": 1280,
         "height": 800,
         "minWidth": 900,
@@ -32,7 +32,7 @@
   "bundle": {
     "active": true,
     "category": "DeveloperTool",
-    "shortDescription": "XControl - 跨平台 SSH 终端与 SFTP 管理器",
+    "shortDescription": "eizhu - 跨平台 SSH 终端与 SFTP 管理器",
     "copyright": "Copyright © yuweinfo",
     "icon": [
       "icons/32x32.png",
@@ -45,12 +45,12 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["xcontrol"]
+        "schemes": ["eizhu"]
       }
     },
     "updater": {
       "endpoints": [
-        "https://github.com/AfterYuWei/XControl/releases/download/tauri-update-channel/latest-{{target}}.json"
+        "https://github.com/AfterYuWei/eizhu/releases/download/tauri-update-channel/latest-{{target}}.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERGNzhGNkY2ODRENDYxQzEKUldUQllkU0U5dlo0M3dEb1J5VFYyTzBuTlBqdmpSVi9aT2l3REJCdGZwTmIyOG1RLzNPRDZFT2YK",
       "windows": {

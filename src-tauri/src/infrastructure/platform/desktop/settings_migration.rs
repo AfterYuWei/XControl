@@ -1,7 +1,7 @@
 //! Electron settings.json → localStorage 一次性迁移。
 //!
 //! Electron 的 userData/settings.json 结构为 `{"<key>": "<value JSON>"}`，
-//! 其中 key 即 zustand persist 的 name（"xcontrol-settings"），值与 localStorage 同构。
+//! 其中 key 即 zustand persist 的 name（"eizhu-settings"），值与 localStorage 同构。
 //! 迁移 = 前端把返回值写入 localStorage 后再水化 zustand store。
 
 use std::path::Path;
@@ -41,10 +41,8 @@ mod tests {
     use std::path::PathBuf;
 
     fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "xcontrol-migrate-test-{name}-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("eizhu-migrate-test-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
@@ -55,12 +53,12 @@ mod tests {
         let dir = temp_dir("once");
         std::fs::write(
             dir.join("settings.json"),
-            r#"{"xcontrol-settings":"{\"state\":{}}"}"#,
+            r#"{"eizhu-settings":"{\"state\":{}}"}"#,
         )
         .unwrap();
 
         let first = read_unmigrated_in(&dir).unwrap();
-        assert!(first.get("xcontrol-settings").is_some());
+        assert!(first.get("eizhu-settings").is_some());
         // 只读不会提前创建 marker，前端写入失败时下次仍可重试。
         assert!(read_unmigrated_in(&dir).is_some());
         mark_migrated_in(&dir).unwrap();

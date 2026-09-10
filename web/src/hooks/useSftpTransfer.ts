@@ -35,7 +35,7 @@ export function useSftpTransfer(sessionId: string | null, callbacks: SftpTransfe
     let disposed = false
     let cleanup: (() => void) | undefined
 
-    void listen<SftpEvent>('xcontrol-sftp-message', ({ payload: message }) => {
+    void listen<SftpEvent>('eizhu-sftp-message', ({ payload: message }) => {
       const payload = message.payload ?? {}
       const eventSessionId = payload.session_id
       if (eventSessionId && eventSessionId !== sessionId) return

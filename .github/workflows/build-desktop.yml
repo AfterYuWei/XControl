@@ -35,10 +35,10 @@ jobs:
   # 三平台并行构建（macOS 仅 arm64，Linux deb+rpm+AppImage）
   build:
     env:
-      VITE_XCONTROL_CHANNEL: ${{ inputs.channel }}
-      XCONTROL_BUILD_CHANNEL: ${{ inputs.channel }}
+      VITE_EIZHU_CHANNEL: ${{ inputs.channel }}
+      EIZHU_BUILD_CHANNEL: ${{ inputs.channel }}
       # CI 传入计算后的精确版本；本地构建未设置时自动读取 VERSION。
-      XCONTROL_APP_VERSION: ${{ inputs.version }}
+      EIZHU_APP_VERSION: ${{ inputs.version }}
     strategy:
       fail-fast: false   # 单平台失败不取消其它平台，便于排查
       matrix:
@@ -89,7 +89,7 @@ jobs:
 
       # 应用内更新签名：配置 secrets（TAURI_SIGNING_PRIVATE_KEY 等）后自动启用；
       # 未配置时跳过签名正常出包（仅应用内更新不可用，安装包本身不受影响）。
-      # 私钥生成：npx tauri signer generate -w xcontrol-updater.key
+      # 私钥生成：npx tauri signer generate -w eizhu-updater.key
       - name: Enable updater artifacts (requires signing key)
         shell: bash
         env:
@@ -142,7 +142,7 @@ jobs:
           # release 构建使用 windows GUI subsystem，不附加控制台，因此用退出码
           # 而不是 stdout marker 判断烟测结果。
           $process = Start-Process `
-            -FilePath "src-tauri/target/release/XControl.exe" `
+            -FilePath "src-tauri/target/release/eizhu.exe" `
             -ArgumentList "--smoke-test" `
             -Wait `
             -PassThru
@@ -175,7 +175,7 @@ jobs:
             exit 1
           fi
           APP_EXECUTABLE="$APP_BIN/$MAIN_BINARY"
-          MARKER="$RUNNER_TEMP/xcontrol-tauri-smoke-ok"
+          MARKER="$RUNNER_TEMP/eizhu-tauri-smoke-ok"
 
           echo "==> macOS app bundle: $APP_ROOT"
           ls -la "$APP_BIN"
@@ -185,7 +185,7 @@ jobs:
           fi
           rm -f "$MARKER"
           set +e
-          OUTPUT="$(XCONTROL_SMOKE_MARKER_PATH="$MARKER" "$APP_EXECUTABLE" --smoke-test 2>&1)"
+          OUTPUT="$(EIZHU_SMOKE_MARKER_PATH="$MARKER" "$APP_EXECUTABLE" --smoke-test 2>&1)"
           STATUS=$?
           set -e
           echo "$OUTPUT"
@@ -193,7 +193,7 @@ jobs:
             echo "macOS app bundle smoke test failed with exit code $STATUS" >&2
             exit "$STATUS"
           fi
-          if ! grep -qx "XCONTROL_TAURI_SMOKE_OK" "$MARKER"; then
+          if ! grep -qx "EIZHU_TAURI_SMOKE_OK" "$MARKER"; then
             echo "macOS app exited successfully without completing smoke checks" >&2
             exit 1
           fi
@@ -202,7 +202,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: xcontrol-tauri-${{ inputs.channel }}-${{ matrix.platform }}-${{ inputs.version }}
+          name: eizhu-tauri-${{ inputs.channel }}-${{ matrix.platform }}-${{ inputs.version }}
           path: |
             src-tauri/target/**/bundle/nsis/*.exe
             src-tauri/target/**/bundle/nsis/*.sig
@@ -279,7 +279,7 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: ${{ inputs.release_name }}
           body: |
-            ## XControl ${{ inputs.version }}（Tauri 版）
+            ## eizhu ${{ inputs.version }}（Tauri 版）
 
             ${{ inputs.channel == 'stable' && '### ✅ 正式版（main）' || '### 🧪 测试版（dev）' }}
 
@@ -288,9 +288,9 @@ jobs:
             | 平台 | 格式 | 说明 |
             |------|------|------|
             | Windows (x64) | NSIS 安装程序 `.exe` | 双击安装（当前用户模式，无需管理员） |
-            | macOS (Apple Silicon) | DMG 镜像 | 打开后拖拽 XControl 到 Applications |
-            | Linux (Debian/Ubuntu) | `.deb` | `sudo dpkg -i XControl*.deb` |
-            | Linux (Fedora/RHEL) | `.rpm` | `sudo rpm -i XControl*.rpm` |
+            | macOS (Apple Silicon) | DMG 镜像 | 打开后拖拽 eizhu 到 Applications |
+            | Linux (Debian/Ubuntu) | `.deb` | `sudo dpkg -i eizhu*.deb` |
+            | Linux (Fedora/RHEL) | `.rpm` | `sudo rpm -i eizhu*.rpm` |
             | Linux (通用) | `.AppImage` | 免安装，直接运行 |
 
             ### 说明
@@ -324,7 +324,7 @@ jobs:
             gh release create tauri-update-channel \
               --prerelease \
               --target "${GITHUB_SHA}" \
-              --title "XControl Tauri Update Channels" \
+              --title "eizhu Tauri Update Channels" \
               --notes "应用内更新通道索引；请勿手动安装此 Release 的 JSON 文件。"
           fi
           gh release upload tauri-update-channel "${MANIFESTS[@]}" --clobber

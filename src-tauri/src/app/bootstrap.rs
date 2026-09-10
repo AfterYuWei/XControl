@@ -103,7 +103,7 @@ pub(crate) fn run() {
                 use tauri::Manager;
                 let data_dir = app.path().app_data_dir()?;
                 let database = crate::infrastructure::database::Database::initialize(
-                    data_dir.join("xcontrol.db"),
+                    data_dir.join("eizhu.db"),
                 )
                 .map_err(|error| std::io::Error::other(error.to_string()))?;
                 let encryptor = vault::Encryptor::load_or_create(data_dir.join("key"))
@@ -277,7 +277,7 @@ fn desktop_run() {
             let data_dir = desktop::user_data_dir()
                 .map_err(|error| std::io::Error::other(error.to_string()))?;
             let database =
-                crate::infrastructure::database::Database::initialize(data_dir.join("xcontrol.db"))
+                crate::infrastructure::database::Database::initialize(data_dir.join("eizhu.db"))
                     .map_err(|error| std::io::Error::other(error.to_string()))?;
             let encryptor = vault::Encryptor::load_or_create(data_dir.join("key"))
                 .map_err(|error| std::io::Error::other(error.to_string()))?;
@@ -323,10 +323,10 @@ fn desktop_run() {
                 let handle = app.handle().clone();
                 std::thread::spawn(move || {
                     std::thread::sleep(std::time::Duration::from_millis(100));
-                    if let Some(path) = std::env::var_os("XCONTROL_SMOKE_MARKER_PATH") {
-                        let _ = std::fs::write(path, "XCONTROL_TAURI_SMOKE_OK\n");
+                    if let Some(path) = std::env::var_os("EIZHU_SMOKE_MARKER_PATH") {
+                        let _ = std::fs::write(path, "EIZHU_TAURI_SMOKE_OK\n");
                     }
-                    println!("XCONTROL_TAURI_SMOKE_OK");
+                    println!("EIZHU_TAURI_SMOKE_OK");
                     handle.exit(0);
                 });
             }
@@ -364,7 +364,7 @@ fn install_oauth_deep_links<R: tauri::Runtime>(
     app.deep_link().on_open_url(move |event| {
         for url in event.urls() {
             let raw = url.to_string();
-            if !raw.starts_with("xcontrol://oauth/") {
+            if !raw.starts_with("eizhu://oauth/") {
                 continue;
             }
             let handle = handle.clone();
@@ -389,7 +389,7 @@ fn install_oauth_deep_links<R: tauri::Runtime>(
     if let Some(urls) = app.deep_link().get_current()? {
         for url in urls {
             let raw = url.to_string();
-            if raw.starts_with("xcontrol://oauth/") {
+            if raw.starts_with("eizhu://oauth/") {
                 let handle = app.handle().clone();
                 let state = sync.clone();
                 tauri::async_runtime::spawn(async move {

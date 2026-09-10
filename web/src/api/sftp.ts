@@ -145,7 +145,7 @@ export const sftpApi = {
                 await invoke(
                   'sftp_upload_chunk',
                   chunk,
-                  { headers: { 'x-xcontrol-upload-id': uploadId } },
+                  { headers: { 'x-eizhu-upload-id': uploadId } },
                 )
               }
             }

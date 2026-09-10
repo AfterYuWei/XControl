@@ -1,5 +1,5 @@
 /* ═══════════════════ APP SHELL ═══════════════════ */
-.xcontrol-app {
+.eizhu-app {
   display: flex;
   flex-direction: column;
   height: 100vh;
@@ -9,7 +9,7 @@
 }
 
 /* ===== HEADER (full width, left/center/right) ===== */
-.xcontrol-header {
+.eizhu-header {
   height: var(--tabbar-h);
   display: flex;
   align-items: center;
@@ -22,7 +22,7 @@
   z-index: 30;
   box-shadow: none;
 }
-.xcontrol-header::after {
+.eizhu-header::after {
   content: '';
   position: absolute;
   right: 4%;
@@ -37,7 +37,7 @@
    仅声明该属性的元素自身的 mousedown 触发拖拽），不依赖 CSS app-region。
    配色完全由前端 CSS 主题变量控制，跟随应用深浅主题切换。
    关闭按钮悬停保留 Windows 原生红色 #E81123（见 .tb-close）。 */
-.xcontrol-header.titlebar.is-desktop {
+.eizhu-header.titlebar.is-desktop {
   background: var(--surface-chrome);
   color: var(--fg);
   /* 右侧留出窗口控制按钮的空间，避免遮挡 */
@@ -46,7 +46,7 @@
 /* macOS：使用系统原生交通灯（左侧红黄绿圆形按钮），不自绘控制按钮。
    标题栏左侧需留出交通灯空间（约 78px），避免按钮被交通灯遮挡。
    header-left 此时承载侧边栏/SFTP/主题按钮，整体右移避让交通灯。 */
-.xcontrol-header.titlebar.is-desktop.is-mac {
+.eizhu-header.titlebar.is-desktop.is-mac {
   padding-left: 78px;
 }
 
@@ -245,7 +245,7 @@
 }
 
 /* ===== BODY (sidebar + content) ===== */
-.xcontrol-body {
+.eizhu-body {
   flex: 1;
   display: flex;
   overflow: hidden;
@@ -259,7 +259,7 @@
 }
 
 /* ===== SIDEBAR — Tabby / Warp inspired layout ===== */
-.xcontrol-sidebar {
+.eizhu-sidebar {
   width: var(--sidebar-w);
   flex-shrink: 0;
   display: flex;
@@ -278,7 +278,7 @@
     inset -1px 0 0 var(--edge-soft),
     inset 0 1px 0 var(--edge-highlight);
 }
-.xcontrol-sidebar.collapsed {
+.eizhu-sidebar.collapsed {
   width: 0;
   opacity: 0;
   border-right: none;
@@ -306,11 +306,11 @@
   right: -4px;
 }
 /* Disable text selection during resize */
-.xcontrol-body:has(.sidebar-resizer.active) {
+.eizhu-body:has(.sidebar-resizer.active) {
   user-select: none;
   -webkit-user-select: none;
 }
-.xcontrol-body:has(.sidebar-resizer.active) * {
+.eizhu-body:has(.sidebar-resizer.active) * {
   pointer-events: none;
 }
 .sidebar-resizer.active {

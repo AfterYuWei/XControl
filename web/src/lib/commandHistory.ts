@@ -2,7 +2,7 @@
 // localStorage。补全面板按 cwd 匹配历史命令并统计频次（如 ×4）。
 // 纯前端实现，零后端改动；数据仅保存在本机浏览器。
 
-const STORAGE_KEY = 'xcontrol-cmd-history'
+const STORAGE_KEY = 'eizhu-cmd-history'
 const MAX_ENTRIES = 500
 
 export interface HistoryEntry {

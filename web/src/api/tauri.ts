@@ -41,7 +41,7 @@ export async function invokeCommand<T>(
     if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) {
       throw new TauriAPIError(
         'TAURI_UNAVAILABLE',
-        '此功能需要 XControl 客户端，请使用 make dev 启动完整开发环境',
+        '此功能需要 eizhu 客户端，请使用 make dev 启动完整开发环境',
       )
     }
     throw normalizeCommandError(cause)

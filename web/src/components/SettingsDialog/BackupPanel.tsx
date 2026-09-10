@@ -203,7 +203,7 @@ export function BackupPanel() {
             导出备份
           </Label>
           <span className="settings-field-desc">
-            将分组、服务器、凭据、命令片段导出为 .xcbackup 文件
+            将分组、服务器、凭据、命令片段导出为 .eizhubackup 文件
           </span>
         </div>
       </div>
@@ -272,7 +272,7 @@ export function BackupPanel() {
             导入备份
           </Label>
           <span className="settings-field-desc">
-            从 .xcbackup 文件恢复数据，导入只新增或更新，不会删除现有数据
+            从 .eizhubackup 或旧版 .xcbackup 文件恢复数据，导入只新增或更新，不会删除现有数据
           </span>
         </div>
       </div>

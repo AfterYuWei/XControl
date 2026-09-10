@@ -208,7 +208,7 @@ export function ProviderSection({ providers, onChanged }: Props) {
               <div className="backup-row">
                 <Label className="backup-row-label">地址</Label>
                 <Input value={form.endpoint ?? ''} onChange={(e) => patch('endpoint', e.target.value)}
-                  placeholder="https://dav.example.com/path/xcontrol" />
+                  placeholder="https://dav.example.com/path/eizhu" />
               </div>
               <div className="backup-row">
                 <Label className="backup-row-label">用户名</Label>
@@ -246,7 +246,7 @@ export function ProviderSection({ providers, onChanged }: Props) {
               </div>
               <div className="backup-row">
                 <Label className="backup-row-label">前缀</Label>
-                <Input value={form.s3_prefix ?? ''} onChange={(e) => patch('s3_prefix', e.target.value)} placeholder="xcontrol/（可选）" />
+                <Input value={form.s3_prefix ?? ''} onChange={(e) => patch('s3_prefix', e.target.value)} placeholder="eizhu/（可选）" />
               </div>
               <div className="backup-row">
                 <Label className="backup-row-label">PathStyle</Label>
@@ -263,8 +263,8 @@ export function ProviderSection({ providers, onChanged }: Props) {
                 <ShieldCheck size={13} />
                 <span>
                   {form.type === 'gdrive'
-                    ? '需在 Google Cloud Console 创建 OAuth 应用，回调地址填：xcontrol://oauth/gdrive'
-                    : '需在 Azure Portal 注册应用，回调地址填：xcontrol://oauth/onedrive'}
+                    ? '需在 Google Cloud Console 创建 OAuth 应用，回调地址填：eizhu://oauth/gdrive'
+                    : '需在 Azure Portal 注册应用，回调地址填：eizhu://oauth/onedrive'}
                 </span>
               </div>
               <div className="backup-row">
@@ -279,7 +279,7 @@ export function ProviderSection({ providers, onChanged }: Props) {
                 <div className="backup-row">
                   <Label className="backup-row-label">文件夹</Label>
                   <Input value={form.onedrive_folder ?? ''} onChange={(e) => patch('onedrive_folder', e.target.value)}
-                    placeholder="xcontrol-backups（默认）" />
+                    placeholder="eizhu-backups（默认）" />
                 </div>
               )}
               <div className="settings-field-desc">保存后点击列表中的「授权」按钮完成 OAuth 授权</div>

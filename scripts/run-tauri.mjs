@@ -12,7 +12,7 @@ if (!['dev', 'build'].includes(command)) {
 }
 
 const fileVersion = readFileSync(new URL('../VERSION', import.meta.url), 'utf8').trim()
-const version = (process.env.XCONTROL_APP_VERSION || fileVersion).trim()
+const version = (process.env.EIZHU_APP_VERSION || fileVersion).trim()
 if (!/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version)) {
   console.error(`无效的应用版本: ${version}`)
   process.exit(1)
@@ -20,7 +20,7 @@ if (!/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(ve
 
 const cli = fileURLToPath(new URL('../node_modules/@tauri-apps/cli/tauri.js', import.meta.url))
 const args = [command, '--config', JSON.stringify({ version }), ...process.argv.slice(3)]
-console.log(`[XControl] Tauri ${command} 版本: ${version}`)
+console.log(`[eizhu] Tauri ${command} 版本: ${version}`)
 
 // Invoke the JavaScript entrypoint with the current Node executable. Windows
 // cannot spawn a .cmd shim directly with shell=false and returns EINVAL.

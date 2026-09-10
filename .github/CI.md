@@ -1,6 +1,6 @@
 # GitHub Actions 发版流程
 
-XControl 采用 `dev` / `main` 双分支晋级模型：`dev` 是测试通道，`main` 是正式通道。
+eizhu 采用 `dev` / `main` 双分支晋级模型：`dev` 是测试通道，`main` 是正式通道。
 发版只由分支推送触发，不再通过人工创建 tag 触发。
 
 > GitHub Release 底层必须关联 tag。工作流会在发布时自动创建 tag，

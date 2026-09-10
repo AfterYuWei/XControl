@@ -32,7 +32,7 @@ jobs:
           TAG="test-v${VERSION}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "release_name=XControl ${VERSION} (${SHORT_SHA})" >> "$GITHUB_OUTPUT"
+          echo "release_name=eizhu ${VERSION} (${SHORT_SHA})" >> "$GITHUB_OUTPUT"
 
   build:
     needs: metadata

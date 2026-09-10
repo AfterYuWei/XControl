@@ -45,7 +45,7 @@
   min-width: 0;
   flex-shrink: 0;
 }
-.xcontrol-tab {
+.eizhu-tab {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -58,14 +58,14 @@
   user-select: none;
   position: relative;
 }
-.xcontrol-tab:hover {
+.eizhu-tab:hover {
   background: var(--bg-hover);
 }
-.xcontrol-tab.active {
+.eizhu-tab.active {
   background: var(--bg-active);
   position: relative;
 }
-.xcontrol-tab.active::after {
+.eizhu-tab.active::after {
   content: '';
   position: absolute;
   left: 0;
@@ -95,7 +95,7 @@
   white-space: nowrap;
   letter-spacing: 0.01em;
 }
-.xcontrol-tab.active .tab-name {
+.eizhu-tab.active .tab-name {
   color: var(--fg-2);
   font-weight: 500;
 }
@@ -117,7 +117,7 @@
   padding: 0;
   margin-left: 2px;
 }
-.xcontrol-tab:hover .tab-x {
+.eizhu-tab:hover .tab-x {
   opacity: 1;
 }
 .tab-x:hover {

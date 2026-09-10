@@ -20,16 +20,16 @@ export async function initDesktop(): Promise<void> {
 
 /**
  * Electron settings.json → localStorage 一次性迁移（见 Rust settings_migrate.rs）。
- * Electron 的 settings.json 结构为 {"xcontrol-settings": "<zustand persist JSON>"}，
+ * Electron 的 settings.json 结构为 {"eizhu-settings": "<zustand persist JSON>"}，
  * 与 localStorage 键值完全同构；仅当 localStorage 尚无数据时写入，失败不阻塞启动。
  */
 async function migrateElectronSettings(): Promise<void> {
   try {
     const legacy = await invoke<Record<string, string> | null>('migrate_electron_settings')
     if (!legacy) return
-    const persisted = legacy?.['xcontrol-settings']
-    if (persisted && !localStorage.getItem('xcontrol-settings')) {
-      localStorage.setItem('xcontrol-settings', persisted)
+    const persisted = legacy?.['eizhu-settings']
+    if (persisted && !localStorage.getItem('eizhu-settings')) {
+      localStorage.setItem('eizhu-settings', persisted)
     }
     // 只有 localStorage 写入成功（或已经存在更新设置）后才确认，失败时下次启动重试。
     await invoke('mark_electron_settings_migrated')

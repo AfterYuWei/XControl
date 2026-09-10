@@ -767,7 +767,7 @@ mod tests {
 
     fn state() -> (tempfile::TempDir, ProfileService) {
         let directory = tempfile::tempdir().unwrap();
-        let database = Database::initialize(directory.path().join("xcontrol.db")).unwrap();
+        let database = Database::initialize(directory.path().join("eizhu.db")).unwrap();
         let encryptor = Encryptor::load_or_create(directory.path().join("key")).unwrap();
         let audit = crate::audit::AuditRepository::new(database.clone());
         let vault = VaultService::new(database.clone(), encryptor.clone(), audit);
@@ -966,7 +966,7 @@ mod tests {
     #[test]
     fn legacy_non_vault_credentials_are_backfilled_and_orphans_removed() {
         let directory = tempfile::tempdir().unwrap();
-        let database = Database::initialize(directory.path().join("xcontrol.db")).unwrap();
+        let database = Database::initialize(directory.path().join("eizhu.db")).unwrap();
         let encryptor = Encryptor::load_or_create(directory.path().join("key")).unwrap();
         let data = encryptor.encrypt("legacy-password").unwrap();
         let connection = database.connect().unwrap();

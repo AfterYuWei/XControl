@@ -1,17 +1,17 @@
 [package]
-name = "xcontrol"
+name = "eizhu"
 version = "1.0.0"
-description = "XControl 桌面 SSH 终端与 SFTP 管理器（Tauri 2 + Rust）"
+description = "eizhu 桌面 SSH 终端与 SFTP 管理器（Tauri 2 + Rust）"
 authors = ["yuweinfo"]
 license = "MIT"
-repository = "https://github.com/AfterYuWei/XControl"
+repository = "https://github.com/AfterYuWei/eizhu"
 edition = "2021"
 rust-version = "1.89"
 
 # 移动端预留：桌面逻辑通过 #[cfg(desktop)] 门控，
 # 未来 tauri ios/android init 时以 staticlib/cdylib 形式复用。
 [lib]
-name = "xcontrol_lib"
+name = "eizhu_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]

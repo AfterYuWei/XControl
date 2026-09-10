@@ -31,6 +31,8 @@ export interface SftpSessionInfo {
   error?: string
   home_dir?: string // User's home directory
   created_at: string
+  host_key_fingerprint?: string
+  known_host_key_fingerprint?: string
 }
 
 export const sftpApi = {
@@ -41,6 +43,19 @@ export const sftpApi = {
 
   getSession: (id: string) =>
     invokeCommand<SftpSessionInfo>('sftp_get_session', { id }),
+
+  reconnectSession: (id: string) =>
+    invokeCommand<SftpCreateSessionResponse>('sftp_reconnect_session', { id }),
+
+  decideHostKey: (
+    requestId: string,
+    fingerprint: string,
+    decision: 'trust_once' | 'trust_permanently' | 'reject',
+  ) => invokeCommand<{ status: string; persisted?: boolean }>('sftp_host_key_decide', {
+    requestId,
+    fingerprint,
+    decision,
+  }),
 
   listSessions: () =>
     invokeCommand<SftpSessionInfo[]>('sftp_list_sessions'),

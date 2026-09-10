@@ -8,13 +8,13 @@
 | 能力 | Desktop | Android | iOS | 当前状态 |
 | --- | --- | --- | --- | --- |
 | Profile / Group / Snippet / Audit | ✅ | 编译接入 | 编译接入 | 共享 Rust command 已注册 |
-| SSH / SFTP Rust 核心 | ✅ | 编译接入 | 编译接入 | 生命周期适配待阶段 2 |
+| SSH / SFTP Rust 核心 | ✅ | ✅ | ✅ | 同 ID 恢复、主机密钥确认、交互认证已接入 |
 | Vault / SQLite / Backup / Sync | ✅ | 编译接入 | 编译接入 | 安全存储待阶段 5 |
 | 平台能力发现 | ✅ | ✅ | ✅ | `platform_capabilities`，禁止 UA 推断 |
 | 桌面窗口、拖出、updater | ✅ | 不支持 | 不支持 | capability 隔离 |
 | OAuth deep link | ✅ | 配置完成 | 配置完成 | 真机回调待验收 |
 | 系统文档选择器 | ✅ | 待阶段 4 | 待阶段 4 | 不把 URI 当作 `PathBuf` |
-| 360 秒后台窗口 | 不适用 | 待阶段 2 | 待阶段 2 | iOS 仅定义为逻辑恢复窗口 |
+| 360 秒后台窗口 | 不适用 | ✅（待真机） | ✅（待真机） | Android 前台服务；iOS 逻辑恢复窗口 |
 | Keystore / Keychain | 不适用 | 待阶段 5 | 待阶段 5 | 密文格式保持不变 |
 | 移动布局和终端工具栏 | 不适用 | 待阶段 3 | 待阶段 3 | DesktopLayout 保持兼容 |
 
@@ -51,7 +51,7 @@ npm run ios:build
 | 阶段 | 状态 | 证据 |
 | --- | --- | --- |
 | 1 基线与工程初始化 | 代码完成 | Web/Rust 测试、移动构建 CI；生成工程由具备 SDK 的环境生成并构建 |
-| 2 SSH 生命周期 | 未开始 | — |
+| 2 SSH 生命周期 | 代码完成 | 360 秒状态机、真实 SSH 探活、同 ID/退避重连、SSH/SFTP 指纹确认、keyboard-interactive；真机后台行为待发布门禁 |
 | 3 移动交互 | 未开始 | — |
 | 4 DocumentGateway | 未开始 | — |
 | 5 安全存储 | 未开始 | — |

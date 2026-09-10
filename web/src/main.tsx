@@ -3,6 +3,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { invoke } from '@tauri-apps/api/core'
 import { initDesktop } from '@/lib/desktop'
 import { initializePlatform, isDesktopRuntime } from '@/lib/platform'
+import { installMobileLifecycle } from '@/lib/lifecycle'
 import { scheduleSilentUpdateCheck } from '@/lib/updater'
 import { installFrontendLogging } from '@/lib/appLog'
 import './index.css'
@@ -39,6 +40,7 @@ async function bootstrap() {
       <App />
     </StrictMode>,
   )
+  installMobileLifecycle()
 
   // 首帧渲染完成后显示并最大化窗口（等价 Electron ready-to-show + maximize）。
   // 注意窗口此时 visible:false，rAF 在隐藏窗口中可能被节流，故用 setTimeout。

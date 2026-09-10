@@ -1,11 +1,16 @@
 use std::{
-    collections::HashMap, future::Future, path::Path, pin::Pin, sync::Arc, time::SystemTime,
+    collections::{HashMap, HashSet},
+    future::Future,
+    path::Path,
+    pin::Pin,
+    sync::{Arc, Mutex as StdMutex},
+    time::SystemTime,
 };
 
 use chrono::{DateTime, Local, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::{
-    sync::{Mutex, RwLock},
+    sync::{Mutex, Notify, RwLock},
     task::JoinHandle,
 };
 
@@ -33,6 +38,10 @@ pub(crate) struct SftpSessionInfo {
     error: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     home_dir: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    host_key_fingerprint: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    known_host_key_fingerprint: String,
     created_at: String,
 }
 
@@ -113,6 +122,8 @@ struct SessionData {
     error: String,
     home_dir: String,
     backend: Option<Arc<FileBackend>>,
+    host_key_fingerprint: String,
+    known_host_key_fingerprint: String,
 }
 
 pub(super) struct SftpSession {
@@ -120,6 +131,9 @@ pub(super) struct SftpSession {
     pub(super) profile_id: String,
     created_at: String,
     data: RwLock<SessionData>,
+    host_key_decision: StdMutex<Option<SftpHostKeyDecision>>,
+    host_key_notify: Notify,
+    trusted_once_host_keys: StdMutex<HashSet<String>>,
 }
 
 #[derive(Clone)]
@@ -132,17 +146,74 @@ pub(crate) struct SftpService {
     pub(super) transfers: TransferManager,
 }
 
-struct StrictHostKeyVerifier;
+struct SftpHostKeyDecision {
+    fingerprint: String,
+    persist: bool,
+}
 
-impl HostKeyVerifier for StrictHostKeyVerifier {
+struct SftpHostKeyVerifier {
+    session: Arc<SftpSession>,
+    events: Arc<dyn SftpEventSink>,
+}
+
+impl HostKeyVerifier for SftpHostKeyVerifier {
     fn verify<'a>(
         &'a self,
         _profile_id: &'a str,
-        _profile_name: &'a str,
+        profile_name: &'a str,
         known: &'a str,
         current: &'a str,
     ) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>> {
-        Box::pin(async move { known.is_empty() || known == current })
+        Box::pin(async move {
+            if known == current
+                || self
+                    .session
+                    .trusted_once_host_keys
+                    .lock()
+                    .expect("trusted host key mutex poisoned")
+                    .contains(current)
+            {
+                return true;
+            }
+            {
+                let mut data = self.session.data.write().await;
+                data.status = "hostkey_confirm".into();
+                data.host_key_fingerprint = current.into();
+                data.known_host_key_fingerprint = known.into();
+            }
+            self.events.emit_sftp(
+                "sftp_session_status",
+                serde_json::json!({
+                    "session_id":self.session.id,
+                    "status":"hostkey_confirm",
+                    "profile_name":profile_name,
+                    "host_key_fingerprint":current,
+                    "known_host_key_fingerprint":known,
+                }),
+            );
+            loop {
+                self.session.host_key_notify.notified().await;
+                let decision = self
+                    .session
+                    .host_key_decision
+                    .lock()
+                    .expect("host key decision mutex poisoned")
+                    .take();
+                if let Some(decision) = decision {
+                    if decision.fingerprint != current {
+                        return false;
+                    }
+                    if !decision.persist {
+                        self.session
+                            .trusted_once_host_keys
+                            .lock()
+                            .expect("trusted host key mutex poisoned")
+                            .insert(current.to_owned());
+                    }
+                    return true;
+                }
+            }
+        })
     }
 }
 
@@ -182,7 +253,12 @@ impl SftpService {
                 error: String::new(),
                 home_dir: String::new(),
                 backend: None,
+                host_key_fingerprint: String::new(),
+                known_host_key_fingerprint: String::new(),
             }),
+            host_key_decision: StdMutex::new(None),
+            host_key_notify: Notify::new(),
+            trusted_once_host_keys: StdMutex::new(HashSet::new()),
         });
         self.sessions
             .write()
@@ -226,9 +302,16 @@ impl SftpService {
         let result =
             async {
                 let resolved = self.profiles.resolve_connection(&session.profile_id)?;
-                let route = connect_route(resolved, Arc::new(StrictHostKeyVerifier))
-                    .await
-                    .map_err(|error| CommandError::new("SFTP_CONNECT_FAILED", error.to_string()))?;
+                let route = connect_route(
+                    resolved,
+                    Arc::new(SftpHostKeyVerifier {
+                        session: session.clone(),
+                        events: self.events.clone(),
+                    }),
+                    None,
+                )
+                .await
+                .map_err(|error| CommandError::new("SFTP_CONNECT_FAILED", error.to_string()))?;
                 let stream = route
                     .open_subsystem("sftp")
                     .await
@@ -244,8 +327,16 @@ impl SftpService {
         match result {
             Ok((route, sftp, home_dir)) => {
                 for (profile_id, fingerprint) in route.host_keys() {
-                    if let Err(error) = self.profiles.persist_host_key(profile_id, fingerprint) {
-                        eprintln!("persist SFTP host key failed: {error}");
+                    let persist = !session
+                        .trusted_once_host_keys
+                        .lock()
+                        .expect("trusted host key mutex poisoned")
+                        .contains(fingerprint);
+                    if persist {
+                        if let Err(error) = self.profiles.persist_host_key(profile_id, fingerprint)
+                        {
+                            eprintln!("persist SFTP host key failed: {error}");
+                        }
                     }
                 }
                 let backend = Arc::new(FileBackend::Remote {
@@ -267,6 +358,8 @@ impl SftpService {
                     data.status = "connected".into();
                     data.home_dir = home_dir;
                     data.backend = Some(backend);
+                    data.host_key_fingerprint.clear();
+                    data.known_host_key_fingerprint.clear();
                 }
                 let _ = self.profiles.update_last_used(&session.profile_id);
                 let _ = self.audit.record(&session.profile_id, "sftp_connect", "");
@@ -287,6 +380,172 @@ impl SftpService {
             "sftp_session_status",
             serde_json::json!({"session_id":session_id,"status":status}),
         );
+    }
+
+    pub(crate) async fn active_count(&self) -> usize {
+        let sessions = self
+            .sessions
+            .read()
+            .await
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut count = 0;
+        for session in sessions {
+            if session.profile_id == "local" {
+                continue;
+            }
+            let status = session.data.read().await.status.clone();
+            if matches!(status.as_str(), "connecting" | "connected" | "reconnecting") {
+                count += 1;
+            }
+        }
+        count
+    }
+
+    pub(crate) async fn suspend_for_background_limit(&self) {
+        let tasks = self
+            .connection_tasks
+            .lock()
+            .await
+            .drain()
+            .map(|(_, task)| task)
+            .collect::<Vec<_>>();
+        for task in &tasks {
+            task.abort();
+        }
+        for task in tasks {
+            let _ = task.await;
+        }
+
+        let sessions = self
+            .sessions
+            .read()
+            .await
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        for session in sessions {
+            if session.profile_id == "local" {
+                continue;
+            }
+            self.transfers.cancel_session(&session.id).await;
+            let mut data = session.data.write().await;
+            if let Some(backend) = data.backend.take() {
+                backend.close().await;
+            }
+            data.status = "suspended".into();
+            data.error = "BACKGROUND_LIMIT: 后台恢复窗口已结束".into();
+            drop(data);
+            self.emit_session_status(&session.id, "suspended");
+        }
+    }
+
+    pub(crate) async fn reconnect_suspended(&self) -> Result<(), CommandError> {
+        let sessions = self
+            .sessions
+            .read()
+            .await
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        for session in sessions {
+            if session.profile_id != "local" && session.data.read().await.status == "suspended" {
+                self.reconnect(&session.id).await?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn reconnect(
+        &self,
+        id: &str,
+    ) -> Result<SftpCreateSessionResponse, CommandError> {
+        let session = self.session(id).await?;
+        if session.profile_id == "local" {
+            return Err(CommandError::new(
+                "VALIDATION",
+                "local session does not require reconnect",
+            ));
+        }
+        self.profiles.resolve_connection(&session.profile_id)?;
+        if let Some(task) = self.connection_tasks.lock().await.remove(id) {
+            task.abort();
+            let _ = task.await;
+        }
+        {
+            let mut data = session.data.write().await;
+            if let Some(backend) = data.backend.take() {
+                backend.close().await;
+            }
+            data.status = "reconnecting".into();
+            data.error.clear();
+        }
+        self.emit_session_status(id, "reconnecting");
+        let state = self.clone();
+        let session_for_task = session.clone();
+        let session_id = id.to_owned();
+        let task = tokio::spawn(async move {
+            state.connect_remote(session_for_task).await;
+            state.connection_tasks.lock().await.remove(&session_id);
+        });
+        self.connection_tasks
+            .lock()
+            .await
+            .insert(id.to_owned(), task);
+        let home_dir = session.data.read().await.home_dir.clone();
+        Ok(SftpCreateSessionResponse {
+            session_id: id.to_owned(),
+            status: "reconnecting".into(),
+            home_dir,
+        })
+    }
+
+    pub(crate) async fn decide_host_key(
+        &self,
+        id: &str,
+        fingerprint: String,
+        decision: &str,
+    ) -> Result<serde_json::Value, CommandError> {
+        let session = self.session(id).await?;
+        let data = session.data.read().await;
+        if data.status != "hostkey_confirm" || data.host_key_fingerprint != fingerprint {
+            return Err(CommandError::new(
+                "HOST_KEY_CONFIRM_FAILED",
+                "SFTP host key request is no longer active",
+            ));
+        }
+        drop(data);
+        let persist = match decision {
+            "trust_permanently" => true,
+            "trust_once" => false,
+            "reject" => {
+                if let Some(task) = self.connection_tasks.lock().await.remove(id) {
+                    task.abort();
+                }
+                let mut data = session.data.write().await;
+                data.status = "disconnected".into();
+                data.error = "主机指纹已拒绝".into();
+                drop(data);
+                self.emit_session_status(id, "disconnected");
+                return Ok(serde_json::json!({"status":"rejected"}));
+            }
+            _ => {
+                return Err(CommandError::new(
+                    "VALIDATION",
+                    "decision must be trust_once, trust_permanently or reject",
+                ));
+            }
+        };
+        *session
+            .host_key_decision
+            .lock()
+            .expect("host key decision mutex poisoned") = Some(SftpHostKeyDecision {
+            fingerprint,
+            persist,
+        });
+        session.host_key_notify.notify_waiters();
+        Ok(serde_json::json!({"status":"accepted","persisted":persist}))
     }
 
     pub(super) async fn session(&self, id: &str) -> Result<Arc<SftpSession>, CommandError> {
@@ -326,6 +585,8 @@ impl SftpService {
             status: data.status.clone(),
             error: data.error.clone(),
             home_dir: data.home_dir.clone(),
+            host_key_fingerprint: data.host_key_fingerprint.clone(),
+            known_host_key_fingerprint: data.known_host_key_fingerprint.clone(),
             created_at: session.created_at.clone(),
         }
     }

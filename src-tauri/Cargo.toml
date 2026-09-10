@@ -68,6 +68,9 @@ tauri-plugin-updater = "2"
 # 更新完成后重启
 tauri-plugin-process = "2"
 
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri-plugin-session-keepalive = { path = "plugins/session-keepalive" }
+
 [dev-dependencies]
 tempfile = "3"
 

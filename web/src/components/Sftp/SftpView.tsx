@@ -12,6 +12,7 @@ import { createSftpStore, type SftpStoreApi, type PaneSide, parentPath } from '@
 import { useSftpTransfer } from '@/hooks/useSftpTransfer'
 import { useExternalDrop } from '@/hooks/useExternalDrop'
 import { sftpApi } from '@/api/sftp'
+import { HostKeyDialog } from './HostKeyDialog'
 
 /** SFTP file manager — symmetric dual-pane layout. Both panes are identical
  *  multi-server tab strips; the left pane starts connected to the local
@@ -109,6 +110,7 @@ export function SftpView() {
         />
 
         <ConflictDialog />
+        <HostKeyDialog />
         <DirectoryTransferDialog />
         <SftpDialogs />
         <EditorDialog />

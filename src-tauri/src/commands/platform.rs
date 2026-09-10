@@ -36,7 +36,13 @@ pub(crate) fn platform_capabilities() -> PlatformCapabilities {
         document_picker: cfg!(desktop),
         secure_key_store: false,
         biometric: false,
-        background_mode: "unsupported",
+        background_mode: if cfg!(target_os = "android") {
+            "android-foreground-service"
+        } else if cfg!(target_os = "ios") {
+            "ios-task-window"
+        } else {
+            "unsupported"
+        },
         max_concurrent_transfers: if cfg!(mobile) { 2 } else { 5 },
     }
 }

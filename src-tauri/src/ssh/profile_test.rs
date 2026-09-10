@@ -126,7 +126,7 @@ async fn run_test(node: ResolvedProfileNode) -> ProfileTestResult {
     let verifier = Arc::new(TestVerifier {
         stages: stages.clone(),
     });
-    let result = connect_route(node, verifier).await;
+    let result = connect_route(node, verifier, None).await;
     let success = result.is_ok();
     let detail = match result {
         Ok(route) => {
@@ -196,7 +196,7 @@ pub(crate) async fn confirm_profile_host_key(
         target_id: id.clone(),
         expected: fingerprint,
     });
-    let route = connect_route(node, verifier).await.map_err(|error| {
+    let route = connect_route(node, verifier, None).await.map_err(|error| {
         CommandError::new(
             "HOST_KEY_CHANGED_AGAIN",
             format!("服务器主机指纹已再次变化，请重新测试: {error}"),

@@ -14,8 +14,13 @@ pub(crate) fn run() {
     {
         tauri::Builder::default()
             .plugin(tauri_plugin_deep_link::init())
+            .plugin(tauri_plugin_session_keepalive::init())
             .invoke_handler(tauri::generate_handler![
                 commands::platform_capabilities,
+                commands::app_lifecycle_status,
+                commands::app_lifecycle_update,
+                commands::app_background_expired,
+                commands::app_disconnect_all_sessions,
                 commands::snippet_list,
                 commands::snippet_create,
                 commands::snippet_update,
@@ -44,14 +49,19 @@ pub(crate) fn run() {
                 commands::session_create,
                 commands::session_list,
                 commands::session_attach,
+                commands::session_reconnect,
                 commands::session_confirm_host_key,
+                commands::host_key_decide,
                 commands::session_input,
                 commands::session_resize,
                 commands::session_ping,
+                commands::session_auth_respond,
                 commands::session_complete,
                 commands::session_close,
                 commands::sftp_create_session,
                 commands::sftp_get_session,
+                commands::sftp_reconnect_session,
+                commands::sftp_host_key_decide,
                 commands::sftp_list_sessions,
                 commands::sftp_close_session,
                 commands::sftp_list,
@@ -139,6 +149,7 @@ pub(crate) fn run() {
                     ssh::SshService::new(profiles.clone(), audit.clone(), events.clone());
                 let sftp = sftp::SftpService::new(profiles.clone(), audit.clone(), events);
                 app.manage(crate::snippet::SnippetService::new(database.clone()));
+                app.manage(super::LifecycleCoordinator::new());
                 app.manage(groups);
                 app.manage(vault);
                 app.manage(profiles);
@@ -180,6 +191,10 @@ fn desktop_run() {
         .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             commands::platform_capabilities,
+            commands::app_lifecycle_status,
+            commands::app_lifecycle_update,
+            commands::app_background_expired,
+            commands::app_disconnect_all_sessions,
             commands::frontend_ready,
             commands::get_platform,
             commands::read_app_log,
@@ -221,14 +236,19 @@ fn desktop_run() {
             commands::session_create,
             commands::session_list,
             commands::session_attach,
+            commands::session_reconnect,
             commands::session_confirm_host_key,
+            commands::host_key_decide,
             commands::session_input,
             commands::session_resize,
             commands::session_ping,
+            commands::session_auth_respond,
             commands::session_complete,
             commands::session_close,
             commands::sftp_create_session,
             commands::sftp_get_session,
+            commands::sftp_reconnect_session,
+            commands::sftp_host_key_decide,
             commands::sftp_list_sessions,
             commands::sftp_close_session,
             commands::sftp_list,
@@ -312,6 +332,7 @@ fn desktop_run() {
             let sessions = ssh::SshService::new(profiles.clone(), audit.clone(), events.clone());
             let sftp = sftp::SftpService::new(profiles.clone(), audit.clone(), events);
             app.manage(crate::snippet::SnippetService::new(database.clone()));
+            app.manage(super::LifecycleCoordinator::new());
             app.manage(groups);
             app.manage(vault);
             app.manage(profiles);

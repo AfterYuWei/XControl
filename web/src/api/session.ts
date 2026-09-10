@@ -10,8 +10,20 @@ export const sessionApi = {
 
   attach: (id: string) => invokeCommand<SessionMessage[]>('session_attach', { id }),
 
+  reconnect: (id: string) => invokeCommand<SessionCreateResponse>('session_reconnect', { id }),
+
   confirmHostKey: (id: string, fingerprint?: string) =>
     invokeCommand<{ status: string }>('session_confirm_host_key', { id, fingerprint }),
+
+  decideHostKey: (
+    requestId: string,
+    fingerprint: string,
+    decision: 'trust_once' | 'trust_permanently' | 'reject',
+  ) => invokeCommand<{ status: string; persisted?: boolean }>('host_key_decide', {
+    requestId,
+    fingerprint,
+    decision,
+  }),
 
   input: (id: string, data: string) => invokeCommand<void>('session_input', { id, data }),
 
@@ -19,6 +31,9 @@ export const sessionApi = {
     invokeCommand<void>('session_resize', { id, cols, rows }),
 
   ping: (id: string) => invokeCommand<void>('session_ping', { id }),
+
+  respondAuth: (requestId: string, responses: string[]) =>
+    invokeCommand<void>('session_auth_respond', { requestId, responses }),
 
   complete: (id: string, requestId: string, script: string, cwd?: string) =>
     invokeCommand<void>('session_complete', { id, requestId, script, cwd }),

@@ -1567,6 +1567,50 @@ dependencies = [
 ]
 
 [[package]]
+name = "eizhu"
+version = "0.4.1"
+dependencies = [
+ "aes-gcm 0.10.3",
+ "argon2 0.5.3",
+ "base64 0.22.1",
+ "chrono",
+ "dirs 5.0.1",
+ "flate2",
+ "getrandom 0.3.4",
+ "hex",
+ "hmac 0.12.1",
+ "percent-encoding",
+ "rand_core 0.6.4",
+ "reqwest",
+ "rusqlite",
+ "russh",
+ "russh-sftp",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "ssh-key 0.6.7",
+ "tar",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-deep-link",
+ "tauri-plugin-dialog",
+ "tauri-plugin-drag",
+ "tauri-plugin-opener",
+ "tauri-plugin-process",
+ "tauri-plugin-session-keepalive",
+ "tauri-plugin-single-instance",
+ "tauri-plugin-updater",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+ "url",
+ "uuid",
+ "zeroize",
+ "zip",
+]
+
+[[package]]
 name = "elliptic-curve"
 version = "0.13.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5948,6 +5992,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tauri-plugin-session-keepalive"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "tauri-plugin-single-instance"
 version = "2.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7700,49 +7754,6 @@ checksum = "32e45ad4206f6d2479085147f02bc2ef834ac85886624a23575ae137c8aa8156"
 dependencies = [
  "libc",
  "rustix",
-]
-
-[[package]]
-name = "eizhu"
-version = "0.4.1"
-dependencies = [
- "aes-gcm 0.10.3",
- "argon2 0.5.3",
- "base64 0.22.1",
- "chrono",
- "dirs 5.0.1",
- "flate2",
- "getrandom 0.3.4",
- "hex",
- "hmac 0.12.1",
- "percent-encoding",
- "rand_core 0.6.4",
- "reqwest",
- "rusqlite",
- "russh",
- "russh-sftp",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "ssh-key 0.6.7",
- "tar",
- "tauri",
- "tauri-build",
- "tauri-plugin-deep-link",
- "tauri-plugin-dialog",
- "tauri-plugin-drag",
- "tauri-plugin-opener",
- "tauri-plugin-process",
- "tauri-plugin-single-instance",
- "tauri-plugin-updater",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "tokio-util",
- "url",
- "uuid",
- "zeroize",
- "zip",
 ]
 
 [[package]]

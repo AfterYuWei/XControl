@@ -62,12 +62,32 @@ pub(crate) async fn session_attach(
 }
 
 #[tauri::command]
+pub(crate) async fn session_reconnect(
+    service: State<'_, SshService>,
+    id: String,
+) -> Result<SessionCreateResponse, CommandError> {
+    service.reconnect(&id).await
+}
+
+#[tauri::command]
 pub(crate) async fn session_confirm_host_key(
     service: State<'_, SshService>,
     id: String,
     fingerprint: Option<String>,
 ) -> Result<Value, CommandError> {
     service.confirm_host_key(&id, fingerprint).await
+}
+
+#[tauri::command]
+pub(crate) async fn host_key_decide(
+    service: State<'_, SshService>,
+    request_id: String,
+    fingerprint: String,
+    decision: String,
+) -> Result<Value, CommandError> {
+    service
+        .decide_host_key(&request_id, fingerprint, &decision)
+        .await
 }
 
 #[tauri::command]
@@ -95,6 +115,15 @@ pub(crate) async fn session_ping(
     id: String,
 ) -> Result<(), CommandError> {
     service.ping(&id).await
+}
+
+#[tauri::command]
+pub(crate) async fn session_auth_respond(
+    service: State<'_, SshService>,
+    request_id: String,
+    responses: Vec<String>,
+) -> Result<(), CommandError> {
+    service.respond_auth(&request_id, responses).await
 }
 
 #[tauri::command]

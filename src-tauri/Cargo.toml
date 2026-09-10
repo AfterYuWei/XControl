@@ -1,6 +1,6 @@
 [package]
 name = "eizhu"
-version = "0.4.0"
+version = "0.4.1"
 description = "eizhu 桌面 SSH 终端与 SFTP 管理器（Tauri 2 + Rust）"
 authors = ["yuweinfo"]
 license = "MIT"

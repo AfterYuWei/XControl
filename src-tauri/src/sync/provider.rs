@@ -18,7 +18,7 @@ use super::{
 const GDRIVE_API: &str = "https://www.googleapis.com/drive/v3";
 const GDRIVE_UPLOAD: &str = "https://www.googleapis.com/upload/drive/v3";
 const GRAPH_API: &str = "https://graph.microsoft.com/v1.0";
-const BACKUP_FOLDER: &str = "xcontrol-backups";
+const BACKUP_FOLDER: &str = "eizhu-backups";
 const ONEDRIVE_SIMPLE_UPLOAD_MAX: usize = 4 << 20;
 const AWS_ENCODE_SET: &AsciiSet = &CONTROLS
     .add(b' ')
@@ -89,18 +89,18 @@ impl CloudProvider {
     pub async fn ping(&mut self) -> Result<(), CommandError> {
         match self.config.provider_type.as_str() {
             "webdav" => {
-                self.webdav_request(Method::PUT, ".xcontrol-probe", b"ok".to_vec())
+                self.webdav_request(Method::PUT, ".eizhu-probe", b"ok".to_vec())
                     .await?;
                 let _ = self
-                    .webdav_request(Method::DELETE, ".xcontrol-probe", vec![])
+                    .webdav_request(Method::DELETE, ".eizhu-probe", vec![])
                     .await;
                 Ok(())
             }
             "s3" => {
-                self.s3_request(Method::PUT, ".xcontrol-probe", b"ok".to_vec())
+                self.s3_request(Method::PUT, ".eizhu-probe", b"ok".to_vec())
                     .await?;
                 let _ = self
-                    .s3_request(Method::DELETE, ".xcontrol-probe", vec![])
+                    .s3_request(Method::DELETE, ".eizhu-probe", vec![])
                     .await;
                 Ok(())
             }
@@ -491,7 +491,7 @@ impl CloudProvider {
                 "application/octet-stream".to_owned(),
             ),
             Err(error) if error.code == "OBJECT_NOT_FOUND" => {
-                let boundary = format!("xcontrol-{}", uuid::Uuid::new_v4());
+                let boundary = format!("eizhu-{}", uuid::Uuid::new_v4());
                 let metadata = serde_json::to_string(&serde_json::json!({
                     "name": name,
                     "parents": [folder]
@@ -590,7 +590,7 @@ pub fn object_name(version: i64, hash: &str) -> Result<String, CommandError> {
     let prefix = hash
         .get(..12)
         .ok_or_else(|| CommandError::new("SYNC_FAILED", "版本 hash 长度无效"))?;
-    Ok(format!("v{version:06}-{prefix}.xcbackup"))
+    Ok(format!("v{version:06}-{prefix}.eizhubackup"))
 }
 
 fn normalize_prefix(prefix: &str) -> String {
@@ -667,10 +667,10 @@ mod tests {
     fn object_names_and_prefixes_match_go() {
         assert_eq!(
             object_name(12, "0123456789abcdef").unwrap(),
-            "v000012-0123456789ab.xcbackup"
+            "v000012-0123456789ab.eizhubackup"
         );
-        assert_eq!(normalize_prefix("xcontrol"), "xcontrol/");
-        assert_eq!(normalize_prefix("xcontrol/"), "xcontrol/");
+        assert_eq!(normalize_prefix("eizhu"), "eizhu/");
+        assert_eq!(normalize_prefix("eizhu/"), "eizhu/");
     }
 
     #[test]

@@ -45,7 +45,7 @@ fn prompt_and_persist(
 
 fn unique_temp_path() -> PathBuf {
     let unique = format!(
-        "xcontrol-save-{}-{}",
+        "eizhu-save-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

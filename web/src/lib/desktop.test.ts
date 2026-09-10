@@ -29,7 +29,7 @@ describe('desktop bridge', () => {
     setTauri(true)
     mockedInvoke.mockImplementation(async (command: string) => {
       if (command === 'migrate_electron_settings') {
-        return { 'xcontrol-settings': '{"state":{"theme":"light"}}' }
+        return { 'eizhu-settings': '{"state":{"theme":"light"}}' }
       }
       if (command === 'mark_electron_settings_migrated') return undefined
       throw new Error(`unexpected command: ${command}`)
@@ -37,13 +37,13 @@ describe('desktop bridge', () => {
     const desktop = await import('./desktop')
     await desktop.initDesktop()
 
-    expect(localStorage.getItem('xcontrol-settings')).toContain('light')
+    expect(localStorage.getItem('eizhu-settings')).toContain('light')
     expect(mockedInvoke).toHaveBeenCalledTimes(2)
   })
 
   it('设置写入失败时不确认迁移', async () => {
     setTauri(true)
-    mockedInvoke.mockResolvedValue({ 'xcontrol-settings': '{"state":{}}' })
+    mockedInvoke.mockResolvedValue({ 'eizhu-settings': '{"state":{}}' })
     const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new DOMException('quota exceeded', 'QuotaExceededError')
     })

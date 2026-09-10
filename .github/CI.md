@@ -1,6 +1,6 @@
 # GitHub Actions 发版流程
 
-XControl 采用 `dev` / `main` 双分支晋级模型：`dev` 是测试通道，`main` 是正式通道。
+eizhu 采用 `dev` / `main` 双分支晋级模型：`dev` 是测试通道，`main` 是正式通道。
 发版只由分支推送触发，不再通过人工创建 tag 触发。
 
 > GitHub Release 底层必须关联 tag。工作流会在发布时自动创建 tag，
@@ -13,8 +13,10 @@ XControl 采用 `dev` / `main` 双分支晋级模型：`dev` 是测试通道，`
 | `dev` | 测试版 | `<VERSION>-test.<run>.<attempt>` | Prerelease |
 | `main` | 正式版 | `<VERSION>` | 正式 Release |
 
-`VERSION` 是唯一的发版版本源，格式必须为 `x.y.z`。构建时会将计算后的版本
-注入 `tauri.conf.json`。正式版已存在时，`main` 发布会拒绝复用该版本号。
+`VERSION` 是唯一的发版版本源，格式必须为 `x.y.z`。两个私有 npm 包与
+`tauri.conf.json` 不再保存重复版本；本地与 CI 构建都会在运行时把该版本注入 Tauri。
+Cargo manifest 受格式约束必须声明版本，`build.rs` 会读取 `VERSION` 并强制校验两者一致。
+正式版已存在时，`main` 发布会拒绝复用该版本号。
 
 ## 推荐发版流程
 

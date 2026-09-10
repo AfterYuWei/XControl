@@ -69,7 +69,7 @@ export function AboutPanel() {
     <div className="settings-section">
       <div className="settings-section-title">
         <Info size={14} />
-        <span>关于 XControl</span>
+        <span>关于 eizhu</span>
       </div>
 
       <div className="settings-field">

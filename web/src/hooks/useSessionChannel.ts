@@ -54,7 +54,7 @@ export function useSessionChannel(options: UseSessionChannelOptions) {
         // metadata can never overtake terminal output such as the login banner.
         let attaching = true
         const pendingEvents: SessionEvent[] = []
-        unlisten = await listen<SessionEvent>('xcontrol-session-message', (event) => {
+        unlisten = await listen<SessionEvent>('eizhu-session-message', (event) => {
           if (event.payload.session_id !== sessionId) return
           if (attaching) {
             pendingEvents.push(event.payload)

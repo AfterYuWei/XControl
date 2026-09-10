@@ -14,12 +14,14 @@ use super::{
     model::{strip_credentials, BackupFile, BackupPayload},
 };
 
-pub(super) const FORMAT: &str = "xcontrol-backup";
+pub(super) const FORMAT: &str = "eizhu-backup";
+pub(super) const LEGACY_FORMAT: &str = "xcontrol-backup";
 pub(super) const VERSION: i64 = 1;
 pub(super) const MODE_NONE: &str = "none";
 pub(super) const MODE_ENCRYPTED: &str = "encrypted";
 pub(super) const MODE_PLAIN: &str = "plain";
-const AAD: &[u8] = b"xcontrol-backup:1";
+const AAD: &[u8] = b"eizhu-backup:1";
+const LEGACY_AAD: &[u8] = b"xcontrol-backup:1";
 const NONCE_LEN: usize = 12;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -93,8 +95,8 @@ pub(super) struct ParsedBackup {
 pub(super) fn decode_backup_file(raw: &[u8], password: &str) -> Result<ParsedBackup, CommandError> {
     let mut file: BackupFile = serde_json::from_slice(raw)
         .map_err(|error| invalid_backup(format!("备份文件格式无效: {error}")))?;
-    if file.format != FORMAT {
-        return Err(invalid_backup("不是有效的 XControl 备份文件"));
+    if file.format != FORMAT && file.format != LEGACY_FORMAT {
+        return Err(invalid_backup("不是有效的 eizhu 备份文件"));
     }
     if file.version > VERSION {
         return Err(invalid_backup(format!(
@@ -118,7 +120,7 @@ pub(super) fn decode_backup_file(raw: &[u8], password: &str) -> Result<ParsedBac
             let key = kdf
                 .derive(password)
                 .map_err(|error| invalid_backup(format!("kdf 参数无效: {error}")))?;
-            let plaintext = decrypt_backup(&key, &file.payload)
+            let plaintext = decrypt_backup_for_format(&key, &file.payload, &file.format)
                 .map_err(|_| CommandError::new("INVALID_PASSWORD", "密码错误或备份文件已损坏"))?;
             serde_json::from_slice(&plaintext)
                 .map_err(|error| invalid_backup(format!("备份内容损坏: {error}")))?
@@ -178,7 +180,24 @@ pub(super) fn encrypt_backup_with_nonce(
     Ok(STANDARD.encode(output))
 }
 
-pub(super) fn decrypt_backup(key: &[u8; 32], encoded: &str) -> Result<Vec<u8>, BackupError> {
+pub(super) fn decrypt_backup_for_format(
+    key: &[u8; 32],
+    encoded: &str,
+    format: &str,
+) -> Result<Vec<u8>, BackupError> {
+    let aad = if format == LEGACY_FORMAT {
+        LEGACY_AAD
+    } else {
+        AAD
+    };
+    decrypt_backup_with_aad(key, encoded, aad)
+}
+
+fn decrypt_backup_with_aad(
+    key: &[u8; 32],
+    encoded: &str,
+    aad: &[u8],
+) -> Result<Vec<u8>, BackupError> {
     let raw = STANDARD
         .decode(encoded)
         .map_err(|error| BackupError::InvalidCiphertext(error.to_string()))?;
@@ -190,12 +209,6 @@ pub(super) fn decrypt_backup(key: &[u8; 32], encoded: &str) -> Result<Vec<u8>, B
     let (nonce, body) = raw.split_at(NONCE_LEN);
     let cipher = Aes256Gcm::new(aes_gcm::Key::<Aes256Gcm>::from_slice(key));
     cipher
-        .decrypt(
-            Nonce::from_slice(nonce),
-            Payload {
-                msg: body,
-                aad: AAD,
-            },
-        )
+        .decrypt(Nonce::from_slice(nonce), Payload { msg: body, aad })
         .map_err(|_| BackupError::Decrypt)
 }

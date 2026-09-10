@@ -86,7 +86,7 @@ mod tests {
 
     fn service() -> (tempfile::TempDir, SnippetService) {
         let directory = tempfile::tempdir().unwrap();
-        let database = Database::initialize(directory.path().join("xcontrol.db")).unwrap();
+        let database = Database::initialize(directory.path().join("eizhu.db")).unwrap();
         let service = SnippetService::new(database);
         (directory, service)
     }

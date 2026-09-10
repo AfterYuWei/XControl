@@ -2,7 +2,7 @@
 
 ## Project
 
-XControl is a Tauri 2 desktop SSH terminal and SFTP client. React/TypeScript renders the UI;
+eizhu is a Tauri 2 desktop SSH terminal and SFTP client. React/TypeScript renders the UI;
 all persistence, encryption, SSH/SFTP, backup and sync logic runs in the Rust process. User-facing
 UI and documentation are written in Chinese.
 
@@ -44,8 +44,8 @@ binary Tauri IPC. There is no local HTTP or WebSocket gateway.
 
 ## Data and compatibility
 
-Data stays in the legacy `XControl` user-data directory. The SQLite schema, key file, encrypted
-credential representation and backup format must remain backward compatible. Sensitive resolved
+Data stays in the `eizhu` user-data directory. The SQLite schema, key file and encrypted
+credential representation remain stable. XControl backup imports stay backward compatible. Sensitive resolved
 credentials are zeroized on drop. Host keys use SHA-256 fingerprints and changed keys require
 explicit confirmation.
 

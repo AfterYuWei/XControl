@@ -23,8 +23,8 @@ use super::{
 };
 use crate::error::CommandError;
 
-const DOWNLOAD_TEMP_PREFIX: &str = "xcontrol-dl-";
-const DOWNLOAD_STAGE_PREFIX: &str = "xcontrol-dl-stage-";
+const DOWNLOAD_TEMP_PREFIX: &str = "eizhu-dl-";
+const DOWNLOAD_STAGE_PREFIX: &str = "eizhu-dl-stage-";
 const MAX_IPC_CHUNK_SIZE: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize)]
@@ -1476,11 +1476,11 @@ pub(crate) async fn sftp_transfer(
                         .await
                     } else if info.is_dir {
                         let staging = std::env::temp_dir().join(format!(
-                            "xcontrol-tx-stage-{worker_task_id}-{}",
+                            "eizhu-tx-stage-{worker_task_id}-{}",
                             uuid::Uuid::new_v4()
                         ));
                         let archive_path = std::env::temp_dir().join(format!(
-                            "xcontrol-tx-archive-{worker_task_id}-{}.tar.gz",
+                            "eizhu-tx-archive-{worker_task_id}-{}.tar.gz",
                             uuid::Uuid::new_v4()
                         ));
                         let local = FileBackend::Local;

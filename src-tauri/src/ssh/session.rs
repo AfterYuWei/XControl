@@ -25,7 +25,7 @@ use crate::{
 const COMPLETE_TIMEOUT: Duration = Duration::from_millis(400);
 const SHELL_DETECT_TIMEOUT: Duration = Duration::from_secs(10);
 const PRE_ATTACH_OUTPUT_LIMIT: usize = 1024 * 1024;
-const OSC7_BOOTSTRAP_ACK: &[u8] = b"\x1b]1337;XControlOsc7Ready\x07";
+const OSC7_BOOTSTRAP_ACK: &[u8] = b"\x1b]1337;eizhuOsc7Ready\x07";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RemoteShell {
@@ -495,10 +495,6 @@ impl SshService {
         cols: u32,
         rows: u32,
     ) -> Result<(), SshError> {
-        session.stage("starting_shell", "info", "正在识别远程 Shell");
-        let osc7_setup = detect_remote_shell(&route.handle)
-            .await
-            .map(osc7_setup_command);
         let mut channel = route
             .handle
             .channel_open_session()
@@ -521,6 +517,17 @@ impl SshService {
             .request_shell(true)
             .await
             .map_err(|error| format!("启动远程 Shell: {error}"))?;
+
+        // The interactive channel must be the first session opened after
+        // authentication. Some OpenSSH/PAM configurations deliver the login
+        // MOTD only to that first channel. Detecting the shell beforehand via
+        // exec consumed banners such as "Welcome to Ubuntu" and then discarded
+        // them. Once request_shell succeeds, its output is buffered by russh
+        // while the auxiliary detection channel runs.
+        session.stage("starting_shell", "info", "正在识别远程 Shell");
+        let osc7_setup = detect_remote_shell(&route.handle)
+            .await
+            .map(osc7_setup_command);
 
         let (commands_tx, mut commands_rx) = mpsc::channel(128);
         *session.commands.lock().await = Some(commands_tx);
@@ -810,16 +817,16 @@ fn classify_remote_shell(output: &str) -> Option<RemoteShell> {
 fn osc7_setup_command(shell: RemoteShell) -> String {
     let hook = match shell {
         RemoteShell::Bash => {
-            r#" __xcontrol_osc7(){ printf "\033]7;file://%s\007" "$(pwd -P 2>/dev/null)";};case "${PROMPT_COMMAND-}" in *__xcontrol_osc7*) ;; *) PROMPT_COMMAND="__xcontrol_osc7${PROMPT_COMMAND:+;$PROMPT_COMMAND}";;esac;__xcontrol_osc7"#
+            r#" __eizhu_osc7(){ printf "\033]7;file://%s\007" "$(pwd -P 2>/dev/null)";};case "${PROMPT_COMMAND-}" in *__eizhu_osc7*) ;; *) PROMPT_COMMAND="__eizhu_osc7${PROMPT_COMMAND:+;$PROMPT_COMMAND}";;esac;__eizhu_osc7"#
         }
         RemoteShell::Zsh => {
-            r#" __xcontrol_osc7(){ printf "\033]7;file://%s\007" "$(pwd -P 2>/dev/null)";};autoload -Uz add-zsh-hook;add-zsh-hook -d precmd __xcontrol_osc7 2>/dev/null;add-zsh-hook precmd __xcontrol_osc7;__xcontrol_osc7"#
+            r#" __eizhu_osc7(){ printf "\033]7;file://%s\007" "$(pwd -P 2>/dev/null)";};autoload -Uz add-zsh-hook;add-zsh-hook -d precmd __eizhu_osc7 2>/dev/null;add-zsh-hook precmd __eizhu_osc7;__eizhu_osc7"#
         }
         RemoteShell::Fish => {
-            r#" function __xcontrol_osc7 --on-variable PWD --on-event fish_prompt;printf '\033]7;file://%s\007' (pwd -P 2>/dev/null);end;__xcontrol_osc7"#
+            r#" function __eizhu_osc7 --on-variable PWD --on-event fish_prompt;printf '\033]7;file://%s\007' (pwd -P 2>/dev/null);end;__eizhu_osc7"#
         }
     };
-    format!(r#"{hook};printf "\033]1337;XControlOsc7Ready\007""#)
+    format!(r#"{hook};printf "\033]1337;eizhuOsc7Ready\007""#)
 }
 
 async fn run_completion(
@@ -1093,7 +1100,7 @@ mod tests {
             let command = osc7_setup_command(shell);
             assert!(command.contains("printf \"\\033]7;") || command.contains("printf '\\033]7;"));
             assert!(!command.contains("printf \\\\\\\""));
-            assert!(command.contains("XControlOsc7Ready"));
+            assert!(command.contains("eizhuOsc7Ready"));
         }
     }
 

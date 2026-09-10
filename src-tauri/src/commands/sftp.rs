@@ -130,7 +130,7 @@ pub(crate) async fn sftp_upload_chunk(
 ) -> Result<sftp::SftpUploadChunkResponse, CommandError> {
     let upload_id = request
         .headers()
-        .get("x-xcontrol-upload-id")
+        .get("x-eizhu-upload-id")
         .and_then(|value| value.to_str().ok())
         .ok_or_else(|| CommandError::new("VALIDATION", "upload id is required"))?;
     let InvokeBody::Raw(bytes) = request.body() else {

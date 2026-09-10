@@ -1,4 +1,4 @@
-# XControl Rust / Tauri 后端架构
+# eizhu Rust / Tauri 后端架构
 
 > 状态：架构重构与主机验收完成，等待各原生平台 CI/真机持续验证
 >
@@ -9,8 +9,8 @@
 > 更新日期：2026-09-09
 
 本文是 `src-tauri` 的架构约束、实现说明与审计记录。它描述当前真实代码，不是要求所有
-Feature 套用同一模板的目录蓝图。数据库 schema、IPC command 名称、credential 密文、
-`.xcbackup` 和 Sync 云端格式均保持兼容。
+Feature 套用同一模板的目录蓝图。数据库 schema、IPC command 名称与 credential 密文保持稳定；
+新备份使用 `.eizhubackup`，同时兼容导入 XControl `.xcbackup` 文件。
 
 ## Architecture Overview
 
@@ -181,8 +181,8 @@ src/
 | `vault/error.rs` | credential 编码错误 | feature 私有 |
 | `vault/repository.rs` | Vault SQL 与 Profile 引用 SQL | repository 私有实现 |
 | `vault/service.rs` | Vault use case、审计、key generation | 唯一 credential 加解密入口 |
-| `backup/model.rs` | `.xcbackup` wire model 与 aggregate DTO | secret-bearing payload 无 `Debug` |
-| `backup/format.rs` | 格式校验、Argon2id、AES-GCM | 保持 v1/AAD/nonce 格式 |
+| `backup/model.rs` | `.eizhubackup` wire model 与 aggregate DTO | secret-bearing payload 无 `Debug` |
+| `backup/format.rs` | 格式校验、Argon2id、AES-GCM | 兼容 XControl v1/AAD/nonce 格式 |
 | `backup/error.rs` | Backup typed errors | feature 私有 |
 | `backup/repository.rs` | 跨域导出与单事务导入 | 明确 aggregate repository |
 | `backup/service.rs` | export/preview/import/sync version orchestration | 不依赖 Tauri dialog |
@@ -210,7 +210,7 @@ src/
 | `infrastructure/database/error.rs` | `StorageError` | 保留 rusqlite/io source |
 | `infrastructure/platform/mod.rs` | 平台模块路由 | 共用 sandbox filesystem；desktop 子模块由 cfg 隔离 |
 | `infrastructure/platform/local_files.rs` | process-visible local path、Windows drive、mode 和 home adapter | mobile document URI 的扩展边界 |
-| `infrastructure/platform/desktop/paths.rs` | legacy `XControl` 数据目录和 build channel | desktop only |
+| `infrastructure/platform/desktop/paths.rs` | legacy `eizhu` 数据目录和 build channel | desktop only |
 | `infrastructure/platform/desktop/dialogs.rs` | 系统保存对话框与落盘 | desktop only |
 | `infrastructure/platform/desktop/logs.rs` | 测试渠道日志读取/写入/截断 | desktop only |
 | `infrastructure/platform/desktop/drag_out.rs` | drag 临时物化与回收 | desktop only |
@@ -330,7 +330,7 @@ Desktop `ExitRequested` 的清理顺序为：SSH sessions -> SFTP sessions/trans
 
 - single-instance、dialog、opener、drag、updater、process plugins；
 - window controls、ready-to-show、日志查看器、Electron settings migration、drag-out；
-- 系统任意路径对话框和 legacy `XControl` 用户目录选择。
+- 系统任意路径对话框和 legacy `eizhu` 用户目录选择。
 
 以上插件放在 Cargo desktop target dependency table，代码用 `#[cfg(desktop)]`，默认 capability
 显式限制为 Linux/macOS/Windows。

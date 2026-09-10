@@ -11,7 +11,7 @@ use crate::{
 #[cfg(desktop)]
 fn backup_name() -> String {
     format!(
-        "xcontrol-backup-{}.xcbackup",
+        "eizhu-backup-{}.eizhubackup",
         chrono::Local::now().format("%Y%m%d-%H%M%S")
     )
 }
@@ -31,7 +31,7 @@ pub(crate) async fn backup_pick_file(
     tauri::async_runtime::spawn_blocking(move || {
         app.dialog()
             .file()
-            .add_filter("XControl 备份文件", &["xcbackup", "json"])
+            .add_filter("eizhu 备份文件", &["eizhubackup", "xcbackup", "json"])
             .add_filter("所有文件", &["*"])
             .blocking_pick_file()
             .map(dialog_path)
@@ -58,7 +58,7 @@ pub(crate) async fn backup_export(
             .dialog()
             .file()
             .set_file_name(backup_name())
-            .add_filter("XControl 备份文件", &["xcbackup"])
+            .add_filter("eizhu 备份文件", &["eizhubackup"])
             .blocking_save_file()
         else {
             return Ok(None);

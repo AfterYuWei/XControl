@@ -467,9 +467,9 @@ Cards are rectangles at 12–16px radius; marketing buttons and category tabs ar
 - Don't add a second decorative system — the mesh gradient is the only flourish; everything else is ink on white.
 - Don't loosen the display tracking — large Geist headings carry tight negative letter-spacing by design.
 
-## XControl 应用边界系统（A+C）
+## eizhu 应用边界系统（A+C）
 
-XControl 的桌面端采用“无框色阶 + 单一活跃光缝”的边界模型。边界首先由相邻表面的明度差表达，只有需要明确层级或交互归属时才使用描边和阴影。强调色不参与大面积结构，只标记当前活跃终端。
+eizhu 的桌面端采用“无框色阶 + 单一活跃光缝”的边界模型。边界首先由相邻表面的明度差表达，只有需要明确层级或交互归属时才使用描边和阴影。强调色不参与大面积结构，只标记当前活跃终端。
 
 ### 表面层级
 

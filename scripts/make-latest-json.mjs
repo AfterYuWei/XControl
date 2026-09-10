@@ -12,7 +12,7 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-const REPO = 'AfterYuWei/XControl'
+const REPO = 'AfterYuWei/eizhu'
 
 const [, , version, tag, dir, channel] = process.argv
 if (!version || !tag || !dir || !['stable', 'test'].includes(channel)) {
@@ -49,7 +49,7 @@ if (Object.keys(platforms).length === 0) {
 
 const manifest = {
   version,
-  notes: `XControl ${version} ${channel === 'stable' ? '正式版' : '测试版'}。完整更新说明见 Release 页面。`,
+  notes: `eizhu ${version} ${channel === 'stable' ? '正式版' : '测试版'}。完整更新说明见 Release 页面。`,
   pub_date: new Date().toISOString(),
   platforms,
 }

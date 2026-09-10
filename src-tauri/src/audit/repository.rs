@@ -101,7 +101,7 @@ mod tests {
 
     fn repository() -> (tempfile::TempDir, AuditRepository) {
         let directory = tempfile::tempdir().unwrap();
-        let database = Database::initialize(directory.path().join("xcontrol.db")).unwrap();
+        let database = Database::initialize(directory.path().join("eizhu.db")).unwrap();
         let repository = AuditRepository::new(database);
         (directory, repository)
     }

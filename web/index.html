@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Terminal</title>
+    <title>eizhu</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -15,7 +15,7 @@
       // Apply persisted theme before paint to avoid a flash of the wrong theme.
       (function () {
         try {
-          var raw = localStorage.getItem('xcontrol-settings')
+          var raw = localStorage.getItem('eizhu-settings')
           var theme = raw ? (JSON.parse(raw).state || {}).theme : 'dark'
           if (!theme) theme = 'dark'
           var resolved = theme

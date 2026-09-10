@@ -8,7 +8,7 @@ let flushTimer: number | null = null
 
 function loggingEnabled(): boolean {
   const tauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
-  const testBuild = import.meta.env.VITE_XCONTROL_CHANNEL === 'test' || import.meta.env.DEV
+  const testBuild = import.meta.env.VITE_EIZHU_CHANNEL === 'test' || import.meta.env.DEV
   return tauri && testBuild
 }
 

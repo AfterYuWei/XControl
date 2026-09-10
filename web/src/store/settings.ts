@@ -4,7 +4,7 @@ import { createJSONStorage, persist } from 'zustand/middleware'
 type Theme = 'light' | 'dark' | 'system'
 export type UpdateChannel = 'stable' | 'test'
 
-const configuredBuildChannel = import.meta.env.VITE_XCONTROL_CHANNEL
+const configuredBuildChannel = import.meta.env.VITE_EIZHU_CHANNEL
 const DEFAULT_UPDATE_CHANNEL: UpdateChannel = configuredBuildChannel === 'test' ? 'test' : 'stable'
 
 interface SettingsStore {
@@ -142,7 +142,7 @@ export const useSettingsStore = create<SettingsStore>()(
       setUpdateChannel: (updateChannel) => set({ updateChannel }),
     }),
     {
-      name: 'xcontrol-settings',
+      name: 'eizhu-settings',
       storage: createJSONStorage(() => localStorage),
     }
   )

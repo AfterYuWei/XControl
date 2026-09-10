@@ -59,7 +59,7 @@ describe('sftpApi', () => {
     const chunks = invokeMock.mock.calls.filter(([command]) => command === 'sftp_upload_chunk')
     expect(chunks).toHaveLength(3)
     expect(chunks.every(([, chunk]) => (chunk as Uint8Array).byteLength <= 512 * 1024)).toBe(true)
-    expect(chunks[0][2].headers['x-xcontrol-upload-id']).toBe('ul-1')
+    expect(chunks[0][2].headers['x-eizhu-upload-id']).toBe('ul-1')
   })
 
   it('下载按 offset 拉取有界块并在 EOF 清理任务', async () => {

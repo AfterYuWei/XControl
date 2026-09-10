@@ -161,13 +161,13 @@ export function Layout() {
   }, [])
 
   return (
-    <div className="xcontrol-app" role="application" aria-label="Terminal">
+    <div className="eizhu-app" role="application" aria-label="eizhu">
       {/* Header — 自定义标题栏：主题色底、可拖拽窗口、搜索框居中、右侧窗口控制按钮。
           桌面环境(decorations:false)下作为窗口标题栏；浏览器下仅作普通顶栏。
           Tauri 拖拽：header 与各容器加 data-tauri-drag-region（仅对该元素自身的
           mousedown 生效），按钮/输入框等子元素不受影响。 */}
       <header
-        className={`xcontrol-header titlebar ${desktop ? 'is-desktop' : ''} ${mac ? 'is-mac' : ''}`}
+        className={`eizhu-header titlebar ${desktop ? 'is-desktop' : ''} ${mac ? 'is-mac' : ''}`}
         data-tauri-drag-region={desktop || undefined}
       >
         {/* 左：折叠侧边栏 + SFTP。
@@ -383,11 +383,11 @@ export function Layout() {
       </header>
 
       {/* Body — sidebar + content */}
-      <div className="xcontrol-body">
+      <div className="eizhu-body">
         {/* Sidebar */}
         <aside
           ref={sidebarRef}
-          className={`xcontrol-sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}
+          className={`eizhu-sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}
           role="navigation"
           aria-label="Server list"
         >

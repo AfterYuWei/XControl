@@ -1,4 +1,4 @@
-//! XControl 备份领域：兼容 Go `.xcbackup` 格式的导出、预览和事务导入。
+//! eizhu 备份领域：导出 `.eizhubackup`，并兼容导入旧 `.xcbackup` 格式。
 //!
 //! 数据库、Argon2id 和 AES-GCM 均在 Rust 阻塞线程执行；桌面端只通过文件路径
 //! 交换大文件，不把备份正文送入 WebView IPC。
@@ -21,8 +21,8 @@ use crate::{
 
 use super::{
     format::{
-        decode_backup_file, decrypt_backup, encrypt_backup, invalid_backup, KdfParams,
-        ParsedBackup, FORMAT, MODE_ENCRYPTED, MODE_NONE, MODE_PLAIN, VERSION,
+        decode_backup_file, decrypt_backup_for_format, encrypt_backup, invalid_backup, KdfParams,
+        ParsedBackup, FORMAT, LEGACY_FORMAT, MODE_ENCRYPTED, MODE_NONE, MODE_PLAIN, VERSION,
     },
     model::{
         strip_credentials, BackupFile, BackupGroup, BackupImportResult, BackupPayload,
@@ -119,7 +119,7 @@ impl BackupService {
         self.repository.export_payload()
     }
 
-    /// Sync 版本沿用同一 `.xcbackup` 加密格式，但使用紧凑 JSON，并以加密前业务
+    /// Sync 版本沿用同一 `.eizhubackup` 加密格式，但使用紧凑 JSON，并以加密前业务
     /// payload 的 SHA-256 做跨设备去重（随机 salt/nonce 不影响 hash）。
     pub(crate) fn build_sync_version(
         &self,
@@ -166,18 +166,23 @@ impl BackupService {
         if file.credential_mode != MODE_ENCRYPTED || file.kdf.is_none() {
             return Err(CommandError::new("SYNC_FAILED", "版本文件不是加密备份"));
         }
+        if file.format != FORMAT && file.format != LEGACY_FORMAT {
+            return Err(CommandError::new("SYNC_FAILED", "版本文件格式无效"));
+        }
         let key = file
             .kdf
             .take()
             .expect("checked kdf")
             .derive(password)
             .map_err(|error| CommandError::new("SYNC_FAILED", error.to_string()))?;
-        let plaintext = Zeroizing::new(decrypt_backup(&key, &file.payload).map_err(|error| {
-            CommandError::new(
-                "SYNC_FAILED",
-                format!("版本文件解密失败（同步密码可能已变更）: {error}"),
-            )
-        })?);
+        let plaintext = Zeroizing::new(
+            decrypt_backup_for_format(&key, &file.payload, &file.format).map_err(|error| {
+                CommandError::new(
+                    "SYNC_FAILED",
+                    format!("版本文件解密失败（同步密码可能已变更）: {error}"),
+                )
+            })?,
+        );
         let hash = hex::encode(Sha256::digest(plaintext.as_slice()));
         if hash != expected_hash {
             return Err(CommandError::new("SYNC_FAILED", mismatch_message));
@@ -423,7 +428,7 @@ mod tests {
 
     fn state() -> (tempfile::TempDir, BackupService, Database, Encryptor) {
         let directory = tempfile::tempdir().unwrap();
-        let database = Database::initialize(directory.path().join("xcontrol.db")).unwrap();
+        let database = Database::initialize(directory.path().join("eizhu.db")).unwrap();
         let encryptor = Encryptor::load_or_create(directory.path().join("key")).unwrap();
         let audit = AuditRepository::new(database.clone());
         let groups = GroupService::new(database.clone());
@@ -464,12 +469,42 @@ mod tests {
             ],
         )
         .unwrap();
-        assert_eq!(decrypt_backup(&key, &encoded).unwrap(), plaintext);
-        // 固定值由 Go crypto/aes + x/crypto/argon2 兼容测试共同锁定。
         assert_eq!(
-            encoded,
-            "oKGio6Slpqeoqaqr/5RhcBAxn6573Mt1ALrP+eBQaMiyP6akIvf0uu2nhlQEWMzq2uGXuaN4m96U4fmus8neeWDoJRipvaOWkgfJWCXp654="
+            decrypt_backup_for_format(&key, &encoded, FORMAT).unwrap(),
+            plaintext
         );
+        // 更名前的固定密文继续可解密，锁定 XControl 备份兼容性。
+        let legacy = "oKGio6Slpqeoqaqr/5RhcBAxn6573Mt1ALrP+eBQaMiyP6akIvf0uu2nhlQEWMzq2uGXuaN4m96U4fmus8neeWDoJRipvaOWkgfJWCXp654=";
+        assert_eq!(
+            decrypt_backup_for_format(&key, legacy, LEGACY_FORMAT).unwrap(),
+            plaintext
+        );
+    }
+
+    #[test]
+    fn encrypted_xcontrol_backup_is_import_compatible() {
+        let file = BackupFile {
+            format: LEGACY_FORMAT.into(),
+            version: VERSION,
+            exported_at: "2026-01-01T00:00:00Z".into(),
+            credential_mode: MODE_ENCRYPTED.into(),
+            kdf: Some(KdfParams {
+                algo: "argon2id".into(),
+                salt: "AAECAwQFBgcICQoLDA0ODw==".into(),
+                time: 3,
+                memory: 65_536,
+                threads: 2,
+            }),
+            payload: "oKGio6Slpqeoqaqr/5RhcBAxn6573Mt1ALrP+eBQaMiyP6akIvf0uu2nhlQEWMzq2uGXuaN4m96U4fmus8neeWDoJRipvaOWkgfJWCXp654=".into(),
+            ..BackupFile::default()
+        };
+        let raw = serde_json::to_vec(&file).unwrap();
+        let parsed = decode_backup_file(&raw, "backup-pass").unwrap();
+
+        assert!(parsed.payload.groups.is_empty());
+        assert!(parsed.payload.vault.is_empty());
+        assert!(parsed.payload.profiles.is_empty());
+        assert!(parsed.payload.snippets.is_empty());
     }
 
     #[test]

@@ -17,14 +17,14 @@ impl TauriEventSink {
 
 impl SessionEventSink for TauriEventSink {
     fn emit_session(&self, payload: serde_json::Value) {
-        let _ = self.app.emit("xcontrol-session-message", payload);
+        let _ = self.app.emit("eizhu-session-message", payload);
     }
 }
 
 impl SftpEventSink for TauriEventSink {
     fn emit_sftp(&self, event_type: &'static str, payload: serde_json::Value) {
         let _ = self.app.emit(
-            "xcontrol-sftp-message",
+            "eizhu-sftp-message",
             serde_json::json!({"type": event_type, "payload": payload}),
         );
     }

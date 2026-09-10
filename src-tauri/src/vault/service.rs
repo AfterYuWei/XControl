@@ -387,7 +387,7 @@ mod tests {
 
     fn state() -> (tempfile::TempDir, VaultService) {
         let directory = tempfile::tempdir().unwrap();
-        let database = Database::initialize(directory.path().join("xcontrol.db")).unwrap();
+        let database = Database::initialize(directory.path().join("eizhu.db")).unwrap();
         let encryptor = Encryptor::load_or_create(directory.path().join("key")).unwrap();
         let audit = AuditRepository::new(database.clone());
         let state = VaultService::new(database, encryptor, audit);

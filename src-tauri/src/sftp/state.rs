@@ -20,6 +20,7 @@ use super::backend::{base_name, clean_path, format_time, local_home_dir, FileBac
 use super::transfer::TransferManager;
 use super::{SftpError, SftpEventSink};
 use crate::{
+    app::RECONNECT_BACKOFF_SECONDS,
     audit::AuditRepository,
     error::CommandError,
     profile::ProfileService,
@@ -284,7 +285,7 @@ impl SftpService {
         let session_for_task = session.clone();
         let session_id = session.id.clone();
         let task = tokio::spawn(async move {
-            state.connect_remote(session_for_task).await;
+            state.connect_remote_with_retry(session_for_task).await;
             state.connection_tasks.lock().await.remove(&session_id);
         });
         self.connection_tasks
@@ -372,6 +373,37 @@ impl SftpService {
                 drop(data);
                 self.emit_session_status(&session.id, "disconnected");
             }
+        }
+    }
+
+    async fn connect_remote_with_retry(&self, session: Arc<SftpSession>) {
+        for attempt in 0..=RECONNECT_BACKOFF_SECONDS.len() {
+            self.connect_remote(session.clone()).await;
+            let (status, reason) = {
+                let data = session.data.read().await;
+                (data.status.clone(), data.error.clone())
+            };
+            if status == "connected" {
+                return;
+            }
+            let Some(delay) = RECONNECT_BACKOFF_SECONDS.get(attempt).copied() else {
+                return;
+            };
+            {
+                let mut data = session.data.write().await;
+                data.status = "reconnecting".into();
+            }
+            self.events.emit_sftp(
+                "sftp_session_status",
+                serde_json::json!({
+                    "session_id":session.id,
+                    "status":"reconnecting",
+                    "error":reason,
+                    "retry_attempt":attempt + 1,
+                    "next_retry_at":Utc::now().timestamp_millis() + (delay as i64 * 1_000),
+                }),
+            );
+            tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
         }
     }
 
@@ -556,7 +588,7 @@ impl SftpService {
         let session_for_task = session.clone();
         let session_id = id.to_owned();
         let task = tokio::spawn(async move {
-            state.connect_remote(session_for_task).await;
+            state.connect_remote_with_retry(session_for_task).await;
             state.connection_tasks.lock().await.remove(&session_id);
         });
         self.connection_tasks

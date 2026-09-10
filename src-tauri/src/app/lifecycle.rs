@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use serde::Serialize;
 
 pub(crate) const BACKGROUND_KEEPALIVE_SECONDS: u64 = 360;
+pub(crate) const RECONNECT_BACKOFF_SECONDS: [u64; 10] = [1, 2, 4, 8, 16, 30, 30, 30, 30, 30];
 const BACKGROUND_KEEPALIVE_MILLIS: i64 = (BACKGROUND_KEEPALIVE_SECONDS as i64) * 1_000;
 
 #[derive(Clone, Default)]

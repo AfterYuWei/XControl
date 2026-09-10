@@ -22,6 +22,7 @@ use super::transport::{
 };
 use super::{session_manager::SessionManager, SessionEventSink, SshError};
 use crate::{
+    app::RECONNECT_BACKOFF_SECONDS,
     audit::AuditRepository,
     error::CommandError,
     profile::{ProfileService, ResolvedProfileNode},
@@ -32,7 +33,6 @@ const SHELL_DETECT_TIMEOUT: Duration = Duration::from_secs(10);
 const PRE_ATTACH_OUTPUT_LIMIT: usize = 1024 * 1024;
 const OUTPUT_BATCH_BYTES: usize = 32 * 1024;
 const OUTPUT_BATCH_INTERVAL: Duration = Duration::from_millis(16);
-const RECONNECT_BACKOFF_SECONDS: [u64; 10] = [1, 2, 4, 8, 16, 30, 30, 30, 30, 30];
 const OSC7_BOOTSTRAP_ACK: &[u8] = b"\x1b]1337;eizhuOsc7Ready\x07";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

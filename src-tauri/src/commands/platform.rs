@@ -33,7 +33,7 @@ pub(crate) fn platform_capabilities() -> PlatformCapabilities {
         native_file_paths: cfg!(desktop),
         // These capabilities become true only when the corresponding mobile
         // adapters are installed in later migration stages.
-        document_picker: cfg!(desktop),
+        document_picker: true,
         secure_key_store: false,
         biometric: false,
         background_mode: if cfg!(target_os = "android") {

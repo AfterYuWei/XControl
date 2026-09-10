@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { invokeCommand, normalizeCommandError } from './tauri'
+import { isMobileRuntime } from '@/lib/platform'
 import type {
   SftpEntry,
   TransferTask,
@@ -20,8 +21,7 @@ import type {
 } from '@/types/sftp'
 
 const IPC_CHUNK_BYTES = 512 * 1024
-const USE_BASE64_IPC = typeof navigator !== 'undefined'
-  && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+const USE_BASE64_IPC = isMobileRuntime()
 
 /** Rust SFTP session info. */
 export interface SftpSessionInfo {
@@ -183,9 +183,42 @@ export const sftpApi = {
     return { tasks: responses.flatMap((response) => response.tasks) }
   },
 
+  uploadDocument: (
+    sessionId: string,
+    reference: string,
+    destDir: string,
+    overwrite = false,
+  ) => invokeCommand<SftpUploadResponse>('sftp_upload_document', {
+    sessionId,
+    reference,
+    destDir,
+    overwrite,
+  }),
+
   /** Stage remote files in Rust without loading them into memory. */
   download: (sessionId: string, paths: string[]) =>
     invokeCommand<SftpDownloadResponse>('sftp_download', { sessionId, paths }),
+
+  exportDownload: (taskId: string) =>
+    invokeCommand<string | null>('sftp_export_download', { taskId }),
+
+  downloadToDocuments: async (sessionId: string, paths: string[]) => {
+    const response = await invokeCommand<SftpDownloadResponse>('sftp_download', { sessionId, paths })
+    for (const task of response.tasks) {
+      while (true) {
+        const current = (await invokeCommand<TransferTask[]>('sftp_list_transfers', { sessionId }))
+          .find((candidate) => candidate.id === task.id)
+        if (!current) throw new Error('下载任务已丢失')
+        if (current.status === 'failed' || current.status === 'cancelled') {
+          throw new Error(current.error_message || '下载未完成')
+        }
+        if (current.status === 'completed') break
+        await new Promise((resolve) => setTimeout(resolve, 350))
+      }
+      await invokeCommand<string | null>('sftp_export_download', { taskId: task.id })
+    }
+    return response
+  },
 
   /** Pull a completed staged download as a backpressured byte stream. */
   streamDownloadFile: (taskId: string): ReadableStream<Uint8Array> => {

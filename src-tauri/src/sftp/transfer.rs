@@ -78,7 +78,7 @@ pub(crate) struct SftpUploadResponse {
 
 #[derive(Debug, Serialize)]
 pub(crate) struct SftpUploadBeginResponse {
-    upload_id: String,
+    pub(crate) upload_id: String,
     tasks: Vec<TransferTask>,
 }
 
@@ -137,7 +137,7 @@ impl TransferManager {
             tasks: Arc::new(RwLock::new(HashMap::new())),
             uploads: Arc::new(RwLock::new(HashMap::new())),
             workers: Arc::new(Mutex::new(HashMap::new())),
-            semaphore: Arc::new(Semaphore::new(5)),
+            semaphore: Arc::new(Semaphore::new(if cfg!(mobile) { 2 } else { 5 })),
         }
     }
 
@@ -1180,6 +1180,34 @@ pub(crate) async fn sftp_download_close(
         }
     }
     Ok(())
+}
+
+pub(crate) async fn sftp_download_artifact(
+    state: &SftpService,
+    task_id: &str,
+) -> Result<(PathBuf, String), CommandError> {
+    let entry = state
+        .transfers
+        .tasks
+        .read()
+        .await
+        .get(task_id)
+        .cloned()
+        .ok_or_else(|| CommandError::new("NOT_FOUND", "download task not found"))?;
+    let task = entry.task.lock().await.clone();
+    if task.status != "completed" {
+        return Err(CommandError::new(
+            "TRANSFER_NOT_READY",
+            format!("download task is {}", task.status),
+        ));
+    }
+    let path = entry
+        .download_path
+        .lock()
+        .await
+        .clone()
+        .ok_or_else(|| CommandError::new("NOT_FOUND", "download artifact not found"))?;
+    Ok((path, task.file_name))
 }
 
 async fn auto_rename(backend: &FileBackend, path: &str) -> Result<String, SftpError> {

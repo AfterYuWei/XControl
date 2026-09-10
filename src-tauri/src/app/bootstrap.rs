@@ -15,12 +15,19 @@ pub(crate) fn run() {
         tauri::Builder::default()
             .plugin(tauri_plugin_deep_link::init())
             .plugin(tauri_plugin_session_keepalive::init())
+            .plugin(tauri_plugin_document_gateway::init())
             .invoke_handler(tauri::generate_handler![
                 commands::platform_capabilities,
                 commands::app_lifecycle_status,
                 commands::app_lifecycle_update,
                 commands::app_background_expired,
                 commands::app_disconnect_all_sessions,
+                commands::document_pick,
+                commands::document_release,
+                commands::document_read_text,
+                commands::document_export_text,
+                commands::sftp_upload_document,
+                commands::sftp_export_download,
                 commands::snippet_list,
                 commands::snippet_create,
                 commands::snippet_update,
@@ -90,6 +97,8 @@ pub(crate) fn run() {
                 commands::sftp_move,
                 commands::server_get_info,
                 commands::server_get_metrics,
+                commands::backup_pick_file,
+                commands::backup_export,
                 commands::backup_preview,
                 commands::backup_import,
                 commands::sync_status,
@@ -115,6 +124,10 @@ pub(crate) fn run() {
             .setup(|app| {
                 use tauri::Manager;
                 let data_dir = app.path().app_data_dir()?;
+                let document_gateway =
+                    crate::infrastructure::platform::document_gateway::DocumentGateway::initialize(
+                        app.path().app_cache_dir()?.join("document-gateway"),
+                    )?;
                 let database = crate::infrastructure::database::Database::initialize(
                     data_dir.join("eizhu.db"),
                 )
@@ -152,6 +165,7 @@ pub(crate) fn run() {
                 let sftp = sftp::SftpService::new(profiles.clone(), audit.clone(), events);
                 app.manage(crate::snippet::SnippetService::new(database.clone()));
                 app.manage(super::LifecycleCoordinator::new());
+                app.manage(document_gateway);
                 app.manage(groups);
                 app.manage(vault);
                 app.manage(profiles);
@@ -197,6 +211,12 @@ fn desktop_run() {
             commands::app_lifecycle_update,
             commands::app_background_expired,
             commands::app_disconnect_all_sessions,
+            commands::document_pick,
+            commands::document_release,
+            commands::document_read_text,
+            commands::document_export_text,
+            commands::sftp_upload_document,
+            commands::sftp_export_download,
             commands::frontend_ready,
             commands::get_platform,
             commands::read_app_log,
@@ -302,6 +322,10 @@ fn desktop_run() {
         .setup(move |app| {
             let data_dir = desktop::user_data_dir()
                 .map_err(|error| std::io::Error::other(error.to_string()))?;
+            let document_gateway =
+                crate::infrastructure::platform::document_gateway::DocumentGateway::initialize(
+                    app.path().app_cache_dir()?.join("document-gateway"),
+                )?;
             let database =
                 crate::infrastructure::database::Database::initialize(data_dir.join("eizhu.db"))
                     .map_err(|error| std::io::Error::other(error.to_string()))?;
@@ -337,6 +361,7 @@ fn desktop_run() {
             let sftp = sftp::SftpService::new(profiles.clone(), audit.clone(), events);
             app.manage(crate::snippet::SnippetService::new(database.clone()));
             app.manage(super::LifecycleCoordinator::new());
+            app.manage(document_gateway);
             app.manage(groups);
             app.manage(vault);
             app.manage(profiles);

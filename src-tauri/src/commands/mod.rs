@@ -4,6 +4,7 @@ mod audit;
 mod backup;
 #[cfg(desktop)]
 mod desktop;
+mod document;
 mod group;
 mod lifecycle;
 mod platform;
@@ -19,6 +20,7 @@ pub(crate) use audit::*;
 pub(crate) use backup::*;
 #[cfg(desktop)]
 pub(crate) use desktop::*;
+pub(crate) use document::*;
 pub(crate) use group::*;
 pub(crate) use lifecycle::*;
 pub(crate) use platform::*;

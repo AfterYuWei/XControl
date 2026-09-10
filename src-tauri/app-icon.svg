@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="eizhu">
+  <rect x="32" y="32" width="960" height="960" rx="224" fill="#fff"/>
+  <path
+    d="M256 300h512L592 476h176M256 512h432L432 768h336"
+    fill="none"
+    stroke="#000"
+    stroke-width="128"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

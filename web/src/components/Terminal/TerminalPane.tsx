@@ -9,6 +9,7 @@ import { ConnectionDialog } from '@/components/ConnectionDialog'
 import { useCompletion } from '@/hooks/useCompletion'
 import { CompletionPanel } from '@/components/Terminal/CompletionPanel'
 import { AuthPromptDialog } from '@/components/Terminal/AuthPromptDialog'
+import { MobileTerminalToolbar } from '@/components/Terminal/MobileTerminalToolbar'
 import type {
   AuthenticationRequestPayload,
   CompleteResponsePayload,
@@ -523,8 +524,12 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   const profileIcon = profiles.find((item) => item.id === tab.profileId)?.icon
 
   return (
-    <div className="relative h-full w-full" style={{ background: 'var(--term-bg)' }}>
-      <div ref={containerRef} className="term-host" />
+    <div className="terminal-pane-root relative flex h-full w-full flex-col" style={{ background: 'var(--term-bg)' }}>
+      <div ref={containerRef} className="term-host min-h-0 flex-1" />
+      <MobileTerminalToolbar
+        onInput={(data) => sendInputRef.current(data)}
+        onHideKeyboard={() => getTerminal()?.blur()}
+      />
 
       <CompletionPanel
         popup={popup}

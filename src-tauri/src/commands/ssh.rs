@@ -1,6 +1,7 @@
 //! Tauri IPC adapters for SSH profile tests and terminal sessions.
 
 use serde_json::Value;
+use tauri::ipc::Channel;
 use tauri::State;
 
 use crate::{
@@ -59,6 +60,24 @@ pub(crate) async fn session_attach(
     id: String,
 ) -> Result<Vec<ClientMessage>, CommandError> {
     service.attach(&id).await
+}
+
+#[tauri::command]
+pub(crate) async fn session_subscribe(
+    service: State<'_, SshService>,
+    id: String,
+    on_event: Channel<ClientMessage>,
+) -> Result<String, CommandError> {
+    service.subscribe(&id, on_event).await
+}
+
+#[tauri::command]
+pub(crate) async fn session_unsubscribe(
+    service: State<'_, SshService>,
+    id: String,
+    subscription_id: String,
+) -> Result<(), CommandError> {
+    service.unsubscribe(&id, &subscription_id).await
 }
 
 #[tauri::command]

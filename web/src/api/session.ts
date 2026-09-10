@@ -1,6 +1,7 @@
 import { invokeCommand } from './tauri'
 import type { Session, SessionCreateRequest, SessionCreateResponse } from '@/types/session'
 import type { SessionMessage } from '@/types/sessionMessage'
+import type { Channel } from '@tauri-apps/api/core'
 
 export const sessionApi = {
   create: (data: SessionCreateRequest) =>
@@ -9,6 +10,12 @@ export const sessionApi = {
   list: () => invokeCommand<Session[]>('session_list'),
 
   attach: (id: string) => invokeCommand<SessionMessage[]>('session_attach', { id }),
+
+  subscribe: (id: string, onEvent: Channel<SessionMessage>) =>
+    invokeCommand<string>('session_subscribe', { id, onEvent }),
+
+  unsubscribe: (id: string, subscriptionId: string) =>
+    invokeCommand<void>('session_unsubscribe', { id, subscriptionId }),
 
   reconnect: (id: string) => invokeCommand<SessionCreateResponse>('session_reconnect', { id }),
 

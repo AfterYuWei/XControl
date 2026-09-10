@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     future::Future,
     pin::Pin,
     sync::{Arc, Mutex as StdMutex},
@@ -9,6 +9,7 @@ use chrono::{Local, SecondsFormat};
 use russh::{client, ChannelMsg, Disconnect, Pty};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use tauri::ipc::Channel;
 use tokio::{
     sync::{mpsc, oneshot, Mutex, Notify},
     time::{timeout, Duration},
@@ -29,6 +30,8 @@ use crate::{
 const COMPLETE_TIMEOUT: Duration = Duration::from_millis(400);
 const SHELL_DETECT_TIMEOUT: Duration = Duration::from_secs(10);
 const PRE_ATTACH_OUTPUT_LIMIT: usize = 1024 * 1024;
+const OUTPUT_BATCH_BYTES: usize = 32 * 1024;
+const OUTPUT_BATCH_INTERVAL: Duration = Duration::from_millis(16);
 const RECONNECT_BACKOFF_SECONDS: [u64; 10] = [1, 2, 4, 8, 16, 30, 30, 30, 30, 30];
 const OSC7_BOOTSTRAP_ACK: &[u8] = b"\x1b]1337;eizhuOsc7Ready\x07";
 
@@ -140,6 +143,7 @@ struct SessionDelivery {
     attached: bool,
     output_bytes: usize,
     messages: Vec<ClientMessage>,
+    subscriptions: HashMap<String, Channel<ClientMessage>>,
 }
 
 struct HostKeyDecision {
@@ -430,57 +434,75 @@ impl Session {
         };
         let should_emit = {
             let mut delivery = self.delivery.lock().expect("delivery mutex poisoned");
-            if delivery.attached {
-                true
-            } else {
-                match message_type {
-                    "output" => {
-                        delivery.output_bytes = delivery.output_bytes.saturating_add(data.len());
-                        if let Some(last) = delivery.messages.last_mut() {
-                            if last.message_type == "output" {
-                                last.data.push_str(data);
-                            } else {
-                                delivery.messages.push(message.clone());
-                            }
-                        } else {
-                            delivery.messages.push(message.clone());
-                        }
-                        while delivery.output_bytes > PRE_ATTACH_OUTPUT_LIMIT {
-                            let Some(index) = delivery
-                                .messages
-                                .iter()
-                                .position(|message| message.message_type == "output")
-                            else {
-                                delivery.output_bytes = 0;
-                                break;
-                            };
-                            let excess = delivery.output_bytes - PRE_ATTACH_OUTPUT_LIMIT;
-                            let length = delivery.messages[index].data.len();
-                            if length <= excess {
-                                delivery.output_bytes -= length;
-                                delivery.messages.remove(index);
-                            } else {
-                                let boundary = delivery.messages[index]
-                                    .data
-                                    .char_indices()
-                                    .map(|(offset, _)| offset)
-                                    .find(|offset| *offset >= excess)
-                                    .unwrap_or(length);
-                                delivery.messages[index].data.drain(..boundary);
-                                delivery.output_bytes -= boundary;
-                            }
-                        }
+            if message_type == "output" {
+                delivery.output_bytes = delivery.output_bytes.saturating_add(data.len());
+                if let Some(last) = delivery.messages.last_mut() {
+                    if last.message_type == "output" {
+                        last.data.push_str(data);
+                    } else {
+                        delivery.messages.push(message.clone());
                     }
-                    // attach_messages reconstructs the latest connection state.
-                    "connection_state" => {}
-                    _ => delivery.messages.push(message.clone()),
+                } else {
+                    delivery.messages.push(message.clone());
                 }
-                false
+                while delivery.output_bytes > PRE_ATTACH_OUTPUT_LIMIT {
+                    let Some(index) = delivery
+                        .messages
+                        .iter()
+                        .position(|message| message.message_type == "output")
+                    else {
+                        delivery.output_bytes = 0;
+                        break;
+                    };
+                    let excess = delivery.output_bytes - PRE_ATTACH_OUTPUT_LIMIT;
+                    let length = delivery.messages[index].data.len();
+                    if length <= excess {
+                        delivery.output_bytes -= length;
+                        delivery.messages.remove(index);
+                    } else {
+                        let boundary = delivery.messages[index]
+                            .data
+                            .char_indices()
+                            .map(|(offset, _)| offset)
+                            .find(|offset| *offset >= excess)
+                            .unwrap_or(length);
+                        delivery.messages[index].data.drain(..boundary);
+                        delivery.output_bytes -= boundary;
+                    }
+                }
             }
+            delivery
+                .subscriptions
+                .retain(|_, channel| channel.send(message.clone()).is_ok());
+            delivery.attached
         };
         if should_emit {
             self.events.emit_session(json!(message));
         }
+    }
+
+    fn subscribe(&self, channel: Channel<ClientMessage>) -> String {
+        let subscription_id = uuid::Uuid::new_v4().to_string();
+        let mut delivery = self.delivery.lock().expect("delivery mutex poisoned");
+        for message in self.initial_messages(delivery.attached) {
+            let _ = channel.send(message);
+        }
+        for message in delivery.messages.iter().cloned() {
+            let _ = channel.send(message);
+        }
+        delivery.attached = true;
+        delivery
+            .subscriptions
+            .insert(subscription_id.clone(), channel);
+        subscription_id
+    }
+
+    fn unsubscribe(&self, subscription_id: &str) {
+        self.delivery
+            .lock()
+            .expect("delivery mutex poisoned")
+            .subscriptions
+            .remove(subscription_id);
     }
 
     fn metadata(&self) -> ClientMessage {
@@ -849,6 +871,10 @@ impl SshService {
         };
         let mut exit_code = 0_u32;
         let mut normal_exit = false;
+        let mut pending_output = String::new();
+        let mut output_flush = tokio::time::interval(OUTPUT_BATCH_INTERVAL);
+        output_flush.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        output_flush.tick().await;
         loop {
             tokio::select! {
                 _ = session.cancel.cancelled() => {
@@ -900,6 +926,9 @@ impl SshService {
                     }
                     None => session.cancel.cancel(),
                 },
+                _ = output_flush.tick(), if !pending_output.is_empty() => {
+                    session.emit_message("output", &std::mem::take(&mut pending_output), None);
+                }
                 message = channel.wait() => match message {
                     Some(ChannelMsg::Data { data })
                     | Some(ChannelMsg::ExtendedData { data, .. }) => {
@@ -918,7 +947,14 @@ impl SshService {
                             session.emit_message("cwd", "", Some(json!({"path":cwd})));
                         }
                         if !output.data.is_empty() {
-                            session.emit_message("output", &output.data, None);
+                            pending_output.push_str(&output.data);
+                            if pending_output.len() >= OUTPUT_BATCH_BYTES {
+                                session.emit_message(
+                                    "output",
+                                    &std::mem::take(&mut pending_output),
+                                    None,
+                                );
+                            }
                         }
                     }
                     Some(ChannelMsg::ExitStatus { exit_status }) => {
@@ -929,6 +965,10 @@ impl SshService {
                     _ => {}
                 }
             }
+        }
+
+        if !pending_output.is_empty() {
+            session.emit_message("output", &pending_output, None);
         }
 
         *session.commands.lock().await = None;
@@ -964,6 +1004,23 @@ impl SshService {
 
     pub(crate) async fn attach(&self, id: &str) -> Result<Vec<ClientMessage>, CommandError> {
         Ok(self.manager.get(id).await?.attach_messages())
+    }
+
+    pub(crate) async fn subscribe(
+        &self,
+        id: &str,
+        channel: Channel<ClientMessage>,
+    ) -> Result<String, CommandError> {
+        Ok(self.manager.get(id).await?.subscribe(channel))
+    }
+
+    pub(crate) async fn unsubscribe(
+        &self,
+        id: &str,
+        subscription_id: &str,
+    ) -> Result<(), CommandError> {
+        self.manager.get(id).await?.unsubscribe(subscription_id);
+        Ok(())
     }
 
     pub(crate) async fn confirm_host_key(

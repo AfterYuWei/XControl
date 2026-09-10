@@ -186,8 +186,9 @@
   left: 50%;
   transform: translateX(-50%);
   padding: 4px 8px;
-  background: var(--bg-elevated);
-  border-radius: var(--r-xs);
+  background: var(--surface-overlay);
+  border: 1px solid var(--edge-panel-strong);
+  border-radius: var(--r-sm);
   box-shadow: var(--shadow-floating);
   font: 400 var(--sans-size) / 1 var(--sans);
   color: var(--fg-2);

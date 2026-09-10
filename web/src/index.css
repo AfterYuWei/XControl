@@ -58,7 +58,7 @@
   --color-foreground: var(--fg);
   --color-card: var(--bg-panel);
   --color-card-foreground: var(--fg);
-  --color-popover: var(--bg-panel);
+  --color-popover: var(--surface-overlay);
   --color-popover-foreground: var(--fg);
   --color-primary: var(--accent);
   --color-primary-foreground: var(--fg);
@@ -146,7 +146,7 @@
   --r-xl: 16px;
   --r-pill: 100px;
   --radius: var(--r);
-  --popover: var(--bg-panel);
+  --popover: var(--surface-overlay);
   --popover-foreground: var(--fg);
   --sidebar-w: 240px;
   --tabbar-h: 40px;

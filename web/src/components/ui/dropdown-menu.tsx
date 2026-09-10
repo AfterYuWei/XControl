@@ -17,7 +17,7 @@ function DropdownMenuContent({ className, sideOffset = 4, ...props }: React.Comp
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}
         className={cn(
-          "z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
+          "z-50 min-w-[8rem] overflow-hidden rounded-[var(--r)] border border-[var(--edge-panel-strong)] bg-[var(--surface-overlay)] p-1 text-[var(--fg)] shadow-[var(--shadow-floating)] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
           className
         )}
         {...props}
@@ -55,7 +55,7 @@ function DropdownMenuSubTrigger({ className, inset, children, ...props }: React.
 }
 
 function DropdownMenuSubContent({ className, ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.SubContent>) {
-  return <DropdownMenuPrimitive.SubContent className={cn("z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-lg", className)} {...props} />
+  return <DropdownMenuPrimitive.SubContent className={cn("z-50 min-w-[8rem] overflow-hidden rounded-[var(--r)] border border-[var(--edge-panel-strong)] bg-[var(--surface-overlay)] p-1 text-[var(--fg)] shadow-[var(--shadow-floating)]", className)} {...props} />
 }
 
 export {

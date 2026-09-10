@@ -37,6 +37,8 @@ jobs:
     env:
       VITE_XCONTROL_CHANNEL: ${{ inputs.channel }}
       XCONTROL_BUILD_CHANNEL: ${{ inputs.channel }}
+      # CI 传入计算后的精确版本；本地构建未设置时自动读取 VERSION。
+      XCONTROL_APP_VERSION: ${{ inputs.version }}
     strategy:
       fail-fast: false   # 单平台失败不取消其它平台，便于排查
       matrix:
@@ -85,14 +87,6 @@ jobs:
       - name: Install frontend dependencies
         run: npm --prefix web ci
 
-      - name: Set version in tauri.conf.json
-        shell: bash
-        env:
-          APP_VERSION: ${{ inputs.version }}
-        run: |
-          # 直接用 node 改写 tauri.conf.json 的 version 字段（替代旧 electron/package.json 注入）
-          node -e "const fs=require('fs');const p='src-tauri/tauri.conf.json';const c=JSON.parse(fs.readFileSync(p,'utf8'));c.version=process.env.APP_VERSION;fs.writeFileSync(p,JSON.stringify(c,null,2)+'\n');console.log('version set to:',process.env.APP_VERSION);"
-
       # 应用内更新签名：配置 secrets（TAURI_SIGNING_PRIVATE_KEY 等）后自动启用；
       # 未配置时跳过签名正常出包（仅应用内更新不可用，安装包本身不受影响）。
       # 私钥生成：npx tauri signer generate -w xcontrol-updater.key
@@ -137,7 +131,7 @@ jobs:
 
       # beforeBuildCommand 自动完成 React 构建，Rust 领域随主程序一起编译。
       - name: Build Tauri app
-        run: npx tauri build
+        run: npm run desktop:build
 
       # 直接运行 release 二进制，验证打包后的进程内状态初始化。
       - name: Smoke test Windows release runtime

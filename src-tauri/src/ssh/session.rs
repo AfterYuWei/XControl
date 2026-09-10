@@ -495,10 +495,6 @@ impl SshService {
         cols: u32,
         rows: u32,
     ) -> Result<(), SshError> {
-        session.stage("starting_shell", "info", "正在识别远程 Shell");
-        let osc7_setup = detect_remote_shell(&route.handle)
-            .await
-            .map(osc7_setup_command);
         let mut channel = route
             .handle
             .channel_open_session()
@@ -521,6 +517,17 @@ impl SshService {
             .request_shell(true)
             .await
             .map_err(|error| format!("启动远程 Shell: {error}"))?;
+
+        // The interactive channel must be the first session opened after
+        // authentication. Some OpenSSH/PAM configurations deliver the login
+        // MOTD only to that first channel. Detecting the shell beforehand via
+        // exec consumed banners such as "Welcome to Ubuntu" and then discarded
+        // them. Once request_shell succeeds, its output is buffered by russh
+        // while the auxiliary detection channel runs.
+        session.stage("starting_shell", "info", "正在识别远程 Shell");
+        let osc7_setup = detect_remote_shell(&route.handle)
+            .await
+            .map(osc7_setup_command);
 
         let (commands_tx, mut commands_rx) = mpsc::channel(128);
         *session.commands.lock().await = Some(commands_tx);

@@ -13,8 +13,9 @@ XControl 采用 `dev` / `main` 双分支晋级模型：`dev` 是测试通道，`
 | `dev` | 测试版 | `<VERSION>-test.<run>.<attempt>` | Prerelease |
 | `main` | 正式版 | `<VERSION>` | 正式 Release |
 
-`VERSION` 是唯一的发版版本源，格式必须为 `x.y.z`。构建时会将计算后的版本
-注入 `tauri.conf.json`。正式版已存在时，`main` 发布会拒绝复用该版本号。
+`VERSION` 是唯一的发版版本源，格式必须为 `x.y.z`。本地与 CI 构建都会在运行时
+将计算后的版本覆盖到 Tauri 配置，不会改写 `tauri.conf.json`。正式版已存在时，
+`main` 发布会拒绝复用该版本号。
 
 ## 推荐发版流程
 

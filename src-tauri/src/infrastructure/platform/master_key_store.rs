@@ -176,11 +176,17 @@ mod tests {
     struct MemoryStore {
         value: Mutex<Option<String>>,
         reject_store: bool,
+        corrupt_reads: bool,
     }
 
     impl SecureKeyStore for MemoryStore {
         fn load(&self) -> Result<Option<String>, String> {
-            Ok(self.value.lock().expect("store").clone())
+            let value = self.value.lock().expect("store").clone();
+            if self.corrupt_reads && value.is_some() {
+                Ok(Some("invalid-secure-value".into()))
+            } else {
+                Ok(value)
+            }
         }
 
         fn store(&self, value: &str) -> Result<(), String> {
@@ -229,6 +235,20 @@ mod tests {
         let (_directory, database, key_path, _encryptor) = fixture();
         let store = MemoryStore {
             reject_store: true,
+            ..MemoryStore::default()
+        };
+        let error = load_or_create_with_store(&store, &database, &key_path)
+            .err()
+            .expect("failure");
+        assert_eq!(error.code, "MASTER_KEY_STORE");
+        assert!(key_path.exists());
+    }
+
+    #[test]
+    fn secure_reload_mismatch_keeps_the_legacy_key() {
+        let (_directory, database, key_path, _encryptor) = fixture();
+        let store = MemoryStore {
+            corrupt_reads: true,
             ..MemoryStore::default()
         };
         let error = load_or_create_with_store(&store, &database, &key_path)

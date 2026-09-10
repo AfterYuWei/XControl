@@ -54,6 +54,16 @@ final class MasterKeyStorePlugin: Plugin {
             invoke.reject("写入 iOS Keychain 主密钥失败（\(status)）")
             return
         }
+        var verifyQuery = baseQuery()
+        verifyQuery[kSecReturnData as String] = true
+        verifyQuery[kSecMatchLimit as String] = kSecMatchLimitOne
+        var verified: CFTypeRef?
+        let verifyStatus = SecItemCopyMatching(verifyQuery as CFDictionary, &verified)
+        guard verifyStatus == errSecSuccess, verified as? Data == data else {
+            SecItemDelete(baseQuery() as CFDictionary)
+            invoke.reject("iOS Keychain 主密钥写入校验失败（\(verifyStatus)）")
+            return
+        }
         invoke.resolve()
     }
 

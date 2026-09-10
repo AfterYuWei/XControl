@@ -51,8 +51,13 @@ class MasterKeyStorePlugin(private val activity: Activity) : Plugin(activity) {
             }
             val committed = preferences.edit().putString(WRAPPED_KEY, encrypt(value)).commit()
             require(committed) { "写入安全存储失败" }
-            require(preferences.getString(WRAPPED_KEY, null)?.let(::decrypt) == value) {
-                "安全存储写入校验失败"
+            try {
+                require(preferences.getString(WRAPPED_KEY, null)?.let(::decrypt) == value) {
+                    "安全存储写入校验失败"
+                }
+            } catch (error: Exception) {
+                preferences.edit().remove(WRAPPED_KEY).commit()
+                throw error
             }
             invoke.resolve()
         } catch (error: Exception) {

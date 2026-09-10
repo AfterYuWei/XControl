@@ -9,6 +9,7 @@ import { useProfileStore } from '@/store/profile'
 import { useSessionStore } from '@/store/session'
 import { useSettingsStore } from '@/store/settings'
 import { getPlatformCapabilities } from '@/lib/platform'
+import { consumeMobileBackNavigation } from '@/lib/mobileBack'
 import { toast } from 'sonner'
 
 const SettingsDialog = lazy(() =>
@@ -90,6 +91,7 @@ export function MobileLayout() {
     if (getPlatformCapabilities().platform !== 'android') return
     let unlisten: (() => Promise<void>) | undefined
     void onBackButtonPress(() => {
+      if (consumeMobileBackNavigation()) return
       if (settingsOpen) {
         setSettingsOpen(false)
         return

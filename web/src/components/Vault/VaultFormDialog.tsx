@@ -11,7 +11,8 @@ import { vaultApi } from '@/api/vault'
 import { toast } from 'sonner'
 import { useVaultStore } from '@/store/vault'
 import { buildPrivateKeyFilename, buildPublicKeyImportCommand } from '@/lib/vaultKeyActions'
-import { isTauri, saveTextToDisk } from '@/lib/desktop'
+import { saveTextToDisk } from '@/lib/desktop'
+import { getPlatformCapabilities } from '@/lib/platform'
 import { normalizeVaultUsername } from '@/lib/vaultUsername'
 import { VAULT_TYPE_LABELS, type VaultCreateRequest, type VaultItem, type VaultType } from '@/types/vault'
 import { VaultPasswordGenerator } from './VaultPasswordGenerator'
@@ -245,7 +246,7 @@ function VaultFormDialogInner({ item, onOpenChange }: VaultFormDialogInnerProps)
     }
 
     // 桌面端（Tauri）：Rust 侧系统保存对话框（blob 锚点在 WKWebView/WebKitGTK 下不可靠）
-    if (isTauri()) {
+    if (getPlatformCapabilities().nativeFilePaths) {
       try {
         const saved = await saveTextToDisk(`${privateKey}\n`, buildPrivateKeyFilename(form.name))
         if (saved) toast.success('私钥文件已导出')

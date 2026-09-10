@@ -8,7 +8,7 @@
 import { useEffect } from 'react'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { toast } from 'sonner'
-import { isTauri } from '@/lib/desktop'
+import { getPlatformCapabilities } from '@/lib/platform'
 import { hitTestDropTarget } from '@/lib/dragRegistry'
 import type { SftpStoreApi, SftpStore } from '@/store/sftp'
 
@@ -24,7 +24,7 @@ function findLocalSessionId(state: SftpStore): string | undefined {
  */
 export function useExternalDrop(store: SftpStoreApi) {
   useEffect(() => {
-    if (!isTauri()) return
+    if (!getPlatformCapabilities().dragOut) return
 
     let disposed = false
     let unlisten: (() => void) | undefined

@@ -15,6 +15,7 @@ pub(crate) fn run() {
         tauri::Builder::default()
             .plugin(tauri_plugin_deep_link::init())
             .invoke_handler(tauri::generate_handler![
+                commands::platform_capabilities,
                 commands::snippet_list,
                 commands::snippet_create,
                 commands::snippet_update,
@@ -178,6 +179,7 @@ fn desktop_run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
+            commands::platform_capabilities,
             commands::frontend_ready,
             commands::get_platform,
             commands::read_app_log,

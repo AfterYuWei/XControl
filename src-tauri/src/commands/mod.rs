@@ -5,6 +5,7 @@ mod backup;
 #[cfg(desktop)]
 mod desktop;
 mod group;
+mod platform;
 mod profile;
 mod server_detail;
 mod sftp;
@@ -18,6 +19,7 @@ pub(crate) use backup::*;
 #[cfg(desktop)]
 pub(crate) use desktop::*;
 pub(crate) use group::*;
+pub(crate) use platform::*;
 pub(crate) use profile::*;
 pub(crate) use server_detail::*;
 pub(crate) use sftp::*;

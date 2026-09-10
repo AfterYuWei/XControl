@@ -1,7 +1,8 @@
 import { StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { invoke } from '@tauri-apps/api/core'
-import { initDesktop, isTauri } from '@/lib/desktop'
+import { initDesktop } from '@/lib/desktop'
+import { initializePlatform, isDesktopRuntime } from '@/lib/platform'
 import { scheduleSilentUpdateCheck } from '@/lib/updater'
 import { installFrontendLogging } from '@/lib/appLog'
 import './index.css'
@@ -17,12 +18,13 @@ let fatalRendered = false
 //    破坏上述顺序，因此必须放在 await 之后。
 async function bootstrap() {
   try {
+    await initializePlatform()
     await initDesktop()
     installFrontendLogging()
   } catch (err) {
     renderFatal(err instanceof Error ? err.message : String(err))
     // 主窗口初始为 visible:false，初始化失败时也必须主动显示错误页。
-    if (isTauri()) {
+    if (isDesktopRuntime()) {
       await invoke('frontend_ready').catch(() => undefined)
     }
     return
@@ -40,7 +42,7 @@ async function bootstrap() {
 
   // 首帧渲染完成后显示并最大化窗口（等价 Electron ready-to-show + maximize）。
   // 注意窗口此时 visible:false，rAF 在隐藏窗口中可能被节流，故用 setTimeout。
-  if (isTauri()) {
+  if (isDesktopRuntime()) {
     setTimeout(() => void invoke('frontend_ready'), 0)
     // 启动静默检查更新（延迟 10s，不抢启动带宽）
     scheduleSilentUpdateCheck()

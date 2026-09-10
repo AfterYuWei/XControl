@@ -35,6 +35,7 @@ import {
 import { usePointerDrag } from '@/hooks/usePointerDrag'
 import { dropPayloadAttr, hitTestDropTarget } from '@/lib/dragRegistry'
 import { isTauri, sftpDragOut, startNativeFileDrag } from '@/lib/desktop'
+import { getPlatformCapabilities } from '@/lib/platform'
 import type { SftpEntry } from '@/types/sftp'
 
 interface FilePaneProps {
@@ -116,7 +117,7 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
     onCancel: () => api.getState().cancelDrag(),
     // 光标拖出窗口：桌面端移交原生文件拖拽（浏览器忽略，维持内部拖拽语义）
     onLeaveWindow: (session) => {
-      if (!isTauri()) return false
+      if (!getPlatformCapabilities().dragOut) return false
       void runDragOut(session.sourceSessionId, session.entries.map((entry) => entry.path))
       return true
     },
@@ -266,7 +267,7 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
         ]
       : []),
     // 桌面端拖出兜底入口（拖拽手势之外的显式导出）
-    ...(isTauri()
+    ...(getPlatformCapabilities().dragOut
       ? [
           {
             id: 'dragout',

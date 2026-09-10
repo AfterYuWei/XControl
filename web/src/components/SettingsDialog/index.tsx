@@ -14,7 +14,7 @@ import { BackupPanel } from './BackupPanel'
 import { SyncPanel } from './SyncPanel'
 import { AboutPanel } from './AboutPanel'
 import { LogPanel } from './LogPanel'
-import { isTauri } from '@/lib/desktop'
+import { isDesktopRuntime } from '@/lib/platform'
 import { isTestBuild } from '@/lib/updater'
 
 interface SettingsDialogProps {
@@ -125,7 +125,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   } = useSettingsStore()
 
   const currentThemeLabel = terminalThemes.find((t) => t.id === terminalTheme)?.label ?? '默认深色'
-  const tabs = isTauri() && isTestBuild()
+  const tabs = isDesktopRuntime() && isTestBuild()
     ? [...baseTabs.slice(0, -1), { key: 'logs' as const, label: '日志', icon: FileText }, baseTabs.at(-1)!]
     : baseTabs
 

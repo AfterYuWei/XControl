@@ -17,6 +17,7 @@ import { MobileTabBar, type MobileSection } from './MobileTabBar'
 import { MobileEmpty } from './MobileEmpty'
 import { MobileHostList } from './MobileHostList'
 import { MobileSettingsPage } from './MobileSettingsPage'
+import { useSafeAreaInsets } from './useSafeArea'
 
 const SettingsDialog = lazy(() =>
   import('@/components/SettingsDialog').then((module) => ({ default: module.SettingsDialog })),
@@ -48,6 +49,9 @@ export function MobileLayout() {
   const terminalTabs = tabs.filter((tab) => tab.kind === 'terminal')
   const connectedTabs = terminalTabs.filter((tab) => tab.status === 'connected').length
   const platform = getPlatformCapabilities().platform
+
+  // 安全区：原生插件把状态栏/导航栏内边距写入 --safe-inset-*（Android WebView env() 恒为 0）
+  useSafeAreaInsets()
 
   // 移动运行时标记：mobile.css 的 Portal 弹层规则依赖它，卸载时移除（桌面端不存在）
   useEffect(() => {

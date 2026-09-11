@@ -96,7 +96,7 @@ function ensureSystemWatcher() {
 export const useSettingsStore = create<SettingsStore>()(
   persist(
     (set, get) => ({
-      theme: 'dark',
+      theme: 'system',
       fontSize: 13,
       fontFamily: "'JetBrains Mono'",
       fontFamilyCN: "'Noto Sans SC'",

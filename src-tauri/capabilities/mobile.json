@@ -7,6 +7,7 @@
     "core:default",
     "core:app:default",
     "core:event:default",
-    "deep-link:default"
+    "deep-link:default",
+    "system-insets:default"
   ]
 }

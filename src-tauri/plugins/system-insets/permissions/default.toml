@@ -1,0 +1,3 @@
+[default]
+description = "允许读取系统状态栏/导航栏/刘海安全区内边距（只读数值，不含任何敏感信息）。"
+permissions = ["allow-get-system-insets"]

@@ -34,18 +34,23 @@ export function MobileTabBar({ section, sessionCount, onNavigate }: MobileTabBar
             onPointerDown={() => onNavigate(item.id)}
             onClick={(event) => event.preventDefault()}
           >
+            {/* Telegram 风格整项选中药丸，layoutId 在标签间平滑平移（250ms） */}
+            {active && (
+              <motion.span
+                layoutId="m-tab-glow"
+                className="m-tab-glow"
+                transition={
+                  reducedMotion
+                    ? { duration: 0.15 }
+                    : { type: 'spring', bounce: 0, duration: 0.25 }
+                }
+              />
+            )}
             <span className="m-tab-icon">
-              {active && (
-                <motion.span
-                  layoutId="m-tab-glow"
-                  className="m-tab-glow"
-                  transition={reducedMotion ? { duration: 0.15 } : { type: 'spring', bounce: 0, duration: 0.35 }}
-                />
-              )}
               <Icon size={20} />
               {item.id === 'sessions' && sessionCount > 0 && <b className="m-tab-badge">{sessionCount}</b>}
             </span>
-            <span>{item.label}</span>
+            <span className="m-tab-label">{item.label}</span>
           </button>
         )
       })}

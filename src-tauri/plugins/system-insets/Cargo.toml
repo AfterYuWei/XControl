@@ -1,0 +1,16 @@
+[package]
+name = "tauri-plugin-system-insets"
+version = "0.1.0"
+authors = ["yuweinfo"]
+description = "eizhu mobile safe-area insets bridge for CSS variables"
+edition = "2021"
+rust-version = "1.89"
+links = "tauri-plugin-system-insets"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+tauri = { version = "2" }
+thiserror = "2"
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }

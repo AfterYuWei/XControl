@@ -1601,6 +1601,7 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-session-keepalive",
  "tauri-plugin-single-instance",
+ "tauri-plugin-system-insets",
  "tauri-plugin-updater",
  "tempfile",
  "thiserror 2.0.20",
@@ -6038,6 +6039,16 @@ dependencies = [
  "tracing",
  "windows-sys 0.60.2",
  "zbus",
+]
+
+[[package]]
+name = "tauri-plugin-system-insets"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.20",
 ]
 
 [[package]]

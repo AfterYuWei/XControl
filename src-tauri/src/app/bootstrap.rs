@@ -15,6 +15,7 @@ pub(crate) fn run() {
         tauri::Builder::default()
             .plugin(tauri_plugin_deep_link::init())
             .plugin(tauri_plugin_session_keepalive::init())
+            .plugin(tauri_plugin_system_insets::init())
             .plugin(tauri_plugin_document_gateway::init())
             .plugin(tauri_plugin_master_key_store::init())
             .invoke_handler(tauri::generate_handler![

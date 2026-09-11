@@ -309,34 +309,42 @@
     bottom: 0;
     left: 0;
     width: 100%;
-    max-height: min(86dvh, calc(var(--mobile-viewport-height, 100dvh) - env(safe-area-inset-top) - 8px));
+    max-height: min(76dvh, calc(var(--mobile-viewport-height, 100dvh) - var(--safe-inset-top, env(safe-area-inset-top)) - 8px));
     transform: none;
+    /* Tailwind v4 的 translate-x/y 工具类编译为独立 translate 属性，
+       必须显式重置，否则居中位移仍生效导致面板偏出屏幕 */
+    translate: none;
     border-right: 0;
     border-bottom: 0;
     border-left: 0;
     border-radius: var(--r-xl) var(--r-xl) 0 0;
-    padding-bottom: env(safe-area-inset-bottom);
+    padding-bottom: var(--safe-inset-bottom, env(safe-area-inset-bottom));
     animation-name: connection-sheet-in;
   }
 
-  .connection-dialog-header { padding: 12px 14px; }
-  .connection-server-icon { width: 32px; height: 32px; }
-  .connection-hide-button { min-width: 54px; min-height: 40px; }
-  .connection-dialog-main { padding: 16px 14px; }
+  /* ── 简约化：隐藏图标与眉标，头部只留「名称 + 地址 + 隐藏」 ── */
+  .connection-dialog-header { padding: 10px 14px; }
+  .connection-server-icon { display: none; }
+  .connection-server-identity > span { display: none; }
+  .connection-server-identity > strong { font-size: 15px; }
+  .connection-hide-button { min-width: 52px; min-height: 38px; }
+  .connection-dialog-main { padding: 12px 14px; }
   .connection-current-copy > span { white-space: normal; }
   .connection-elapsed { align-self: flex-start; padding-top: 2px; }
 
-  .connection-steps { margin-top: 16px; }
-  .connection-step-rail { padding-inline: 5px; }
-  .connection-step-node { width: 21px; height: 21px; }
+  /* ── 步骤栏退化为一条 3px 分段细进度条（节点隐藏，颜色沿用 done/active 状态） ── */
+  .connection-steps { margin-top: 12px; }
+  .connection-step-rail { padding-inline: 0; }
+  .connection-step-node { display: none; }
+  .connection-step-line { height: 3px; border-radius: 999px; background: var(--border-subtle); }
   .connection-step-labels { display: none; }
 
   .connection-host-key,
-  .connection-error-panel { margin-top: 16px; padding: 12px; }
-  .connection-fingerprint-grid { grid-template-columns: 1fr; }
-  .connection-fingerprint { padding: 10px 11px; }
+  .connection-error-panel { margin-top: 12px; padding: 12px; }
+  .connection-fingerprint-grid { grid-template-columns: 1fr; gap: 6px; }
+  .connection-fingerprint { padding: 9px 11px; }
   .connection-fingerprint > button { width: 40px; height: 40px; }
-  .connection-host-key-actions { display: grid; grid-template-columns: 1fr; }
+  .connection-host-key-actions { display: grid; grid-template-columns: 1fr; margin-top: 10px; gap: 6px; }
   .connection-security-action { width: 100%; min-height: 44px; }
   .connection-host-key.is-changed .connection-host-key-actions .connection-security-action:first-child { order: 3; }
 
@@ -344,10 +352,10 @@
   .connection-error-actions { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .connection-error-actions button { min-height: 44px; }
 
-  .connection-logs-toggle { min-height: 48px; padding-inline: 14px; }
+  .connection-logs-toggle { min-height: 44px; padding-inline: 14px; }
   .connection-logs-toggle > small { display: none; }
   .connection-live-logs { max-height: min(220px, 30dvh); }
-  .connection-log-entry { padding-inline: 14px; }
+  .connection-log-entry { padding: 7px 14px; }
 }
 
 @media (max-width: 359px) {

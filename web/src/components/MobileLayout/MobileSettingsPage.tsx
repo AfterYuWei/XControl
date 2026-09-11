@@ -1,9 +1,12 @@
 import { useRef } from 'react'
-import { ChevronRight, KeyRound, Settings, ShieldCheck, Wifi } from 'lucide-react'
+import { ChevronRight, KeyRound, Monitor, Moon, Settings, ShieldCheck, Sun, Wifi } from 'lucide-react'
 import { MobileHeader } from './MobileHeader'
 import { useHeaderCollapse } from './useHeaderCollapse'
 
+import { useSettingsStore } from '@/store/settings'
 import type { NativePlatform } from '@/lib/platform'
+
+const THEME_LABELS = { light: '浅色', dark: '深色', system: '跟随系统' } as const
 
 interface MobileSettingsPageProps {
   platform: NativePlatform
@@ -15,7 +18,14 @@ interface MobileSettingsPageProps {
 export function MobileSettingsPage({ platform, connectedTabs, onOpenVault, onOpenSettings }: MobileSettingsPageProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const collapsed = useHeaderCollapse(scrollRef)
+  const theme = useSettingsStore((state) => state.theme)
+  const setTheme = useSettingsStore((state) => state.setTheme)
   const platformLabel = platform === 'android' ? 'Android 设备' : platform === 'ios' ? 'iPhone 与 iPad' : '移动设备'
+  const ThemeIcon = theme === 'dark' ? Moon : theme === 'light' ? Sun : Monitor
+
+  const cycleTheme = () => {
+    setTheme(theme === 'system' ? 'light' : theme === 'light' ? 'dark' : 'system')
+  }
 
   return (
     <div className="m-page">
@@ -38,6 +48,14 @@ export function MobileSettingsPage({ platform, connectedTabs, onOpenVault, onOpe
 
           <h2 className="m-eyebrow"><span>管理</span></h2>
           <div className="m-card">
+            <button type="button" className="m-set-row" onClick={cycleTheme}>
+              <span className="m-set-row-icon is-settings"><ThemeIcon size={17} /></span>
+              <span className="m-set-row-copy">
+                <strong>外观</strong>
+                <span>{THEME_LABELS[theme]}</span>
+              </span>
+              <ChevronRight size={16} />
+            </button>
             <button type="button" className="m-set-row" onClick={onOpenVault}>
               <span className="m-set-row-icon is-vault"><KeyRound size={17} /></span>
               <span className="m-set-row-copy">

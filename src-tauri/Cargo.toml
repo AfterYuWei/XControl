@@ -72,6 +72,7 @@ tauri-plugin-process = "2"
 tauri-plugin-session-keepalive = { path = "plugins/session-keepalive" }
 tauri-plugin-document-gateway = { path = "plugins/document-gateway" }
 tauri-plugin-master-key-store = { path = "plugins/master-key-store" }
+tauri-plugin-system-insets = { path = "plugins/system-insets" }
 
 [dev-dependencies]
 tempfile = "3"

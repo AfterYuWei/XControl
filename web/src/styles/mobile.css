@@ -7,7 +7,7 @@
   --m-pad: 16px;
   --m-header-compact-h: 44px;
   --m-tabbar-h: 60px;
-  --m-tabbar-inset: calc(12px + env(safe-area-inset-bottom));
+  --m-tabbar-inset: calc(8px + var(--safe-inset-bottom, env(safe-area-inset-bottom)));
   --m-radius-card: 16px;
   --m-radius-row-icon: 10px;
   --m-glass-bar: color-mix(in srgb, var(--surface-chrome) 72%, transparent);
@@ -23,8 +23,8 @@
   overflow: hidden;
   background: var(--surface-app);
   color: var(--fg);
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-top: var(--safe-inset-top, env(safe-area-inset-top));
+  padding-bottom: var(--safe-inset-bottom, env(safe-area-inset-bottom));
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -66,7 +66,7 @@
 .mobile-layout .m-page-scroll::-webkit-scrollbar { display: none; }
 
 .mobile-layout .m-page-body {
-  padding: 0 var(--m-pad) calc(84px + env(safe-area-inset-bottom));
+  padding: 0 var(--m-pad) calc(84px + var(--safe-inset-bottom, env(safe-area-inset-bottom)));
 }
 
 /* ─────────────── Header ─────────────── */
@@ -247,9 +247,14 @@
 }
 .mobile-layout .m-tab:active { transform: scale(0.95); }
 .mobile-layout .m-tab.is-active { color: var(--accent); }
+/* 内容浮在选中药丸之上 */
+.mobile-layout .m-tab-icon,
+.mobile-layout .m-tab-label {
+  position: relative;
+  z-index: 1;
+}
 
 .mobile-layout .m-tab-icon {
-  position: relative;
   display: grid;
   place-items: center;
   width: 36px;
@@ -257,11 +262,13 @@
 }
 .mobile-layout .m-tab-icon svg { width: 20px; height: 20px; }
 
+/* Telegram 风格整项选中药丸：覆盖图标+文字，轻量蓝色调 */
 .mobile-layout .m-tab-glow {
   position: absolute;
-  inset: 0;
+  z-index: 0;
+  inset: 4px;
   border-radius: 999px;
-  background: var(--accent-bg);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
 .mobile-layout .m-tab-badge {
@@ -291,6 +298,8 @@
   align-items: center;
   gap: 8px;
   margin-top: 14px;
+  /* 与下方第一张卡片/分组保持呼吸间距（无分组眉题时是唯一间隔） */
+  margin-bottom: 12px;
   padding: 0 10px;
   border-radius: 10px;
   background: var(--bg-elevated);
@@ -675,7 +684,7 @@
   position: fixed;
   left: 8px;
   right: 8px;
-  bottom: calc(8px + env(safe-area-inset-bottom));
+  bottom: calc(8px + var(--safe-inset-bottom, env(safe-area-inset-bottom)));
   z-index: 51;
   border-radius: 20px;
   background: color-mix(in srgb, var(--surface-chrome) 80%, transparent);
@@ -764,7 +773,7 @@
   display: flex;
   gap: 5px;
   overflow-x: auto;
-  padding: 6px max(8px, env(safe-area-inset-left));
+  padding: 6px max(8px, var(--safe-inset-left, env(safe-area-inset-left)));
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   background: color-mix(in srgb, var(--term-bg) 88%, var(--surface-chrome));
   scrollbar-width: none;

@@ -4,8 +4,11 @@ import { readFileSync, writeFileSync } from 'node:fs'
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
 const inputPath = process.argv[2]
 const radiusRatio = Number(process.argv[3] ?? '0.22')
+const foregroundPath = process.argv[4]
 
-if (!inputPath) throw new Error('Usage: node scripts/round-app-icon.mjs <png> [radius-ratio]')
+if (!inputPath) {
+  throw new Error('Usage: node scripts/round-app-icon.mjs <png> [radius-ratio] [android-foreground.png]')
+}
 if (!Number.isFinite(radiusRatio) || radiusRatio <= 0 || radiusRatio >= 0.5) {
   throw new Error(`radius-ratio must be between 0 and 0.5, received ${process.argv[3]}`)
 }
@@ -83,10 +86,12 @@ for (let y = 0; y < height; y += 1) {
 const radius = width * radiusRatio
 const rgbaStride = width * 4
 const unfilteredRgba = Buffer.alloc(height * (rgbaStride + 1))
+const foregroundRgba = foregroundPath ? Buffer.alloc(height * (rgbaStride + 1)) : null
 
 for (let y = 0; y < height; y += 1) {
   const outputRow = y * (rgbaStride + 1)
   unfilteredRgba[outputRow] = 0
+  if (foregroundRgba) foregroundRgba[outputRow] = 0
 
   for (let x = 0; x < width; x += 1) {
     const sourcePixel = y * stride + x * bytesPerPixel
@@ -97,28 +102,31 @@ for (let y = 0; y < height; y += 1) {
     unfilteredRgba[outputPixel] = pixels[sourcePixel]
     unfilteredRgba[outputPixel + 1] = pixels[sourcePixel + 1]
     unfilteredRgba[outputPixel + 2] = pixels[sourcePixel + 2]
-    unfilteredRgba[outputPixel + 3] = Math.round(sourceAlpha * coverage)
+    // The restored second-generation source is fully opaque. Derive the corner
+    // alpha from geometry so repeated icon generation stays byte-for-byte stable.
+    unfilteredRgba[outputPixel + 3] = Math.round(255 * coverage)
+
+    if (foregroundRgba) {
+      const red = pixels[sourcePixel]
+      const green = pixels[sourcePixel + 1]
+      const blue = pixels[sourcePixel + 2]
+      const luminance = (red * 54 + green * 183 + blue * 19) / 256
+      const inkCoverage = Math.max(0, Math.min(1, (245 - luminance) / 45))
+      foregroundRgba[outputPixel] = 0
+      foregroundRgba[outputPixel + 1] = 0
+      foregroundRgba[outputPixel + 2] = 0
+      foregroundRgba[outputPixel + 3] = Math.round(sourceAlpha * inkCoverage)
+    }
   }
 }
 
-const header = Buffer.alloc(13)
-header.writeUInt32BE(width, 0)
-header.writeUInt32BE(height, 4)
-header[8] = 8
-header[9] = 6
-header[10] = 0
-header[11] = 0
-header[12] = 0
-
-const roundedPng = Buffer.concat([
-  PNG_SIGNATURE,
-  pngChunk('IHDR', header),
-  pngChunk('IDAT', deflateSync(unfilteredRgba, { level: 9 })),
-  pngChunk('IEND', Buffer.alloc(0)),
-])
-
-writeFileSync(inputPath, roundedPng)
+writeFileSync(inputPath, encodeRgbaPng(width, height, unfilteredRgba))
 console.log(`Rounded ${inputPath}: ${width}x${height}, radius ${Math.round(radius)}px`)
+
+if (foregroundPath && foregroundRgba) {
+  writeFileSync(foregroundPath, encodeRgbaPng(width, height, foregroundRgba))
+  console.log(`Extracted Android foreground: ${foregroundPath}`)
+}
 
 function roundedRectCoverage(x, y, imageWidth, imageHeight, cornerRadius) {
   if (
@@ -162,6 +170,24 @@ function pngChunk(type, data) {
   data.copy(chunk, 8)
   chunk.writeUInt32BE(crc32(Buffer.concat([typeBuffer, data])), data.length + 8)
   return chunk
+}
+
+function encodeRgbaPng(width, height, unfilteredPixels) {
+  const header = Buffer.alloc(13)
+  header.writeUInt32BE(width, 0)
+  header.writeUInt32BE(height, 4)
+  header[8] = 8
+  header[9] = 6
+  header[10] = 0
+  header[11] = 0
+  header[12] = 0
+
+  return Buffer.concat([
+    PNG_SIGNATURE,
+    pngChunk('IHDR', header),
+    pngChunk('IDAT', deflateSync(unfilteredPixels, { level: 9 })),
+    pngChunk('IEND', Buffer.alloc(0)),
+  ])
 }
 
 function crc32(buffer) {

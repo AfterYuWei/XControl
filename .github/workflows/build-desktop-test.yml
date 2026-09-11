@@ -27,12 +27,15 @@ jobs:
             echo "VERSION 必须是 SemVer（x.y.z），当前值: $BASE_VERSION" >&2
             exit 1
           fi
+          # 版本号基于提交而非运行编号：Build Mobile 使用同一提交会得到
+          # 相同的 test-v* 标签，Android APK 与桌面安装包得以合并进同一个
+          # 测试 Release。同一提交重跑时复用该 Release 并覆盖同名资产。
           SHORT_SHA="${GITHUB_SHA::7}"
-          VERSION="${BASE_VERSION}-test.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+          VERSION="${BASE_VERSION}-test.${SHORT_SHA}"
           TAG="test-v${VERSION}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "release_name=eizhu ${VERSION} (${SHORT_SHA})" >> "$GITHUB_OUTPUT"
+          echo "release_name=eizhu ${VERSION}" >> "$GITHUB_OUTPUT"
 
   build:
     needs: metadata

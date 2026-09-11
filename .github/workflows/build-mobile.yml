@@ -151,34 +151,41 @@ jobs:
             echo "VERSION 必须是 SemVer（x.y.z），当前值: $BASE_VERSION" >&2
             exit 1
           fi
+          # 与 Build Desktop Test 使用同一提交级版本号，两个工作流把产物
+          # 发布到同一个 test-v* Release。同一提交重跑时资产同名覆盖。
+          SHORT_SHA="${GITHUB_SHA::7}"
+          TEST_VERSION="${BASE_VERSION}-test.${SHORT_SHA}"
+          RELEASE_TAG="test-v${TEST_VERSION}"
           APK_PATH="$(find src-tauri/gen/android/app/build/outputs/apk \
             -type f -name '*debug*.apk' -print -quit)"
           test -n "$APK_PATH"
-          TEST_VERSION="${BASE_VERSION}-test.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
-          RELEASE_TAG="android-test-v${TEST_VERSION}"
           RELEASE_ASSET="$RUNNER_TEMP/eizhu-${TEST_VERSION}-android-arm64-debug.apk"
           cp "$APK_PATH" "$RELEASE_ASSET"
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
-          echo "name=eizhu Android ${TEST_VERSION} (${GITHUB_SHA::7})" >> "$GITHUB_OUTPUT"
+          echo "version=$TEST_VERSION" >> "$GITHUB_OUTPUT"
           echo "asset=$RELEASE_ASSET" >> "$GITHUB_OUTPUT"
           echo "size=$(du -h "$RELEASE_ASSET" | cut -f 1)" >> "$GITHUB_OUTPUT"
           echo "sha256=$(sha256sum "$RELEASE_ASSET" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
-      - name: Publish installable APK to GitHub Prerelease
+      - name: Publish installable APK to the test Release
         if: github.ref == 'refs/heads/dev'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.android-release.outputs.tag }}
-          target_commitish: ${{ github.sha }}
-          name: ${{ steps.android-release.outputs.name }}
-          prerelease: true
-          generate_release_notes: false
-          body: |
-            Android arm64 体积优化测试安装包，不包含 Rust 调试符号，不用于应用商店发布。
-
-            Commit: `${{ github.sha }}`
-            Size: `${{ steps.android-release.outputs.size }}`
-            SHA-256: `${{ steps.android-release.outputs.sha256 }}`
-          files: ${{ steps.android-release.outputs.asset }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.android-release.outputs.tag }}"
+          ASSET="${{ steps.android-release.outputs.asset }}"
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # 桌面流水线可能尚未创建该 Release；先建一个占位，
+            # 桌面侧随后的发布步骤会补全标题与说明。
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --prerelease \
+              --target "${GITHUB_SHA}" \
+              --title "eizhu ${{ steps.android-release.outputs.version }}" \
+              --notes "eizhu dev 测试版（Android 资产先行上传，桌面安装包随后补充）。" \
+              || true
+          fi
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" "$ASSET" --clobber
       - name: Build Android release AAB (arm64, R8)
         run: npm run android:build -- --aab --target aarch64 --ci
       - name: Verify Android R8 output
@@ -204,9 +211,10 @@ jobs:
           APK_PATH="$(find src-tauri/gen/android/app/build/outputs/apk \
             -type f -name '*.apk' ! -name '*debug*' -print -quit)"
           test -n "$APK_PATH"
-          TAG="android-v${VERSION}"
-          # 与桌面正式版同一原则：main 上的每次合并都是一次正式发版，
-          # 必须先提升 VERSION，防止不同提交复用同一 tag 覆盖已有 Release。
+          # 与 Build Desktop Stable 发布到同一个 v<VERSION> 正式 Release；
+          # 与桌面同一原则：main 上的每次合并都是一次正式发版，必须先提升
+          # VERSION，防止不同提交复用同一 tag 覆盖已有 Release。
+          TAG="v${VERSION}"
           set +e
           git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null
           STATUS=$?
@@ -221,26 +229,25 @@ jobs:
           RELEASE_ASSET="$RUNNER_TEMP/eizhu-${VERSION}-android-arm64-release.apk"
           cp "$APK_PATH" "$RELEASE_ASSET"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "name=eizhu Android ${VERSION} (${GITHUB_SHA::7})" >> "$GITHUB_OUTPUT"
           echo "asset=$RELEASE_ASSET" >> "$GITHUB_OUTPUT"
-          echo "size=$(du -h "$RELEASE_ASSET" | cut -f 1)" >> "$GITHUB_OUTPUT"
-          echo "sha256=$(sha256sum "$RELEASE_ASSET" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
-      - name: Publish release APK to GitHub Release
+      - name: Publish release APK to the stable Release
         if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.android-formal-release.outputs.tag }}
-          target_commitish: ${{ github.sha }}
-          name: ${{ steps.android-formal-release.outputs.name }}
-          prerelease: false
-          generate_release_notes: false
-          body: |
-            Android arm64 正式版安装包（已用上传密钥签名）。
-
-            Commit: `${{ github.sha }}`
-            Size: `${{ steps.android-formal-release.outputs.size }}`
-            SHA-256: `${{ steps.android-formal-release.outputs.sha256 }}`
-          files: ${{ steps.android-formal-release.outputs.asset }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.android-formal-release.outputs.tag }}"
+          ASSET="${{ steps.android-formal-release.outputs.asset }}"
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # 桌面流水线可能尚未创建该 Release；先建占位，桌面侧会补全标题与说明。
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "${GITHUB_SHA}" \
+              --title "eizhu $(tr -d '[:space:]' < VERSION)" \
+              --notes "eizhu 正式版（Android 资产先行上传，桌面安装包随后补充）。" \
+              || true
+          fi
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" "$ASSET" --clobber
       - name: Upload Android artifacts
         uses: actions/upload-artifact@v7
         with:

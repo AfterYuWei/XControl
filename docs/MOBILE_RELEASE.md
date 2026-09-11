@@ -29,7 +29,8 @@ SemVer 派生，iOS `CFBundleVersion` 默认跟随应用版本；正式发布前
 
 CI 仅在非 pull request 构建中解码密钥，并生成不入库的
 `src-tauri/gen/android/keystore.properties`。发布 AAB 必须启用 R8，工作流会检查
-`mapping/release/mapping.txt` 并与 AAB 一起保存。
+`app/build/outputs/mapping/<variant>/mapping.txt` 并与 AAB 一起保存；`<variant>` 由 Tauri
+根据 ABI/flavor 生成，例如 `arm64Release` 或 `universalRelease`，不可写死为 `release`。
 
 ### iOS
 

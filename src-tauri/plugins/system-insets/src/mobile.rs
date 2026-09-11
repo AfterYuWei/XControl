@@ -16,10 +16,8 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
     api: PluginApi<R, C>,
 ) -> crate::Result<SystemInsetsPlugin<R>> {
     #[cfg(target_os = "android")]
-    let handle = api.register_android_plugin(
-        "com.yuweinfo.eizhu.systeminsets",
-        "SystemInsetsPlugin",
-    )?;
+    let handle =
+        api.register_android_plugin("com.yuweinfo.eizhu.systeminsets", "SystemInsetsPlugin")?;
     #[cfg(target_os = "ios")]
     let handle = api.register_ios_plugin(init_plugin_system_insets)?;
     Ok(SystemInsetsPlugin(handle))
@@ -28,8 +26,6 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
 impl<R: Runtime> SystemInsetsPlugin<R> {
     /// 读取失败时退回全零，前端 CSS 会继续使用 env(safe-area-inset-*)。
     pub fn get(&self) -> SystemInsets {
-        self.0
-            .run_mobile_plugin("get", ())
-            .unwrap_or_default()
+        self.0.run_mobile_plugin("get", ()).unwrap_or_default()
     }
 }

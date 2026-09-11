@@ -12,6 +12,10 @@
 | Android | debug APK、release AAB、R8 mapping | upload key 签名的 release AAB | `arm64-v8a` / API 24+ |
 | iOS | arm64 Simulator `.app` | App Store Connect Archive / IPA | arm64 / iOS 15+ |
 
+`dev` 的 Android debug APK 会同时保存为 Actions Artifact，并发布到独立的 GitHub
+Prerelease：`android-test-v<版本>-test.<run>.<attempt>`。APK 文件名包含相同测试版本和
+`android-arm64-debug`，可直接下载到 Android 设备安装；该包使用 debug 签名，不用于商店发布。
+
 Android 首版正式支持 arm64。需要增加 ABI 时，先在真机矩阵验证，再把 `android build` 的
 `--target` 扩展为 `armv7`、`i686` 或 `x86_64`；不得只增加产物而跳过对应设备验收。
 

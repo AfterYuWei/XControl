@@ -19,6 +19,8 @@ concurrency:
 
 jobs:
   android:
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -134,6 +136,42 @@ jobs:
             !src-tauri/gen/android/keystore.properties
           if-no-files-found: warn
           retention-days: 14
+      - name: Prepare Android APK release metadata
+        id: android-release
+        if: github.ref == 'refs/heads/dev'
+        shell: bash
+        run: |
+          BASE_VERSION="$(tr -d '[:space:]' < VERSION)"
+          if [[ ! "$BASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "VERSION 必须是 SemVer（x.y.z），当前值: $BASE_VERSION" >&2
+            exit 1
+          fi
+          APK_PATH="$(find src-tauri/gen/android/app/build/outputs/apk \
+            -type f -name '*debug*.apk' -print -quit)"
+          test -n "$APK_PATH"
+          TEST_VERSION="${BASE_VERSION}-test.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+          RELEASE_TAG="android-test-v${TEST_VERSION}"
+          RELEASE_ASSET="$RUNNER_TEMP/eizhu-${TEST_VERSION}-android-arm64-debug.apk"
+          cp "$APK_PATH" "$RELEASE_ASSET"
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "name=eizhu Android ${TEST_VERSION} (${GITHUB_SHA::7})" >> "$GITHUB_OUTPUT"
+          echo "asset=$RELEASE_ASSET" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(sha256sum "$RELEASE_ASSET" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+      - name: Publish installable APK to GitHub Prerelease
+        if: github.ref == 'refs/heads/dev'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.android-release.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ steps.android-release.outputs.name }}
+          prerelease: true
+          generate_release_notes: false
+          body: |
+            Android arm64 测试安装包，不用于应用商店发布。
+
+            Commit: `${{ github.sha }}`
+            SHA-256: `${{ steps.android-release.outputs.sha256 }}`
+          files: ${{ steps.android-release.outputs.asset }}
       - name: Build Android release AAB (arm64, R8)
         run: npm run android:build -- --aab --target aarch64 --ci
       - name: Verify Android R8 output

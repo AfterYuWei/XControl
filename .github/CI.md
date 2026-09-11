@@ -39,9 +39,12 @@ Cargo manifest 受格式约束必须声明版本，`build.rs` 会读取 `VERSION
 | Linux (Debian/Ubuntu) | `.deb` | ❌（手动覆盖安装） |
 | Linux (Fedora/RHEL) | `.rpm` | ❌（手动覆盖安装） |
 | Linux (通用) | `.AppImage` | ✅ |
+| Android (arm64) | debug `.apk`（独立 Android Prerelease） | ❌（手动下载安装） |
 
 稳定版与测试版的 updater 清单分别为 `latest-stable-*` 和 `latest-test-*`，
 由固定的 `tauri-update-channel` Release 保存最新指针。
+Android 测试包使用 `android-test-v<VERSION>-test.<run>.<attempt>` 标签，避免与桌面
+Release 及 updater 固定标签冲突。
 
 ## Secrets（可选）
 

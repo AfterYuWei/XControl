@@ -117,7 +117,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload Android diagnostic log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: eizhu-android-log-${{ github.sha }}
           path: ${{ runner.temp }}/android-debug.log
@@ -125,7 +125,7 @@ jobs:
           retention-days: 14
       - name: Upload generated Android project on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: eizhu-android-generated-${{ github.sha }}
           path: |
@@ -182,7 +182,7 @@ jobs:
           test -n "$MAPPING_PATH"
           echo "R8 mapping: $MAPPING_PATH"
       - name: Upload Android artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: eizhu-android-${{ github.sha }}
           path: |
@@ -250,7 +250,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload iOS diagnostic log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: eizhu-ios-log-${{ github.sha }}
           path: ${{ runner.temp }}/ios-simulator.log
@@ -258,7 +258,7 @@ jobs:
           retention-days: 14
       - name: Upload generated iOS project on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: eizhu-ios-generated-${{ github.sha }}
           path: |
@@ -296,7 +296,7 @@ jobs:
         if: steps.apple-key.outputs.configured == 'true'
         run: npm run ios:build -- --target aarch64 --export-method app-store-connect --ci
       - name: Upload iOS artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: eizhu-ios-${{ github.sha }}
           path: |

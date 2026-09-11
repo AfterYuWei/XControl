@@ -200,7 +200,7 @@ jobs:
 
       # 统一产物上传：安装包 + 更新产物（.sig / macOS app.tar.gz，签名启用时才有）
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: eizhu-tauri-${{ inputs.channel }}-${{ matrix.platform }}-${{ inputs.version }}
           path: |
@@ -229,7 +229,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true

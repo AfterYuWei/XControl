@@ -88,7 +88,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload Android diagnostic log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: eizhu-android-apk-log-${{ github.sha }}
           path: ${{ runner.temp }}/android-apk.log
@@ -111,7 +111,7 @@ jobs:
             echo "- SHA-256: $(sha256sum "$APK_PATH" | cut -d ' ' -f 1)"
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload installable APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: eizhu-android-debug-${{ github.sha }}
           path: ${{ steps.apk.outputs.path }}
@@ -119,7 +119,7 @@ jobs:
           retention-days: 14
       - name: Upload generated Android project
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: eizhu-android-generated-${{ github.sha }}
           path: |

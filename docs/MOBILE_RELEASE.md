@@ -14,7 +14,9 @@
 
 `dev` 的 Android debug APK 会同时保存为 Actions Artifact，并发布到独立的 GitHub
 Prerelease：`android-test-v<版本>-test.<run>.<attempt>`。APK 文件名包含相同测试版本和
-`android-arm64-debug`，可直接下载到 Android 设备安装；该包使用 debug 签名，不用于商店发布。
+`android-arm64-debug`，可直接下载到 Android 设备安装。CI 会对 Rust dev profile 使用
+`opt-level=s` 并剥离调试符号，以避免测试 APK 因 Rust 符号膨胀到数百 MB；该包仍使用 debug
+签名，不用于商店发布，也不用于原生崩溃符号调试。
 
 Android 首版正式支持 arm64。需要增加 ABI 时，先在真机矩阵验证，再把 `android build` 的
 `--target` 扩展为 `armv7`、`i686` 或 `x86_64`；不得只增加产物而跳过对应设备验收。

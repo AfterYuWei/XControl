@@ -63,6 +63,11 @@ jobs:
         run: test -d src-tauri/gen/android || npm run android:init -- --ci
       - name: Build installable arm64 debug APK
         shell: bash
+        env:
+          CARGO_PROFILE_DEV_DEBUG: '0'
+          CARGO_PROFILE_DEV_INCREMENTAL: 'false'
+          CARGO_PROFILE_DEV_OPT_LEVEL: s
+          CARGO_PROFILE_DEV_STRIP: symbols
         run: |
           set -o pipefail
           npm run android:build -- --debug --apk --target aarch64 --ci 2>&1 \
@@ -108,6 +113,7 @@ jobs:
             echo "- ABI: arm64-v8a"
             echo "- Type: debug (installable, not for app stores)"
             echo "- File: $(basename "$APK_PATH")"
+            echo "- Size: $(du -h "$APK_PATH" | cut -f 1)"
             echo "- SHA-256: $(sha256sum "$APK_PATH" | cut -d ' ' -f 1)"
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload installable APK

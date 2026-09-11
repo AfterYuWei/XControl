@@ -92,6 +92,11 @@ jobs:
           } > src-tauri/gen/android/keystore.properties
       - name: Build Android debug APK (arm64)
         shell: bash
+        env:
+          CARGO_PROFILE_DEV_DEBUG: '0'
+          CARGO_PROFILE_DEV_INCREMENTAL: 'false'
+          CARGO_PROFILE_DEV_OPT_LEVEL: s
+          CARGO_PROFILE_DEV_STRIP: symbols
         run: |
           set -o pipefail
           npm run android:build -- --debug --apk --target aarch64 --ci 2>&1 \
@@ -156,6 +161,7 @@ jobs:
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "name=eizhu Android ${TEST_VERSION} (${GITHUB_SHA::7})" >> "$GITHUB_OUTPUT"
           echo "asset=$RELEASE_ASSET" >> "$GITHUB_OUTPUT"
+          echo "size=$(du -h "$RELEASE_ASSET" | cut -f 1)" >> "$GITHUB_OUTPUT"
           echo "sha256=$(sha256sum "$RELEASE_ASSET" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
       - name: Publish installable APK to GitHub Prerelease
         if: github.ref == 'refs/heads/dev'
@@ -167,9 +173,10 @@ jobs:
           prerelease: true
           generate_release_notes: false
           body: |
-            Android arm64 测试安装包，不用于应用商店发布。
+            Android arm64 体积优化测试安装包，不包含 Rust 调试符号，不用于应用商店发布。
 
             Commit: `${{ github.sha }}`
+            Size: `${{ steps.android-release.outputs.size }}`
             SHA-256: `${{ steps.android-release.outputs.sha256 }}`
           files: ${{ steps.android-release.outputs.asset }}
       - name: Build Android release AAB (arm64, R8)

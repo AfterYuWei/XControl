@@ -14,3 +14,13 @@ Thumbs.db
 
 # IDE
 .idea/
+
+# AI 工具本地配置（skills、方案文档）
+.agents/
+.claude/
+.trae/
+skills-lock.json
+
+# Android Gradle 构建产物（插件目录）
+**/android/.gradle/
+**/android/build/

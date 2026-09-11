@@ -1,19 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  Activity,
-  ChevronRight,
-  Files,
-  KeyRound,
-  MonitorSmartphone,
-  Search,
-  Server,
-  Settings,
-  ShieldCheck,
-  Wifi,
-  X,
-} from 'lucide-react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { onBackButtonPress } from '@tauri-apps/api/app'
-import { Sidebar } from '@/components/Sidebar'
+import { MonitorSmartphone, X } from 'lucide-react'
 import { TerminalView } from '@/components/Terminal'
 import { Button } from '@/components/ui/button'
 import { Toaster } from '@/components/ui/sonner'
@@ -24,19 +12,15 @@ import { getPlatformCapabilities } from '@/lib/platform'
 import { consumeMobileBackNavigation } from '@/lib/mobileBack'
 import { isMobileKeyboardOpen } from '@/lib/mobileViewport'
 import { toast } from 'sonner'
+import { MobileHeader } from './MobileHeader'
+import { MobileTabBar, type MobileSection } from './MobileTabBar'
+import { MobileEmpty } from './MobileEmpty'
+import { MobileHostList } from './MobileHostList'
+import { MobileSettingsPage } from './MobileSettingsPage'
 
 const SettingsDialog = lazy(() =>
   import('@/components/SettingsDialog').then((module) => ({ default: module.SettingsDialog })),
 )
-
-type MobileSection = 'hosts' | 'sessions' | 'files' | 'settings'
-
-const NAV_ITEMS: Array<{ id: MobileSection; label: string; icon: typeof Server }> = [
-  { id: 'hosts', label: '主机', icon: Server },
-  { id: 'sessions', label: '会话', icon: MonitorSmartphone },
-  { id: 'files', label: '文件', icon: Files },
-  { id: 'settings', label: '设置', icon: Settings },
-]
 
 const STATUS_LABELS = {
   connecting: '连接中',
@@ -46,47 +30,35 @@ const STATUS_LABELS = {
   reconnecting: '重连中',
 } as const
 
+const PAGE_SPRING = { type: 'spring', bounce: 0, duration: 0.3 } as const
+/** reduced-motion：仅保留透明度淡入淡出，去除位移动画（skill §14）。 */
+const PAGE_FADE = { duration: 0.2, ease: 'easeOut' } as const
+
 export function MobileLayout() {
+  const reducedMotion = useReducedMotion()
   const [section, setSection] = useState<MobileSection>('hosts')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [vaultOpen, setVaultOpen] = useState(false)
   const [keyboardOpen, setKeyboardOpen] = useState(false)
-  const [hostQuery, setHostQuery] = useState('')
   const lastBackAt = useRef(0)
-  const { profiles, searchQuery, setSearchQuery, fetchProfiles, fetchGroups } = useProfileStore()
+  const { fetchProfiles, fetchGroups } = useProfileStore()
   const { tabs, activeTabId, setActiveTab, openSftpTab, openVaultTab, closeTab } = useSessionStore()
   const theme = useSettingsStore((state) => state.theme)
   const activeTab = tabs.find((tab) => tab.id === activeTabId)
   const terminalTabs = tabs.filter((tab) => tab.kind === 'terminal')
-  const sftpTabs = tabs.filter((tab) => tab.kind === 'sftp')
   const connectedTabs = terminalTabs.filter((tab) => tab.status === 'connected').length
   const platform = getPlatformCapabilities().platform
-  const pageMeta = useMemo(() => {
-    if (section === 'hosts') {
-      return { title: '连接', subtitle: `${profiles.length} 台主机` }
-    }
-    if (section === 'sessions') {
-      return {
-        title: activeTab?.kind === 'terminal' ? activeTab.profileName : '终端',
-        subtitle: terminalTabs.length ? `${connectedTabs}/${terminalTabs.length} 个会话在线` : '安全远程终端',
-      }
-    }
-    if (section === 'files') {
-      return { title: '文件', subtitle: sftpTabs.length ? 'SFTP 文件管理' : '选择服务器浏览文件' }
-    }
-    return { title: '我的', subtitle: platform === 'android' ? 'Android 设备' : 'iPhone 与 iPad' }
-  }, [activeTab, connectedTabs, platform, profiles.length, section, sftpTabs.length, terminalTabs.length])
+
+  // 移动运行时标记：mobile.css 的 Portal 弹层规则依赖它，卸载时移除（桌面端不存在）
+  useEffect(() => {
+    document.documentElement.setAttribute('data-eizhu-mobile', '')
+    return () => document.documentElement.removeAttribute('data-eizhu-mobile')
+  }, [])
 
   useEffect(() => {
     void fetchProfiles()
     void fetchGroups()
   }, [fetchGroups, fetchProfiles])
-
-  useEffect(() => {
-    if (hostQuery === searchQuery) return
-    const timer = window.setTimeout(() => setSearchQuery(hostQuery), 250)
-    return () => window.clearTimeout(timer)
-  }, [hostQuery, searchQuery, setSearchQuery])
 
   useEffect(() => {
     const capabilities = getPlatformCapabilities()
@@ -195,151 +167,123 @@ export function MobileLayout() {
     }
   }
 
+  const pageMeta = useMemo(() => {
+    if (section === 'files') {
+      return { title: '文件', subtitle: 'SFTP 文件管理' }
+    }
+    return {
+      title: activeTab?.kind === 'terminal' ? activeTab.profileName : '终端',
+      subtitle: terminalTabs.length
+        ? `${connectedTabs}/${terminalTabs.length} 个会话在线`
+        : '安全远程终端',
+    }
+  }, [activeTab, connectedTabs, section, terminalTabs.length])
+
   return (
     <div
       className={`mobile-layout mobile-current-${section} ${keyboardOpen ? 'is-keyboard-open' : ''}`}
       role="application"
       aria-label="eizhu 移动端"
     >
-      <header className="mobile-header">
-        <div className="mobile-brand-mark" aria-hidden="true">E</div>
-        <div className="mobile-header-copy">
-          <h1>{pageMeta.title}</h1>
-          <span>{pageMeta.subtitle}</span>
-        </div>
-        {section === 'sessions' && activeTab?.kind === 'terminal' && (
-          <span className={`mobile-session-state is-${activeTab.status}`}>
-            <span className="mobile-status-dot" />
-            {STATUS_LABELS[activeTab.status]}
-          </span>
-        )}
-        {section !== 'sessions' && <span className="mobile-header-wordmark">eizhu</span>}
-      </header>
-
-      <main className={`mobile-main mobile-section-${section}`}>
-        {section === 'hosts' && (
-          <div className="mobile-host-master">
-            <div className="mobile-host-list">
-              <label className="mobile-search">
-                <Search size={17} aria-hidden="true" />
-                <input
-                  type="search"
-                  value={hostQuery}
-                  placeholder="搜索名称、地址或标签"
-                  aria-label="搜索主机"
-                  onChange={(event) => setHostQuery(event.target.value)}
-                />
-                {hostQuery && (
-                  <button type="button" aria-label="清除搜索" onClick={() => setHostQuery('')}>
-                    <X size={15} />
-                  </button>
-                )}
-              </label>
-              <div className="mobile-sidebar-content"><Sidebar /></div>
-            </div>
-            <div className="mobile-tablet-detail">
-              {terminalTabs.length ? <TerminalView /> : <MobileEmpty text="选择主机开始连接" />}
-            </div>
-          </div>
-        )}
-        {section === 'sessions' && (
-          <div className="mobile-session-page">
-            {terminalTabs.length > 0 && (
-              <div className="mobile-session-tabs" role="tablist">
-                {terminalTabs.map((tab) => (
-                  <div key={tab.id} className={`mobile-session-tab ${tab.id === activeTabId ? 'is-active' : ''}`}>
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={tab.id === activeTabId}
-                      className="mobile-session-tab-select"
-                      onClick={() => setActiveTab(tab.id)}
-                    >
-                      <span className={`mobile-tab-dot is-${tab.status}`} />
-                      <span>{tab.profileName}</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="mobile-session-tab-close"
-                      aria-label={`关闭 ${tab.profileName}`}
-                      onClick={() => closeTerminalTab(tab.id)}
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                ))}
+      <main className="mobile-main">
+        {/* 并发交叉过渡：可随时打断，不锁定输入 */}
+        <AnimatePresence initial={false}>
+          <motion.div
+            key={section}
+            className="m-page"
+            initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
+            transition={reducedMotion ? PAGE_FADE : PAGE_SPRING}
+          >
+            {section === 'hosts' && (
+              <div className="m-host-master">
+                <MobileHostList />
+                <div className="m-host-detail">
+                  {terminalTabs.length ? <TerminalView /> : <MobileEmpty title="选择主机开始连接" />}
+                </div>
               </div>
             )}
-            <div className="mobile-session-content">
-              {terminalTabs.length
-                ? <TerminalView />
-                : <MobileEmpty icon={MonitorSmartphone} text="暂无终端会话" description="从连接页选择一台主机，即可开始安全会话。" action="选择主机" onAction={() => setSection('hosts')} />}
-            </div>
-          </div>
-        )}
-        {section === 'files' && <TerminalView />}
-        {section === 'settings' && vaultOpen && (
-          <div className="mobile-vault-page">
-            <Button variant="ghost" className="mobile-vault-back" onClick={() => setVaultOpen(false)}>‹ 返回我的</Button>
-            <div className="mobile-vault-content"><TerminalView /></div>
-          </div>
-        )}
-        {section === 'settings' && !vaultOpen && (
-          <div className="mobile-settings-page">
-            <section className="mobile-overview-card" aria-label="运行状态">
-              <div className="mobile-overview-icon"><ShieldCheck size={22} /></div>
-              <div>
-                <strong>本地安全空间</strong>
-                <span>凭据加密保存在此设备</span>
+
+            {section === 'sessions' && (
+              <div className="m-page-stack">
+                <MobileHeader
+                  variant="compact"
+                  title={pageMeta.title}
+                  subtitle={pageMeta.subtitle}
+                  trailing={activeTab?.kind === 'terminal' && (
+                    <span className={`m-state-pill`}>
+                      <span className={`m-dot is-${activeTab.status}`} />
+                      {STATUS_LABELS[activeTab.status]}
+                    </span>
+                  )}
+                />
+                {terminalTabs.length > 0 && (
+                  <div className="m-chips" role="tablist">
+                    {terminalTabs.map((tab) => (
+                      <div key={tab.id} className={`m-chip ${tab.id === activeTabId ? 'is-active' : ''}`}>
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={tab.id === activeTabId}
+                          className="m-chip-select"
+                          onPointerDown={() => setActiveTab(tab.id)}
+                        >
+                          <span className={`m-dot m-chip-dot is-${tab.status}`} />
+                          <span className="m-chip-name">{tab.profileName}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="m-chip-close"
+                          aria-label={`关闭 ${tab.profileName}`}
+                          onPointerDown={() => closeTerminalTab(tab.id)}
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="m-session-content">
+                  {terminalTabs.length
+                    ? <TerminalView />
+                    : <MobileEmpty
+                        icon={MonitorSmartphone}
+                        title="暂无终端会话"
+                        description="从连接页选择一台主机，即可开始安全会话。"
+                        action={<button type="button" className="m-empty-action" onClick={() => setSection('hosts')}>选择主机</button>}
+                      />}
+                </div>
               </div>
-              <span className="mobile-overview-badge">正常</span>
-            </section>
-            <h2>管理</h2>
-            <div className="mobile-settings-group">
-              <button type="button" className="mobile-settings-action" onClick={() => { openVaultTab(); setVaultOpen(true) }}>
-                <span className="mobile-settings-icon is-vault"><KeyRound /></span>
-                <span><strong>Vault 与凭据</strong><small>密码、密钥与安全存储</small></span>
-                <ChevronRight />
-              </button>
-              <button type="button" className="mobile-settings-action" onClick={() => setSettingsOpen(true)}>
-                <span className="mobile-settings-icon is-settings"><Settings /></span>
-                <span><strong>应用设置</strong><small>外观、终端、备份与同步</small></span>
-                <ChevronRight />
-              </button>
-            </div>
-            <h2>连接状态</h2>
-            <div className="mobile-status-card">
-              <Wifi size={18} />
-              <span><strong>{connectedTabs ? `${connectedTabs} 个会话在线` : '暂无在线会话'}</strong><small>返回前台后自动检查并恢复连接</small></span>
-              <Activity size={17} />
-            </div>
-            <p className="mobile-platform-note">
-              {platform === 'android'
-                ? 'Android 会在后台通过可见通知提供最长 6 分钟的恢复窗口；系统仍可能提前冻结网络。'
-                : 'iOS 后台恢复窗口最长 6 分钟，系统可能提前挂起网络连接。'}
-            </p>
-          </div>
-        )}
+            )}
+
+            {section === 'files' && (
+              <div className="m-page-stack">
+                <MobileHeader variant="compact" title={pageMeta.title} subtitle={pageMeta.subtitle} />
+                <div className="m-page-fill"><TerminalView /></div>
+              </div>
+            )}
+
+            {section === 'settings' && vaultOpen && (
+              <div className="m-page-stack">
+                <Button variant="ghost" className="m-vault-back" onClick={() => setVaultOpen(false)}>‹ 返回我的</Button>
+                <div className="m-page-fill"><TerminalView /></div>
+              </div>
+            )}
+
+            {section === 'settings' && !vaultOpen && (
+              <MobileSettingsPage
+                platform={platform}
+                connectedTabs={connectedTabs}
+                onOpenVault={() => { openVaultTab(); setVaultOpen(true) }}
+                onOpenSettings={() => setSettingsOpen(true)}
+              />
+            )}
+          </motion.div>
+        </AnimatePresence>
       </main>
 
-      <nav className="mobile-bottom-nav" aria-label="主要导航">
-        {NAV_ITEMS.map((item) => {
-          const Icon = item.icon
-          return (
-            <button
-              key={item.id}
-              type="button"
-              className={section === item.id ? 'is-active' : ''}
-              aria-current={section === item.id ? 'page' : undefined}
-              onClick={() => navigate(item.id)}
-            >
-              <Icon size={20} />
-              <span>{item.label}</span>
-              {item.id === 'sessions' && terminalTabs.length > 0 && <b>{terminalTabs.length}</b>}
-            </button>
-          )
-        })}
-      </nav>
+      <MobileTabBar section={section} sessionCount={terminalTabs.length} onNavigate={navigate} />
 
       {settingsOpen && (
         <Suspense fallback={null}>
@@ -352,29 +296,6 @@ export function MobileLayout() {
           ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
           : theme}
       />
-    </div>
-  )
-}
-
-function MobileEmpty({
-  text,
-  description,
-  action,
-  onAction,
-  icon: Icon = Server,
-}: {
-  text: string
-  description?: string
-  action?: string
-  onAction?: () => void
-  icon?: typeof Server
-}) {
-  return (
-    <div className="mobile-empty">
-      <span className="mobile-empty-icon"><Icon size={24} /></span>
-      <strong>{text}</strong>
-      {description && <p>{description}</p>}
-      {action && onAction && <Button onClick={onAction}>{action}</Button>}
     </div>
   )
 }

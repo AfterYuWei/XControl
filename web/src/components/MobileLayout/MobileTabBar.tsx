@@ -1,13 +1,14 @@
 import { motion, useReducedMotion } from 'motion/react'
-import { Files, MonitorSmartphone, Server, Settings } from 'lucide-react'
+import { Files, KeyRound, MonitorSmartphone, Server, Settings } from 'lucide-react'
 import type { ComponentType } from 'react'
 
-export type MobileSection = 'hosts' | 'sessions' | 'files' | 'settings'
+export type MobileSection = 'hosts' | 'sessions' | 'files' | 'vault' | 'settings'
 
 const NAV_ITEMS: Array<{ id: MobileSection; label: string; icon: ComponentType<{ size?: number }> }> = [
   { id: 'hosts', label: '主机', icon: Server },
   { id: 'sessions', label: '会话', icon: MonitorSmartphone },
   { id: 'files', label: '文件', icon: Files },
+  { id: 'vault', label: '密码库', icon: KeyRound },
   { id: 'settings', label: '设置', icon: Settings },
 ]
 

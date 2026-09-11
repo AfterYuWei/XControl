@@ -3,7 +3,6 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { onBackButtonPress } from '@tauri-apps/api/app'
 import { MonitorSmartphone, X } from 'lucide-react'
 import { TerminalView } from '@/components/Terminal'
-import { Button } from '@/components/ui/button'
 import { Toaster } from '@/components/ui/sonner'
 import { useProfileStore } from '@/store/profile'
 import { useSessionStore } from '@/store/session'
@@ -39,7 +38,6 @@ export function MobileLayout() {
   const reducedMotion = useReducedMotion()
   const [section, setSection] = useState<MobileSection>('hosts')
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [vaultOpen, setVaultOpen] = useState(false)
   const [keyboardOpen, setKeyboardOpen] = useState(false)
   const lastBackAt = useRef(0)
   const { fetchProfiles, fetchGroups } = useProfileStore()
@@ -109,7 +107,7 @@ export function MobileLayout() {
   useEffect(() => {
     if (activeTab?.kind === 'terminal') setSection('sessions')
     if (activeTab?.kind === 'sftp') setSection('files')
-    if (activeTab?.kind === 'vault') setSection('settings')
+    if (activeTab?.kind === 'vault') setSection('vault')
   }, [activeTab?.id, activeTab?.kind])
 
   useEffect(() => {
@@ -119,10 +117,6 @@ export function MobileLayout() {
       if (consumeMobileBackNavigation()) return
       if (settingsOpen) {
         setSettingsOpen(false)
-        return
-      }
-      if (vaultOpen) {
-        setVaultOpen(false)
         return
       }
       if (section !== 'hosts') {
@@ -143,13 +137,17 @@ export function MobileLayout() {
       unlisten = () => listener.unregister()
     })
     return () => void unlisten?.()
-  }, [activeTab, closeTab, section, settingsOpen, vaultOpen])
+  }, [activeTab, closeTab, section, settingsOpen])
 
   const navigate = (next: MobileSection) => {
     if (next === 'files') {
       const tab = tabs.find((candidate) => candidate.kind === 'sftp')
       if (tab) setActiveTab(tab.id)
       else openSftpTab()
+    } else if (next === 'vault') {
+      const tab = tabs.find((candidate) => candidate.kind === 'vault')
+      if (tab) setActiveTab(tab.id)
+      else openVaultTab()
     } else if (next === 'sessions') {
       const tab = activeTab?.kind === 'terminal' ? activeTab : terminalTabs.at(-1)
       if (tab) setActiveTab(tab.id)
@@ -268,18 +266,17 @@ export function MobileLayout() {
               </div>
             )}
 
-            {section === 'settings' && vaultOpen && (
+            {section === 'vault' && (
               <div className="m-page-stack">
-                <Button variant="ghost" className="m-vault-back" onClick={() => setVaultOpen(false)}>‹ 返回我的</Button>
+                <MobileHeader variant="compact" title="密码库" subtitle="密码、密钥与安全存储" />
                 <div className="m-page-fill"><TerminalView /></div>
               </div>
             )}
 
-            {section === 'settings' && !vaultOpen && (
+            {section === 'settings' && (
               <MobileSettingsPage
                 platform={platform}
                 connectedTabs={connectedTabs}
-                onOpenVault={() => { openVaultTab(); setVaultOpen(true) }}
                 onOpenSettings={() => setSettingsOpen(true)}
               />
             )}

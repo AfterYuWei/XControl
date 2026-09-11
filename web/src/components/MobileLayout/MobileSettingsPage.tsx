@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { ChevronRight, KeyRound, Monitor, Moon, Settings, ShieldCheck, Sun, Wifi } from 'lucide-react'
+import { ChevronRight, Monitor, Moon, Settings, ShieldCheck, Sun, Wifi } from 'lucide-react'
 import { MobileHeader } from './MobileHeader'
 import { useHeaderCollapse } from './useHeaderCollapse'
 
@@ -11,11 +11,10 @@ const THEME_LABELS = { light: '浅色', dark: '深色', system: '跟随系统' }
 interface MobileSettingsPageProps {
   platform: NativePlatform
   connectedTabs: number
-  onOpenVault: () => void
   onOpenSettings: () => void
 }
 
-export function MobileSettingsPage({ platform, connectedTabs, onOpenVault, onOpenSettings }: MobileSettingsPageProps) {
+export function MobileSettingsPage({ platform, connectedTabs, onOpenSettings }: MobileSettingsPageProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const collapsed = useHeaderCollapse(scrollRef)
   const theme = useSettingsStore((state) => state.theme)
@@ -53,14 +52,6 @@ export function MobileSettingsPage({ platform, connectedTabs, onOpenVault, onOpe
               <span className="m-set-row-copy">
                 <strong>外观</strong>
                 <span>{THEME_LABELS[theme]}</span>
-              </span>
-              <ChevronRight size={16} />
-            </button>
-            <button type="button" className="m-set-row" onClick={onOpenVault}>
-              <span className="m-set-row-icon is-vault"><KeyRound size={17} /></span>
-              <span className="m-set-row-copy">
-                <strong>Vault 与凭据</strong>
-                <span>密码、密钥与安全存储</span>
               </span>
               <ChevronRight size={16} />
             </button>

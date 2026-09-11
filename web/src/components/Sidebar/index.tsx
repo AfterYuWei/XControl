@@ -115,7 +115,7 @@ export function Sidebar() {
     : lastTerminalTabId
 
   // Current page for the effective tab (independent per tab).
-  const currentPage = effectiveTabId ? getPage(effectiveTabId) : getPage(GLOBAL_PAGE_KEY)
+  const currentPage = mobile ? 0 : (effectiveTabId ? getPage(effectiveTabId) : getPage(GLOBAL_PAGE_KEY))
 
   // Track the last terminal tab so SFTP tabs freeze the sidebar.
   useEffect(() => {
@@ -518,7 +518,7 @@ export function Sidebar() {
       {/* Segmented page indicator — page 1 = global list, page 2 = per-tab detail.
           Each segment is a tall transparent hit area wrapping a thin line so
           the visible stroke stays delicate while the click target is generous. */}
-      <div className="sidebar-pager">
+      {!mobile && <div className="sidebar-pager">
         <Button
           type="button"
           variant="ghost"
@@ -539,7 +539,7 @@ export function Sidebar() {
         >
           <span className="pager-line" />
         </Button>
-      </div>
+      </div>}
 
       {/* Profile form dialog */}
       <ProfileForm

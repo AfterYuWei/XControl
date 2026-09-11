@@ -14,6 +14,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
+import app.tauri.annotation.Permission
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
@@ -25,7 +26,11 @@ class StartArgs {
     var durationSeconds: Long = 360
 }
 
-@TauriPlugin(permissions = [Manifest.permission.POST_NOTIFICATIONS])
+@TauriPlugin(
+    permissions = [
+        Permission(strings = [Manifest.permission.POST_NOTIFICATIONS]),
+    ],
+)
 class SessionKeepalivePlugin(private val activity: Activity) : Plugin(activity) {
     private val connectivity = activity.getSystemService(ConnectivityManager::class.java)
     private var networkGeneration = 0L

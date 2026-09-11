@@ -77,7 +77,7 @@ jobs:
             echo
             echo "### Detected error lines"
             echo '```text'
-            grep -nE 'error(\[[^]]+\])?:|Caused by:|FAILURE:|What went wrong:|Execution failed' \
+            grep -nE '(^|[[:space:]])e: |error(\[[^]]+\])?:|Caused by:|FAILURE:|What went wrong:|Execution failed' \
               "$RUNNER_TEMP/android-apk.log" | tail -n 100 || true
             echo '```'
             echo

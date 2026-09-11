@@ -33,67 +33,52 @@ jobs:
       - run: npm run test:unit
       - run: npm run lint
       - run: npm run build
-      - uses: actions/upload-artifact@v4
-        with:
-          name: quality-web-dist
-          path: web/dist
-          if-no-files-found: error
-          retention-days: 1
 
-  rust:
-    needs: frontend
+  # Tauri 桌面壳：Rust 静态检查 + 单测 + 隐藏窗口烟测（xvfb 提供 X display）
+  desktop:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev
-      - uses: actions/download-artifact@v4
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev xvfb
+
+      - uses: actions/setup-node@v4
         with:
-          name: quality-web-dist
-          path: web/dist
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
+
+      - name: Install Tauri CLI
+        run: npm ci
+
+      - name: Build frontend assets
+        run: npm --prefix web ci && npm --prefix web run build
+
       - name: Rust format check
         working-directory: src-tauri
         run: cargo fmt --all -- --check
-      - name: Rust check
-        working-directory: src-tauri
-        run: cargo check --locked
+
       - name: Rust clippy
         working-directory: src-tauri
         run: cargo clippy --all-targets --all-features --locked -- -D warnings
+
       - name: Rust tests
         working-directory: src-tauri
         run: cargo test --all-features --locked
 
-  # 完整桌面进程烟测独立于 Rust 静态门禁，xvfb 提供 X display。
-  desktop-smoke:
-    needs: [frontend, rust]
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Linux runtime dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev xvfb
-      - uses: actions/download-artifact@v4
-        with:
-          name: quality-web-dist
-          path: web/dist
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri -> target
       # 烟测：启动完整进程内 Rust 应用并完成 state 初始化。
       - name: Desktop smoke test
         working-directory: src-tauri

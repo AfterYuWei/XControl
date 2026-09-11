@@ -32,7 +32,7 @@ interface ConnectionDialogProps {
   onReconnectNow?: () => void
   hostKeyFingerprint?: string
   knownHostKeyFingerprint?: string
-  onHostKeyDecision?: (decision: 'trust_once' | 'trust_permanently' | 'reject') => void
+  onConfirmHostKey?: () => void
 }
 
 const STAGE_ORDER = [
@@ -127,7 +127,7 @@ export function ConnectionDialog({
   onReconnectNow,
   hostKeyFingerprint,
   knownHostKeyFingerprint,
-  onHostKeyDecision,
+  onConfirmHostKey,
 }: ConnectionDialogProps) {
   const [elapsed, setElapsed] = useState(0)
   const [remainingMs, setRemainingMs] = useState(0)
@@ -419,9 +419,7 @@ export function ConnectionDialog({
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium text-[var(--fg)]">主机指纹需要确认</div>
                     <div className="mt-1 text-xs leading-5 text-[var(--fg-3)]">
-                      {knownHostKeyFingerprint
-                        ? '当前服务器返回的主机指纹与历史记录不一致。请确认目标主机变更可信后，再继续连接。'
-                        : '这是首次连接该服务器。请通过可信渠道核对主机指纹后，再决定是否继续。'}
+                      当前服务器返回的主机指纹与历史记录不一致。请确认目标主机变更可信后，再继续连接。
                     </div>
                     <div
                       className="mt-3 space-y-2 border p-3"
@@ -442,33 +440,23 @@ export function ConnectionDialog({
                 </div>
 
                 <div className="mt-3 flex justify-end gap-2">
-                  {onHostKeyDecision && (
+                  {onCancel && (
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => onHostKeyDecision('reject')}
+                      onClick={onCancel}
                       className="h-8 rounded-[var(--r-sm)] border-[var(--border)] bg-[var(--bg-panel)] px-3 text-[var(--fg-2)] hover:bg-[var(--bg-elevated)]"
                     >
-                      拒绝
+                      取消连接
                     </Button>
                   )}
-                  {onHostKeyDecision && (
+                  {onConfirmHostKey && (
                     <Button
                       size="sm"
-                      variant="outline"
-                      onClick={() => onHostKeyDecision('trust_once')}
-                      className="h-8 rounded-[var(--r-sm)] border-[var(--border)] bg-[var(--bg-panel)] px-3 text-[var(--fg-2)] hover:bg-[var(--bg-elevated)]"
-                    >
-                      仅本次信任
-                    </Button>
-                  )}
-                  {onHostKeyDecision && (
-                    <Button
-                      size="sm"
-                      onClick={() => onHostKeyDecision('trust_permanently')}
+                      onClick={onConfirmHostKey}
                       className="h-8 rounded-[var(--r-sm)] bg-[var(--fg-2)] px-3 text-white hover:bg-[var(--fg)]"
                     >
-                      永久信任并继续
+                      信任并继续
                     </Button>
                   )}
                 </div>

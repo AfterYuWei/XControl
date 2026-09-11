@@ -45,13 +45,7 @@
     "deep-link": {
       "desktop": {
         "schemes": ["eizhu"]
-      },
-      "mobile": [
-        {
-          "scheme": ["eizhu"],
-          "appLink": false
-        }
-      ]
+      }
     },
     "updater": {
       "endpoints": [

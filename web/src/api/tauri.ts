@@ -3,47 +3,31 @@ import { invoke } from '@tauri-apps/api/core'
 interface CommandError {
   code?: string
   message?: string
-  retryable?: boolean
-  details?: unknown
-  session_id?: string
-  stage?: string
   references?: unknown
 }
 
 class TauriAPIError extends Error {
   readonly error: { code: string; message: string }
   readonly references?: unknown
-  readonly retryable: boolean
-  readonly details?: unknown
-  readonly sessionId?: string
-  readonly stage?: string
 
-  constructor(code: string, message: string, context: Omit<CommandError, 'code' | 'message'> = {}) {
+  constructor(code: string, message: string, references?: unknown) {
     super(message)
     this.name = 'TauriAPIError'
     this.error = { code, message }
-    this.references = context.references
-    this.retryable = context.retryable ?? false
-    this.details = context.details
-    this.sessionId = context.session_id
-    this.stage = context.stage
+    this.references = references
   }
 }
 
 export function normalizeCommandError(cause: unknown): Error & {
   error: { code: string; message: string }
   references?: unknown
-  retryable: boolean
-  details?: unknown
-  sessionId?: string
-  stage?: string
 } {
   if (cause instanceof TauriAPIError) return cause
   const error = cause as CommandError
   return new TauriAPIError(
     error?.code ?? 'UNKNOWN',
     error?.message ?? String(cause),
-    error,
+    error?.references,
   )
 }
 

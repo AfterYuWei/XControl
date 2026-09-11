@@ -61,40 +61,9 @@ pub struct Encryptor {
 impl Encryptor {
     pub fn load_or_create(path: impl AsRef<Path>) -> Result<Self, CryptoError> {
         let key = load_or_create_key(path.as_ref())?;
-        Ok(Self::from_key(key))
-    }
-
-    #[cfg(any(mobile, test))]
-    pub(crate) fn load_existing(path: impl AsRef<Path>) -> Result<Self, CryptoError> {
-        let data = std::fs::read(path.as_ref()).map_err(|source| CryptoError::ReadKey {
-            path: path.as_ref().to_path_buf(),
-            source,
-        })?;
-        Ok(Self::from_key(decode_key(&data)?))
-    }
-
-    #[cfg(any(mobile, test))]
-    pub(crate) fn from_encoded_key(encoded: &str) -> Result<Self, CryptoError> {
-        Ok(Self::from_key(decode_key(encoded.as_bytes())?))
-    }
-
-    #[cfg(any(mobile, test))]
-    pub(crate) fn generate_for_secure_store() -> Result<(Self, String), CryptoError> {
-        let mut key = [0_u8; KEY_LEN];
-        getrandom::fill(&mut key).map_err(|error| CryptoError::Random(error.to_string()))?;
-        let encoded = STANDARD.encode(key);
-        Ok((Self::from_key(key), encoded))
-    }
-
-    #[cfg(any(mobile, test))]
-    pub(crate) fn encoded_key(&self) -> String {
-        STANDARD.encode(self.key.as_ref().as_ref())
-    }
-
-    fn from_key(key: [u8; KEY_LEN]) -> Self {
-        Self {
+        Ok(Self {
             key: Arc::new(Zeroizing::new(key)),
-        }
+        })
     }
 
     pub fn encrypt(&self, plaintext: &str) -> Result<String, CryptoError> {
@@ -128,6 +97,13 @@ impl Encryptor {
         output.extend_from_slice(&nonce);
         output.extend_from_slice(&body);
         Ok(STANDARD.encode(output))
+    }
+
+    #[cfg(test)]
+    fn from_key(key: [u8; KEY_LEN]) -> Self {
+        Self {
+            key: Arc::new(Zeroizing::new(key)),
+        }
     }
 }
 

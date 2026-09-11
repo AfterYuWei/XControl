@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Info, RefreshCw, Download } from 'lucide-react'
-import { getPlatformCapabilities, isDesktopRuntime } from '@/lib/platform'
+import { isTauri } from '@/lib/desktop'
 import { appVersion, buildChannel, checkForUpdates, downloadAndInstallUpdate, type UpdateCheckResult } from '@/lib/updater'
 import { useSettingsStore, type UpdateChannel } from '@/store/settings'
 import { runUpdateWithToast } from '@/components/UpdateProgressToast'
@@ -63,8 +63,7 @@ export function AboutPanel() {
     })
   }
 
-  const desktop = isDesktopRuntime()
-  const runtime = getPlatformCapabilities().runtime
+  const desktop = isTauri()
 
   return (
     <div className="settings-section">
@@ -79,9 +78,7 @@ export function AboutPanel() {
           <span className="settings-field-desc">
             {desktop
               ? '基于 Tauri 2 的桌面版（数据与旧版 Electron 自动兼容）'
-              : runtime === 'mobile'
-                ? '基于 Tauri 2 的移动版'
-                : '浏览器模式（网页版）'}
+              : '浏览器模式（网页版）'}
           </span>
         </div>
         <span className="about-version-value">

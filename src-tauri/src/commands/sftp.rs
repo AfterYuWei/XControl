@@ -21,26 +21,6 @@ pub(crate) async fn sftp_get_session(
 }
 
 #[tauri::command]
-pub(crate) async fn sftp_reconnect_session(
-    service: State<'_, sftp::SftpService>,
-    id: String,
-) -> Result<sftp::SftpCreateSessionResponse, CommandError> {
-    service.reconnect(&id).await
-}
-
-#[tauri::command]
-pub(crate) async fn sftp_host_key_decide(
-    service: State<'_, sftp::SftpService>,
-    request_id: String,
-    fingerprint: String,
-    decision: String,
-) -> Result<serde_json::Value, CommandError> {
-    service
-        .decide_host_key(&request_id, fingerprint, &decision)
-        .await
-}
-
-#[tauri::command]
 pub(crate) async fn sftp_list_sessions(
     service: State<'_, sftp::SftpService>,
 ) -> Result<Vec<sftp::SftpSessionInfo>, CommandError> {

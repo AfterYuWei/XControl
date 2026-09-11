@@ -38,30 +38,6 @@ pub(crate) trait HostKeyVerifier: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>>;
 }
 
-pub(crate) fn host_key_matches(known: &str, current: &str) -> bool {
-    !known.is_empty() && known == current
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct AuthenticationPrompt {
-    pub prompt: String,
-    pub echo: bool,
-}
-
-pub(crate) struct AuthenticationRequest {
-    pub profile_id: String,
-    pub name: String,
-    pub instructions: String,
-    pub prompts: Vec<AuthenticationPrompt>,
-}
-
-pub(crate) trait AuthenticationResponder: Send + Sync {
-    fn respond<'a>(
-        &'a self,
-        request: AuthenticationRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<String>, String>> + Send + 'a>>;
-}
-
 pub(crate) struct ClientHandler {
     profile_id: String,
     profile_name: String,
@@ -143,19 +119,17 @@ impl ConnectedRoute {
 pub(crate) async fn connect_route(
     root: ResolvedProfileNode,
     verifier: Arc<dyn HostKeyVerifier>,
-    auth_responder: Option<Arc<dyn AuthenticationResponder>>,
 ) -> Result<ConnectedRoute, SshError> {
-    connect_node(root, verifier, auth_responder).await
+    connect_node(root, verifier).await
 }
 
 fn connect_node(
     mut node: ResolvedProfileNode,
     verifier: Arc<dyn HostKeyVerifier>,
-    auth_responder: Option<Arc<dyn AuthenticationResponder>>,
 ) -> Pin<Box<dyn Future<Output = Result<ConnectedRoute, SshError>> + Send>> {
     Box::pin(async move {
         let (stream, jump_handles, mut host_keys) = if let Some(jump) = node.jump.take() {
-            let mut route = connect_node(*jump, verifier.clone(), auth_responder.clone()).await?;
+            let mut route = connect_node(*jump, verifier.clone()).await?;
             let channel = timeout(
                 CONNECT_TIMEOUT,
                 route.handle.channel_open_direct_tcpip(
@@ -205,7 +179,7 @@ fn connect_node(
         .map_err(|_| format!("连接 {} 超时", node.profile_name))?
         .map_err(|error| format!("SSH 握手失败: {error}"))?;
 
-        authenticate(&mut handle, &node, auth_responder.as_ref()).await?;
+        authenticate(&mut handle, &node).await?;
         let fingerprint = current
             .lock()
             .expect("host key mutex poisoned")
@@ -224,7 +198,6 @@ fn connect_node(
 async fn authenticate(
     handle: &mut client::Handle<ClientHandler>,
     node: &ResolvedProfileNode,
-    auth_responder: Option<&Arc<dyn AuthenticationResponder>>,
 ) -> Result<(), SshError> {
     let result = match node.auth_type.as_str() {
         "password" | "vault" if !node.password.is_empty() => handle
@@ -258,83 +231,15 @@ async fn authenticate(
         }
     };
     if result.success() {
-        return Ok(());
+        Ok(())
+    } else {
+        Err(SshError::Authentication(
+            "SSH 认证失败，请检查用户名和凭据".into(),
+        ))
     }
-    if (auth_responder.is_some() || !node.password.is_empty())
-        && authenticate_interactive(handle, node, auth_responder).await?
-    {
-        return Ok(());
-    }
-    Err(SshError::Authentication(
-        "SSH 认证失败，请检查用户名和凭据".into(),
-    ))
 }
 
-async fn authenticate_interactive(
-    handle: &mut client::Handle<ClientHandler>,
-    node: &ResolvedProfileNode,
-    auth_responder: Option<&Arc<dyn AuthenticationResponder>>,
-) -> Result<bool, SshError> {
-    let mut result = handle
-        .authenticate_keyboard_interactive_start(node.username.clone(), None)
-        .await
-        .map_err(|error| format!("keyboard-interactive 认证失败: {error}"))?;
-    for _ in 0..10 {
-        match result {
-            client::KeyboardInteractiveAuthResponse::Success => return Ok(true),
-            client::KeyboardInteractiveAuthResponse::Failure { .. } => return Ok(false),
-            client::KeyboardInteractiveAuthResponse::InfoRequest {
-                name,
-                instructions,
-                prompts,
-            } => {
-                let prompt_count = prompts.len();
-                let responses = if let Some(responder) = auth_responder {
-                    responder
-                        .respond(AuthenticationRequest {
-                            profile_id: node.profile_id.clone(),
-                            name,
-                            instructions,
-                            prompts: prompts
-                                .into_iter()
-                                .map(|prompt| AuthenticationPrompt {
-                                    prompt: prompt.prompt,
-                                    echo: prompt.echo,
-                                })
-                                .collect(),
-                        })
-                        .await
-                        .map_err(SshError::Authentication)?
-                } else {
-                    prompts
-                        .into_iter()
-                        .map(|prompt| {
-                            if prompt.echo {
-                                String::new()
-                            } else {
-                                node.password.clone()
-                            }
-                        })
-                        .collect()
-                };
-                if responses.len() != prompt_count {
-                    return Err(SshError::Authentication(
-                        "keyboard-interactive 响应数量与服务器提示不一致".into(),
-                    ));
-                }
-                result = handle
-                    .authenticate_keyboard_interactive_respond(responses)
-                    .await
-                    .map_err(|error| format!("提交 keyboard-interactive 响应失败: {error}"))?;
-            }
-        }
-    }
-    Err(SshError::Authentication(
-        "keyboard-interactive 认证步骤过多".into(),
-    ))
-}
-
-#[cfg(all(unix, desktop))]
+#[cfg(unix)]
 async fn authenticate_agent(
     handle: &mut client::Handle<ClientHandler>,
     username: &str,
@@ -364,7 +269,7 @@ async fn authenticate_agent(
     Err("SSH Agent 中没有可用的认证密钥".into())
 }
 
-#[cfg(not(all(unix, desktop)))]
+#[cfg(not(unix))]
 async fn authenticate_agent(
     _handle: &mut client::Handle<ClientHandler>,
     _username: &str,

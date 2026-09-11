@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Channel } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { sessionApi } from '@/api/session'
 import type { SessionMessage } from '@/types/sessionMessage'
 
 type ChannelStatus = 'connecting' | 'connected' | 'disconnected'
+
+interface SessionEvent extends SessionMessage {
+  session_id: string
+}
 
 interface UseSessionChannelOptions {
   sessionId: string
@@ -28,7 +32,7 @@ export function useSessionChannel(options: UseSessionChannelOptions) {
     if (!sessionId) return
 
     let disposed = false
-    let subscriptionId: string | undefined
+    let unlisten: UnlistenFn | undefined
 
     const dispatch = (message: SessionMessage) => {
       if (message.type === 'pong' && pingTimeRef.current > 0) {
@@ -49,22 +53,24 @@ export function useSessionChannel(options: UseSessionChannelOptions) {
         // Queue those events until the initial replay has been dispatched so
         // metadata can never overtake terminal output such as the login banner.
         let attaching = true
-        const pendingEvents: SessionMessage[] = []
-        const channel = new Channel<SessionMessage>()
-        channel.onmessage = (message) => {
+        const pendingEvents: SessionEvent[] = []
+        unlisten = await listen<SessionEvent>('eizhu-session-message', (event) => {
+          if (event.payload.session_id !== sessionId) return
           if (attaching) {
-            pendingEvents.push(message)
+            pendingEvents.push(event.payload)
           } else {
-            dispatch(message)
+            dispatch(event.payload)
           }
-        }
-        subscriptionId = await sessionApi.subscribe(sessionId, channel)
+        })
         if (disposed) {
-          void sessionApi.unsubscribe(sessionId, subscriptionId).catch(() => undefined)
+          unlisten()
           return
         }
+        const initial = await sessionApi.attach(sessionId)
+        if (disposed) return
         setStatus('connected')
         callbacksRef.current.onOpen?.()
+        initial.forEach(dispatch)
         attaching = false
         pendingEvents.forEach(dispatch)
       } catch (error) {
@@ -81,14 +87,12 @@ export function useSessionChannel(options: UseSessionChannelOptions) {
       void sessionApi.ping(sessionId).catch(() => {
         pingTimeRef.current = 0
       })
-    }, 30000)
+    }, 5000)
 
     return () => {
       disposed = true
       clearInterval(heartbeat)
-      if (subscriptionId) {
-        void sessionApi.unsubscribe(sessionId, subscriptionId).catch(() => undefined)
-      }
+      unlisten?.()
       setLatency(null)
       callbacksRef.current.onClose?.()
     }

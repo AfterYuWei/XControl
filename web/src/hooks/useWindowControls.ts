@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { getPlatformCapabilities, isDesktopRuntime } from '@/lib/platform'
+import { isTauri } from '@/lib/desktop'
 
 // 桌面环境标识与平台探测。
 // 平台用 navigator.userAgent 判定（WKWebView/WebView2/WebKitGTK 的 UA 均含明确标识），
@@ -8,17 +8,19 @@ import { getPlatformCapabilities, isDesktopRuntime } from '@/lib/platform'
 
 /** 是否运行在 Tauri 桌面环境（浏览器下为 false）。 */
 export function isDesktop(): boolean {
-  return isDesktopRuntime()
+  return isTauri()
 }
 
 /** 是否为 macOS（使用系统原生交通灯，不自绘控制按钮）。 */
 export function isMac(): boolean {
-  return getPlatformCapabilities().platform === 'macos'
+  return typeof navigator !== 'undefined' && /Macintosh|Mac OS X/i.test(navigator.userAgent)
 }
 
 /** 当前平台：macos / windows / linux；浏览器下为空串。 */
 export function getPlatform(): string {
-  return isDesktop() ? getPlatformCapabilities().platform : ''
+  if (!isDesktop()) return ''
+  if (isMac()) return 'macos'
+  return /Windows/i.test(navigator.userAgent) ? 'windows' : 'linux'
 }
 
 // 窗口控制 hook：仅桌面环境下可用。

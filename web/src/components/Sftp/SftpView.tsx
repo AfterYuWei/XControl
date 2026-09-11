@@ -12,8 +12,6 @@ import { createSftpStore, type SftpStoreApi, type PaneSide, parentPath } from '@
 import { useSftpTransfer } from '@/hooks/useSftpTransfer'
 import { useExternalDrop } from '@/hooks/useExternalDrop'
 import { sftpApi } from '@/api/sftp'
-import { HostKeyDialog } from './HostKeyDialog'
-import { isMobileRuntime } from '@/lib/platform'
 
 /** SFTP file manager — symmetric dual-pane layout. Both panes are identical
  *  multi-server tab strips; the left pane starts connected to the local
@@ -24,7 +22,6 @@ import { isMobileRuntime } from '@/lib/platform'
  *  and provides it through context, so opening multiple SFTP tabs yields
  *  fully independent state & rendering. */
 export function SftpView() {
-  const mobile = isMobileRuntime()
   // One store per SftpView instance, created once via the lazy useState
   // initializer so it survives re-renders but is never recreated.
   const [store] = useState<SftpStoreApi>(() => createSftpStore())
@@ -42,10 +39,10 @@ export function SftpView() {
   // Auto-connect the local server on mount (left pane default)
   useEffect(() => {
     const state = store.getState()
-    if (!mobile && state.leftTabs.length > 0 && !state.leftTabs[0].sessionId) {
+    if (state.leftTabs.length > 0 && !state.leftTabs[0].sessionId) {
       state.connectServer('left', state.leftTabs[0].server)
     }
-  }, [mobile, store])
+  }, [store])
 
   // Track the primary session ID for event subscription.
   // We use a ref + manual subscription to avoid creating new array objects in
@@ -98,8 +95,8 @@ export function SftpView() {
     <SftpStoreContext.Provider value={store}>
       <div className="sftp-root">
         <div className="sftp-panes">
-          {!mobile && <FilePane pane="left" onPickServer={() => setPickerPane('left')} />}
-          {!mobile && <div className="sftp-divider" />}
+          <FilePane pane="left" onPickServer={() => setPickerPane('left')} />
+          <div className="sftp-divider" />
           <FilePane pane="right" onPickServer={() => setPickerPane('right')} />
         </div>
 
@@ -112,7 +109,6 @@ export function SftpView() {
         />
 
         <ConflictDialog />
-        <HostKeyDialog />
         <DirectoryTransferDialog />
         <SftpDialogs />
         <EditorDialog />

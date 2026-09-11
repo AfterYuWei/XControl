@@ -8,10 +8,7 @@ import { sessionApi } from '@/api/session'
 import { ConnectionDialog } from '@/components/ConnectionDialog'
 import { useCompletion } from '@/hooks/useCompletion'
 import { CompletionPanel } from '@/components/Terminal/CompletionPanel'
-import { AuthPromptDialog } from '@/components/Terminal/AuthPromptDialog'
-import { MobileTerminalToolbar } from '@/components/Terminal/MobileTerminalToolbar'
 import type {
-  AuthenticationRequestPayload,
   CompleteResponsePayload,
   ConnectionLogEntry,
   ConnectionStatePayload,
@@ -24,6 +21,9 @@ import type {
 import type { SessionApiError } from '@/types/session'
 
 type ChannelStatus = 'connecting' | 'connected' | 'disconnected'
+
+const RECONNECT_BACKOFF = [1000, 2000, 4000, 8000, 16000, 30000, 30000, 30000, 30000, 30000]
+const MAX_RECONNECT_ATTEMPTS = RECONNECT_BACKOFF.length
 
 interface TerminalPaneProps {
   tab: {
@@ -73,7 +73,6 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   const [localLogs, setLocalLogs] = useState<ConnectionLogEntry[]>([])
   const [backendLogs, setBackendLogs] = useState<ConnectionLogEntry[]>([])
   const [hostKeyPrompt, setHostKeyPrompt] = useState<{ current?: string; known?: string }>({})
-  const [authRequest, setAuthRequest] = useState<AuthenticationRequestPayload>()
   const [fontSizeHint, setFontSizeHint] = useState<{ show: boolean; size: number }>({ show: false, size: fontSize })
   const hasSpecificError = useRef(false)
   const fontSizeHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -85,8 +84,8 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   const handleCompleteResponseRef = useRef<(payload: CompleteResponsePayload) => void>(() => {})
   const handleOutputDataRef = useRef<(data: string) => void>(() => {})
 
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isReconnectingRef = useRef(false)
-  const reconnectRequestPendingRef = useRef(false)
 
   const cwd = useSessionStore((state) => state.tabs.find((item) => item.id === tab.id)?.cwd)
   const cwdRef = useRef(cwd)
@@ -166,64 +165,67 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     onResize: handleTerminalResize,
   })
 
-  const resetReconnectState = useCallback(() => {
+  const clearReconnectTimer = useCallback(() => {
+    if (reconnectTimerRef.current !== null) {
+      clearTimeout(reconnectTimerRef.current)
+      reconnectTimerRef.current = null
+    }
     isReconnectingRef.current = false
-    reconnectRequestPendingRef.current = false
   }, [])
 
-  const reconnectNow = useCallback(async () => {
-    if (reconnectRequestPendingRef.current) return
-    reconnectRequestPendingRef.current = true
-    isReconnectingRef.current = true
-    beginLocalConnection('正在请求 Rust 恢复远程会话')
-    try {
-      const { cols, rows } = getSize()
-      const currentSessionId = useSessionStore.getState().tabs
-        .find((candidate) => candidate.id === tab.id)?.sessionId
-      const response = currentSessionId
-        ? await sessionApi.reconnect(currentSessionId)
-        : await sessionApi.create({ profile_id: tab.profileId, cols, rows })
-      updateTabStatus(tab.id, 'connecting', response.session_id)
-      reconnectRequestPendingRef.current = false
-    } catch (cause) {
-      resetReconnectState()
-      const error = cause as SessionApiError
-      const message = error?.error?.message || '无法恢复远程会话'
-      markTabError(tab.id, tab.errorReason || 'unknown', message)
-      setConnectionError(message)
-      setDialogStatus('error')
-    }
-  }, [
-    beginLocalConnection,
-    getSize,
-    markTabError,
-    resetReconnectState,
-    tab.errorReason,
-    tab.id,
-    tab.profileId,
-    updateTabStatus,
-  ])
+  const startAutoReconnect = useCallback(
+    (tabId: string, profileId: string, reason: string) => {
+      if (isReconnectingRef.current) return
+      isReconnectingRef.current = true
+
+      const attempt = (index: number) => {
+        if (index >= MAX_RECONNECT_ATTEMPTS) {
+          isReconnectingRef.current = false
+          markTabError(tabId, reason, '自动重连失败，请手动重新连接')
+          setDialogStatus('error')
+          return
+        }
+
+        const delay = RECONNECT_BACKOFF[index]
+        const nextRetryAt = Date.now() + delay
+        markTabReconnecting(tabId, index + 1, nextRetryAt)
+
+        reconnectTimerRef.current = setTimeout(async () => {
+          reconnectTimerRef.current = null
+          try {
+            beginLocalConnection(`正在发起第 ${index + 1} 次重连请求`)
+            // Request the PTY with the terminal's real size instead of the
+            // 80x24 default, so full-screen apps render correctly from the
+            // first frame after reconnect.
+            const { cols, rows } = getSize()
+            const resp = await sessionApi.create({ profile_id: profileId, cols, rows })
+            updateTabStatus(tabId, 'connecting', resp.session_id)
+            isReconnectingRef.current = false
+          } catch {
+            attempt(index + 1)
+          }
+        }, delay)
+      }
+
+      attempt(0)
+    },
+    [beginLocalConnection, getSize, markTabError, markTabReconnecting, updateTabStatus],
+  )
+
+  const reconnectNow = useCallback(() => {
+    clearReconnectTimer()
+    startAutoReconnect(tab.id, tab.profileId, tab.errorReason || 'unknown')
+  }, [clearReconnectTimer, startAutoReconnect, tab.errorReason, tab.id, tab.profileId])
 
   const currentHostKeyFingerprint = hostKeyPrompt.current
 
-  const handleCancel = useCallback(() => {
-    resetReconnectState()
-    closeTab(tab.id)
-  }, [closeTab, resetReconnectState, tab.id])
-
-  const decideHostKey = useCallback(async (
-    decision: 'trust_once' | 'trust_permanently' | 'reject',
-  ) => {
+  const confirmHostKey = useCallback(async () => {
     if (!tab.sessionId || !currentHostKeyFingerprint) return
 
     try {
-      await sessionApi.decideHostKey(tab.sessionId, currentHostKeyFingerprint, decision)
+      await sessionApi.confirmHostKey(tab.sessionId, currentHostKeyFingerprint)
       clearTabHostKeyPrompt(tab.id)
       setHostKeyPrompt({})
-      if (decision === 'reject') {
-        handleCancel()
-        return
-      }
       setDialogStatus('connecting')
       setConnectionError('')
     } catch (err) {
@@ -231,7 +233,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
       setConnectionError(apiErr?.error?.message || '无法继续连接到服务器')
       setDialogStatus('error')
     }
-  }, [clearTabHostKeyPrompt, currentHostKeyFingerprint, handleCancel, tab.id, tab.sessionId])
+  }, [clearTabHostKeyPrompt, currentHostKeyFingerprint, tab.id, tab.sessionId])
 
   const handleSessionMessage = useCallback(
     (msg: SessionMessage) => {
@@ -257,11 +259,6 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
             setDialogStatus('hostkey')
             setShowDialog(true)
             setConnectionError('')
-          } else if (payload?.status === 'reconnecting') {
-            isReconnectingRef.current = true
-            markTabReconnecting(tab.id, payload.retry_attempt || 1, payload.next_retry_at || Date.now())
-            setDialogStatus('reconnecting')
-            setShowDialog(true)
           } else if (payload?.status === 'connecting' && !isReconnectingRef.current) {
             setDialogStatus('connecting')
           }
@@ -271,7 +268,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
         case 'metadata': {
           const meta = msg.payload as MetaPayload
           updateTabStatus(tab.id, 'connected', meta.session_id)
-          resetReconnectState()
+          clearReconnectTimer()
           clearTabError(tab.id)
           clearTabHostKeyPrompt(tab.id)
           hasSpecificError.current = false
@@ -303,30 +300,22 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
           break
         }
 
-        case 'auth_request': {
-          const payload = msg.payload as AuthenticationRequestPayload
-          if (payload?.request_id) {
-            setAuthRequest(payload)
-            setShowDialog(false)
-          }
-          break
-        }
-
         case 'exit':
-          resetReconnectState()
+          clearReconnectTimer()
           updateTabStatus(tab.id, 'disconnected')
           writeln('\r\n\x1b[33m[会话已结束]\x1b[0m')
           break
 
         case 'disconnect': {
           const payload = msg.payload as DisconnectPayload
+          const reason = payload?.reason || 'unknown'
           const message = payload?.message || '连接已断开'
           hasSpecificError.current = true
           setConnectionError(message)
           setDialogStatus('reconnecting')
           setShowDialog(true)
           writeln(`\r\n\x1b[31m[连接已断开: ${message}]\x1b[0m`)
-          markTabReconnecting(tab.id, 1, Date.now() + 1000)
+          startAutoReconnect(tab.id, tab.profileId, reason)
           break
         }
 
@@ -341,12 +330,13 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
       }
     },
     [
+      clearReconnectTimer,
       clearTabError,
       clearTabHostKeyPrompt,
       fit,
-      markTabReconnecting,
+      startAutoReconnect,
       tab.id,
-      resetReconnectState,
+      tab.profileId,
       updateTabCwd,
       updateTabStatus,
       write,
@@ -375,7 +365,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
         setDialogStatus('reconnecting')
         setShowDialog(true)
         writeln('\r\n\x1b[31m[连接已断开]\x1b[0m')
-        markTabReconnecting(tab.id, 1, Date.now() + 1000)
+        startAutoReconnect(tab.id, tab.profileId, 'network_error')
       }
     },
     onError: () => {
@@ -487,8 +477,17 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     }
   }, [fit, isActive])
 
+  const handleCancel = () => {
+    clearReconnectTimer()
+    closeTab(tab.id)
+  }
+
   useEffect(() => {
     return () => {
+      if (reconnectTimerRef.current !== null) {
+        clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = null
+      }
       if (fontSizeHintTimeoutRef.current !== null) {
         clearTimeout(fontSizeHintTimeoutRef.current)
         fontSizeHintTimeoutRef.current = null
@@ -499,12 +498,8 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   const profileIcon = profiles.find((item) => item.id === tab.profileId)?.icon
 
   return (
-    <div className="terminal-pane-root relative flex h-full w-full flex-col" style={{ background: 'var(--term-bg)' }}>
-      <div ref={containerRef} className="term-host min-h-0 flex-1" />
-      <MobileTerminalToolbar
-        onInput={(data) => sendInputRef.current(data)}
-        onHideKeyboard={() => getTerminal()?.blur()}
-      />
+    <div className="relative h-full w-full" style={{ background: 'var(--term-bg)' }}>
+      <div ref={containerRef} className="term-host" />
 
       <CompletionPanel
         popup={popup}
@@ -563,23 +558,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
         onReconnectNow={reconnectNow}
         hostKeyFingerprint={hostKeyPrompt.current || tab.hostKeyFingerprint}
         knownHostKeyFingerprint={hostKeyPrompt.known || tab.knownHostKeyFingerprint}
-        onHostKeyDecision={decideHostKey}
-      />
-      <AuthPromptDialog
-        request={authRequest}
-        onCancel={handleCancel}
-        onSubmit={(responses) => {
-          if (!authRequest) return
-          void sessionApi.respondAuth(authRequest.request_id, responses).then(() => {
-            setAuthRequest(undefined)
-            setShowDialog(true)
-          }).catch((error: SessionApiError) => {
-            setConnectionError(error?.error?.message || '提交认证信息失败')
-            setDialogStatus('error')
-            setAuthRequest(undefined)
-            setShowDialog(true)
-          })
-        }}
+        onConfirmHostKey={confirmHostKey}
       />
     </div>
   )

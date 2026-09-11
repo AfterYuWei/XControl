@@ -15,8 +15,6 @@ import { jumpProfileCandidates, newProxyInput, proxyInputFromProfile } from '@/l
 import { VaultSelectButton } from '@/components/Vault/VaultSelectButton'
 import type { Profile, ProfileCreateRequest, ProfileProxyInput, ProfileTestResult, ProxyType } from '@/types/profile'
 import type { VaultItem } from '@/types/vault'
-import { isMobileRuntime } from '@/lib/platform'
-import { pickDocumentText } from '@/api/document'
 
 interface ProfileFormProps {
   open: boolean
@@ -169,23 +167,6 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
     } finally {
       setUploadingKey(false)
       event.target.value = ''
-    }
-  }
-
-  const pickPrivateKey = async () => {
-    if (!isMobileRuntime()) {
-      privateKeyFileRef.current?.click()
-      return
-    }
-    setUploadingKey(true)
-    setError('')
-    try {
-      const text = await pickDocumentText(['application/x-pem-file', 'text/plain'], 1024 * 1024)
-      if (text !== null) setForm((previous) => ({ ...previous, private_key: text }))
-    } catch {
-      setError('私钥文件读取失败')
-    } finally {
-      setUploadingKey(false)
     }
   }
 
@@ -445,7 +426,7 @@ export function ProfileForm({ open, onOpenChange, profile, presetGroupId }: Prof
                         variant="outline"
                         size="sm"
                         className="pf-upload-btn"
-                        onClick={() => void pickPrivateKey()}
+                        onClick={() => privateKeyFileRef.current?.click()}
                         disabled={uploadingKey}
                       >
                         <Upload size={13} />

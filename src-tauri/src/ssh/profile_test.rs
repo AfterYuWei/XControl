@@ -8,7 +8,7 @@ use std::{
 use russh::Disconnect;
 use serde::Serialize;
 
-use super::transport::{connect_route, host_key_matches, HostKeyVerifier};
+use super::transport::{connect_route, HostKeyVerifier};
 use crate::{
     error::CommandError,
     profile::{ProfileCreateRequest, ProfileService, ProfileUpdateRequest, ResolvedProfileNode},
@@ -50,7 +50,7 @@ impl HostKeyVerifier for TestVerifier {
         current: &'a str,
     ) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>> {
         Box::pin(async move {
-            let matches = host_key_matches(known, current);
+            let matches = known.is_empty() || known == current;
             self.stages
                 .lock()
                 .expect("profile test mutex poisoned")
@@ -59,8 +59,6 @@ impl HostKeyVerifier for TestVerifier {
                     status: if matches { "success" } else { "error" }.into(),
                     message: if matches {
                         "SSH 主机指纹校验通过"
-                    } else if known.is_empty() {
-                        "SSH 主机指纹尚未信任"
                     } else {
                         "SSH 主机指纹已变化"
                     }
@@ -93,7 +91,7 @@ impl HostKeyVerifier for ConfirmVerifier {
             if profile_id == self.target_id {
                 current == self.expected
             } else {
-                host_key_matches(known, current)
+                known.is_empty() || known == current
             }
         })
     }
@@ -128,7 +126,7 @@ async fn run_test(node: ResolvedProfileNode) -> ProfileTestResult {
     let verifier = Arc::new(TestVerifier {
         stages: stages.clone(),
     });
-    let result = connect_route(node, verifier, None).await;
+    let result = connect_route(node, verifier).await;
     let success = result.is_ok();
     let detail = match result {
         Ok(route) => {
@@ -198,7 +196,7 @@ pub(crate) async fn confirm_profile_host_key(
         target_id: id.clone(),
         expected: fingerprint,
     });
-    let route = connect_route(node, verifier, None).await.map_err(|error| {
+    let route = connect_route(node, verifier).await.map_err(|error| {
         CommandError::new(
             "HOST_KEY_CHANGED_AGAIN",
             format!("服务器主机指纹已再次变化，请重新测试: {error}"),
@@ -216,16 +214,4 @@ pub(crate) async fn confirm_profile_host_key(
         .disconnect(Disconnect::ByApplication, "host key confirmed", "zh-CN")
         .await;
     Ok(serde_json::json!({"ok":true,"fingerprint":current}))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::host_key_matches;
-
-    #[test]
-    fn unknown_and_changed_host_keys_always_require_confirmation() {
-        assert!(!host_key_matches("", "SHA256:new"));
-        assert!(!host_key_matches("SHA256:old", "SHA256:new"));
-        assert!(host_key_matches("SHA256:same", "SHA256:same"));
-    }
 }

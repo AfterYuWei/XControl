@@ -1,5 +1,4 @@
 import { invoke } from '@tauri-apps/api/core'
-import { isDesktopRuntime } from './platform'
 
 type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'
 
@@ -8,8 +7,9 @@ const pending: string[] = []
 let flushTimer: number | null = null
 
 function loggingEnabled(): boolean {
+  const tauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
   const testBuild = import.meta.env.VITE_EIZHU_CHANNEL === 'test' || import.meta.env.DEV
-  return isDesktopRuntime() && testBuild
+  return tauri && testBuild
 }
 
 function describe(value: unknown): string {

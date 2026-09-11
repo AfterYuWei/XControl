@@ -30,35 +30,6 @@ impl SessionManager {
         self.tasks.lock().await.insert(id, task);
     }
 
-    pub(super) async fn replace(&self, id: &str, session: Arc<Session>) {
-        if let Some(previous) = self.sessions.write().await.insert(id.to_owned(), session) {
-            previous.cancel();
-        }
-        if let Some(task) = self.tasks.lock().await.remove(id) {
-            let _ = task.await;
-        }
-    }
-
-    pub(super) async fn sessions(&self) -> Vec<Arc<Session>> {
-        self.sessions.read().await.values().cloned().collect()
-    }
-
-    pub(super) async fn suspend_all(&self) {
-        for session in self.sessions().await {
-            session.suspend_for_background_limit();
-        }
-        let tasks = self
-            .tasks
-            .lock()
-            .await
-            .drain()
-            .map(|(_, task)| task)
-            .collect::<Vec<_>>();
-        for task in tasks {
-            let _ = task.await;
-        }
-    }
-
     pub(super) async fn get(&self, id: &str) -> Result<Arc<Session>, CommandError> {
         self.sessions
             .read()

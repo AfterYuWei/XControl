@@ -13,7 +13,6 @@ vi.mock('@tauri-apps/plugin-process', () => ({ relaunch: mocks.relaunch }))
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: mocks.getVersion }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }))
 vi.mock('./desktop', () => ({ isTauri: () => true }))
-vi.mock('./platform', () => ({ isDesktopRuntime: () => true }))
 
 import { checkForUpdates, downloadAndInstallUpdate } from './updater'
 

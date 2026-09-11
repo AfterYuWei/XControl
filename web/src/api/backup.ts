@@ -38,18 +38,9 @@ export interface BackupSource {
 }
 
 export async function pickBackupFile(): Promise<BackupSource | null> {
-  const picked = await invokeCommand<{ name: string; reference: string } | string | null>('backup_pick_file')
-  if (!picked) return null
-  if (typeof picked === 'string') {
-    return { name: picked.split(/[\\/]/).pop() ?? picked, path: picked }
-  }
-  return { name: picked.name, path: picked.reference }
-}
-
-export async function releaseBackupSource(src: BackupSource): Promise<void> {
-  if (src.path.startsWith('document://')) {
-    await invokeCommand<void>('document_release', { reference: src.path })
-  }
+  const path = await invokeCommand<string | null>('backup_pick_file')
+  if (!path) return null
+  return { name: path.split(/[\\/]/).pop() ?? path, path }
 }
 
 /** Rust 直接导出数据库并通过系统保存对话框落盘。 */

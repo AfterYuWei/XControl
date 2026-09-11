@@ -14,7 +14,6 @@ import {
   pickBackupFile,
   previewBackup,
   importBackup,
-  releaseBackupSource,
   type BackupPreview,
   type BackupSource,
   type CredentialMode,
@@ -52,7 +51,6 @@ export function BackupPanel() {
   const [plainExportPending, setPlainExportPending] = useState(false)
 
   const resetImport = () => {
-    if (file) void releaseBackupSource(file).catch(() => undefined)
     setFile(null)
     setImportPwd('')
     setPreview(null)
@@ -116,7 +114,6 @@ export function BackupPanel() {
 
   const handleFilePick = (src: BackupSource | null) => {
     if (!src) return
-    if (file && file.path !== src.path) void releaseBackupSource(file).catch(() => undefined)
     setFile(src)
     setPreview(null)
     setNeedsPassword(false)

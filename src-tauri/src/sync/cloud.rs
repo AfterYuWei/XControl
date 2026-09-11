@@ -85,10 +85,7 @@ impl SyncService {
                         .inner
                         .repository
                         .log_event(&id, "sync", 0, false, &error.message);
-                    crate::app::log_runtime_error(
-                        "cloud_sync_failed",
-                        &format!("provider={name}: {error}"),
-                    );
+                    eprintln!("cloud sync failed for {name}: {error}");
                 }
                 result
             });

@@ -14,23 +14,7 @@ pub(crate) fn run() {
     {
         tauri::Builder::default()
             .plugin(tauri_plugin_deep_link::init())
-            .plugin(tauri_plugin_session_keepalive::init())
-            .plugin(tauri_plugin_document_gateway::init())
-            .plugin(tauri_plugin_master_key_store::init())
             .invoke_handler(tauri::generate_handler![
-                commands::platform_capabilities,
-                commands::app_lifecycle_status,
-                commands::app_network_update,
-                commands::app_diagnostics,
-                commands::app_lifecycle_update,
-                commands::app_background_expired,
-                commands::app_disconnect_all_sessions,
-                commands::document_pick,
-                commands::document_release,
-                commands::document_read_text,
-                commands::document_export_text,
-                commands::sftp_upload_document,
-                commands::sftp_export_download,
                 commands::snippet_list,
                 commands::snippet_create,
                 commands::snippet_update,
@@ -59,21 +43,14 @@ pub(crate) fn run() {
                 commands::session_create,
                 commands::session_list,
                 commands::session_attach,
-                commands::session_subscribe,
-                commands::session_unsubscribe,
-                commands::session_reconnect,
                 commands::session_confirm_host_key,
-                commands::host_key_decide,
                 commands::session_input,
                 commands::session_resize,
                 commands::session_ping,
-                commands::session_auth_respond,
                 commands::session_complete,
                 commands::session_close,
                 commands::sftp_create_session,
                 commands::sftp_get_session,
-                commands::sftp_reconnect_session,
-                commands::sftp_host_key_decide,
                 commands::sftp_list_sessions,
                 commands::sftp_close_session,
                 commands::sftp_list,
@@ -100,8 +77,6 @@ pub(crate) fn run() {
                 commands::sftp_move,
                 commands::server_get_info,
                 commands::server_get_metrics,
-                commands::backup_pick_file,
-                commands::backup_export,
                 commands::backup_preview,
                 commands::backup_import,
                 commands::sync_status,
@@ -127,20 +102,12 @@ pub(crate) fn run() {
             .setup(|app| {
                 use tauri::Manager;
                 let data_dir = app.path().app_data_dir()?;
-                let document_gateway =
-                    crate::infrastructure::platform::document_gateway::DocumentGateway::initialize(
-                        app.path().app_cache_dir()?.join("document-gateway"),
-                    )?;
                 let database = crate::infrastructure::database::Database::initialize(
                     data_dir.join("eizhu.db"),
                 )
                 .map_err(|error| std::io::Error::other(error.to_string()))?;
-                let encryptor = crate::infrastructure::platform::master_key_store::load_or_create(
-                    app.handle(),
-                    &database,
-                    &data_dir.join("key"),
-                )
-                .map_err(|error| std::io::Error::other(error.to_string()))?;
+                let encryptor = vault::Encryptor::load_or_create(data_dir.join("key"))
+                    .map_err(|error| std::io::Error::other(error.to_string()))?;
                 let audit = crate::audit::AuditRepository::new(database.clone());
                 let vault =
                     vault::VaultService::new(database.clone(), encryptor.clone(), audit.clone());
@@ -171,8 +138,6 @@ pub(crate) fn run() {
                     ssh::SshService::new(profiles.clone(), audit.clone(), events.clone());
                 let sftp = sftp::SftpService::new(profiles.clone(), audit.clone(), events);
                 app.manage(crate::snippet::SnippetService::new(database.clone()));
-                app.manage(super::LifecycleCoordinator::new());
-                app.manage(document_gateway);
                 app.manage(groups);
                 app.manage(vault);
                 app.manage(profiles);
@@ -213,19 +178,6 @@ fn desktop_run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
-            commands::platform_capabilities,
-            commands::app_lifecycle_status,
-            commands::app_network_update,
-            commands::app_diagnostics,
-            commands::app_lifecycle_update,
-            commands::app_background_expired,
-            commands::app_disconnect_all_sessions,
-            commands::document_pick,
-            commands::document_release,
-            commands::document_read_text,
-            commands::document_export_text,
-            commands::sftp_upload_document,
-            commands::sftp_export_download,
             commands::frontend_ready,
             commands::get_platform,
             commands::read_app_log,
@@ -267,21 +219,14 @@ fn desktop_run() {
             commands::session_create,
             commands::session_list,
             commands::session_attach,
-            commands::session_subscribe,
-            commands::session_unsubscribe,
-            commands::session_reconnect,
             commands::session_confirm_host_key,
-            commands::host_key_decide,
             commands::session_input,
             commands::session_resize,
             commands::session_ping,
-            commands::session_auth_respond,
             commands::session_complete,
             commands::session_close,
             commands::sftp_create_session,
             commands::sftp_get_session,
-            commands::sftp_reconnect_session,
-            commands::sftp_host_key_decide,
             commands::sftp_list_sessions,
             commands::sftp_close_session,
             commands::sftp_list,
@@ -331,10 +276,6 @@ fn desktop_run() {
         .setup(move |app| {
             let data_dir = desktop::user_data_dir()
                 .map_err(|error| std::io::Error::other(error.to_string()))?;
-            let document_gateway =
-                crate::infrastructure::platform::document_gateway::DocumentGateway::initialize(
-                    app.path().app_cache_dir()?.join("document-gateway"),
-                )?;
             let database =
                 crate::infrastructure::database::Database::initialize(data_dir.join("eizhu.db"))
                     .map_err(|error| std::io::Error::other(error.to_string()))?;
@@ -369,8 +310,6 @@ fn desktop_run() {
             let sessions = ssh::SshService::new(profiles.clone(), audit.clone(), events.clone());
             let sftp = sftp::SftpService::new(profiles.clone(), audit.clone(), events);
             app.manage(crate::snippet::SnippetService::new(database.clone()));
-            app.manage(super::LifecycleCoordinator::new());
-            app.manage(document_gateway);
             app.manage(groups);
             app.manage(vault);
             app.manage(profiles);

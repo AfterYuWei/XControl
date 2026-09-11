@@ -11,11 +11,8 @@ import { vaultApi } from '@/api/vault'
 import { toast } from 'sonner'
 import { useVaultStore } from '@/store/vault'
 import { buildPrivateKeyFilename, buildPublicKeyImportCommand } from '@/lib/vaultKeyActions'
-import { saveTextToDisk } from '@/lib/desktop'
-import { getPlatformCapabilities, isMobileRuntime } from '@/lib/platform'
-import { documentApi, pickDocumentText } from '@/api/document'
+import { isTauri, saveTextToDisk } from '@/lib/desktop'
 import { normalizeVaultUsername } from '@/lib/vaultUsername'
-import { writeClipboardText } from '@/lib/clipboard'
 import { VAULT_TYPE_LABELS, type VaultCreateRequest, type VaultItem, type VaultType } from '@/types/vault'
 import { VaultPasswordGenerator } from './VaultPasswordGenerator'
 
@@ -72,6 +69,31 @@ function isSameForm(left: VaultCreateRequest, right: VaultCreateRequest): boolea
     left.public_key === right.public_key &&
     left.passphrase === right.passphrase
   )
+}
+
+async function writeClipboardText(text: string): Promise<void> {
+  try {
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(text)
+      return
+    }
+  } catch {
+    // Some desktop/webview contexts expose Clipboard API but deny access.
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.select()
+
+  try {
+    if (!document.execCommand('copy')) throw new Error('Copy command failed')
+  } finally {
+    textarea.remove()
+  }
 }
 
 function PasswordEditorSection({
@@ -209,23 +231,6 @@ function VaultFormDialogInner({ item, onOpenChange }: VaultFormDialogInnerProps)
     reader.readAsText(file)
   }
 
-  const pickKeyDocument = async (field: 'private_key' | 'public_key') => {
-    if (!isMobileRuntime()) {
-      const ref = field === 'private_key' ? privateKeyFileRef : publicKeyFileRef
-      ref.current?.click()
-      return
-    }
-    try {
-      const text = await pickDocumentText(['application/x-pem-file', 'text/plain'], 100 * 1024)
-      if (text !== null) {
-        updateField(field, text)
-        toast.success('文件已导入')
-      }
-    } catch (error) {
-      toast.error('读取文件失败', { description: error instanceof Error ? error.message : String(error) })
-    }
-  }
-
   const updateField = <K extends keyof VaultCreateRequest>(key: K, value: VaultCreateRequest[K]) => {
     setForm((current) => ({ ...current, [key]: value }))
   }
@@ -240,23 +245,9 @@ function VaultFormDialogInner({ item, onOpenChange }: VaultFormDialogInnerProps)
     }
 
     // 桌面端（Tauri）：Rust 侧系统保存对话框（blob 锚点在 WKWebView/WebKitGTK 下不可靠）
-    if (getPlatformCapabilities().nativeFilePaths) {
+    if (isTauri()) {
       try {
         const saved = await saveTextToDisk(`${privateKey}\n`, buildPrivateKeyFilename(form.name))
-        if (saved) toast.success('私钥文件已导出')
-      } catch (err) {
-        toast.error('导出失败', { description: err instanceof Error ? err.message : String(err) })
-      }
-      return
-    }
-
-    if (getPlatformCapabilities().documentPicker) {
-      try {
-        const saved = await documentApi.exportText(
-          `${privateKey}\n`,
-          buildPrivateKeyFilename(form.name),
-          'application/x-pem-file',
-        )
         if (saved) toast.success('私钥文件已导出')
       } catch (err) {
         toast.error('导出失败', { description: err instanceof Error ? err.message : String(err) })
@@ -426,7 +417,7 @@ function VaultFormDialogInner({ item, onOpenChange }: VaultFormDialogInnerProps)
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => void pickKeyDocument('private_key')}
+                    onClick={() => privateKeyFileRef.current?.click()}
                     className="vault-sheet-inline-btn"
                   >
                     <Upload size={13} />
@@ -494,7 +485,7 @@ function VaultFormDialogInner({ item, onOpenChange }: VaultFormDialogInnerProps)
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => void pickKeyDocument('public_key')}
+                    onClick={() => publicKeyFileRef.current?.click()}
                     className="vault-sheet-inline-btn"
                   >
                     <Upload size={13} />

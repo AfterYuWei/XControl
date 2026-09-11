@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { ArrowLeft, Check, Copy } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -10,7 +10,6 @@ import { vaultApi } from '@/api/vault'
 import { useVaultStore } from '@/store/vault'
 import { toast } from 'sonner'
 import type { GenerateKeyResponse } from '@/types/vault'
-import { copySensitiveText, writeClipboardText } from '@/lib/clipboard'
 
 interface VaultGenerateDialogProps {
   open: boolean
@@ -33,8 +32,6 @@ export function VaultGenerateDialog({ open, onOpenChange }: VaultGenerateDialogP
   const [saving, setSaving] = useState(false)
   const [result, setResult] = useState<GenerateKeyResponse | null>(null)
   const [copiedField, setCopiedField] = useState<'public' | 'private' | ''>('')
-  const [privateKeyCountdown, setPrivateKeyCountdown] = useState(0)
-  const clipboardSequence = useRef(0)
 
   const isResultStep = result !== null
   const canGenerate = name.trim().length > 0 && !loading
@@ -94,20 +91,10 @@ export function VaultGenerateDialog({ open, onOpenChange }: VaultGenerateDialogP
     if (!text) return
 
     try {
-      const sequence = ++clipboardSequence.current
-      if (field === 'private') {
-        await copySensitiveText(text, (remaining, cleared) => {
-          if (sequence !== clipboardSequence.current) return
-          setPrivateKeyCountdown(remaining)
-          if (remaining === 0 && cleared) toast.success('剪贴板中的私钥已清除')
-        })
-      } else {
-        setPrivateKeyCountdown(0)
-        await writeClipboardText(text)
-      }
+      await navigator.clipboard.writeText(text)
       setCopiedField(field)
-      toast.success(field === 'private' ? '已复制，30 秒后自动清除' : '已复制')
-      if (field === 'public') setTimeout(() => setCopiedField(''), 1500)
+      toast.success('已复制')
+      setTimeout(() => setCopiedField(''), 1500)
     } catch {
       toast.error('复制失败')
     }
@@ -139,10 +126,8 @@ export function VaultGenerateDialog({ open, onOpenChange }: VaultGenerateDialogP
   }
 
   const handleBackToForm = () => {
-    clipboardSequence.current += 1
     setResult(null)
     setCopiedField('')
-    setPrivateKeyCountdown(0)
   }
 
   const handleClose = (openState: boolean) => {
@@ -279,7 +264,6 @@ export function VaultGenerateDialog({ open, onOpenChange }: VaultGenerateDialogP
                       rows={7}
                       className="pf-input-mono pf-key-textarea vault-gen-output vault-gen-output-private"
                     />
-                    {privateKeyCountdown > 0 ? <small>剪贴板将在 {privateKeyCountdown} 秒后清除</small> : null}
                   </div>
                 </div>
               </div>

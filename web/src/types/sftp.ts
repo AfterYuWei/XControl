@@ -32,8 +32,6 @@ export interface TransferTask {
   started_at: number // Unix milliseconds
   finished_at?: number
   error_message?: string
-  error_code?: string
-  retryable?: boolean
 }
 
 /** A connected SFTP target server. */

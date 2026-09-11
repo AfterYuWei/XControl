@@ -10,6 +10,7 @@ import { resolveServerIcon } from '@/lib/serverIcons'
 import { resolveGroupIcon } from '@/lib/groupIcons'
 import { usePointerDrag } from '@/hooks/usePointerDrag'
 import { dropPayloadAttr } from '@/lib/dragRegistry'
+import { isMobileRuntime } from '@/lib/platform'
 import { SftpContextMenu } from '@/components/Sftp/SftpContextMenu'
 import { Button } from '@/components/ui/button'
 import {
@@ -26,6 +27,7 @@ const ServerDetail = lazy(() =>
 const UNGROUPED_ID = '__ungrouped__'
 
 export function Sidebar() {
+  const mobile = isMobileRuntime()
   const {
     profiles: rawProfiles,
     groups: rawGroups,
@@ -304,9 +306,10 @@ export function Sidebar() {
       onPointerDown={(e) => serverDrag.start(e, { profileId: profile.id, name: profile.name })}
       onClick={(e) => {
         e.stopPropagation()
-        setSelectedProfileId(profile.id)
+        if (mobile) handleConnect(profile)
+        else setSelectedProfileId(profile.id)
       }}
-        onDoubleClick={() => handleConnect(profile)}
+        onDoubleClick={mobile ? undefined : () => handleConnect(profile)}
         onContextMenu={(e) => handleProfileContextMenu(e, profile)}
         onKeyDown={(e) => {
           if (e.key === 'Enter') {

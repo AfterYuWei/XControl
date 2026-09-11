@@ -207,6 +207,15 @@ export interface DeleteConfirmState {
   entries: SftpEntry[]
 }
 
+export interface PendingSftpHostKey {
+  sessionId: string
+  pane: PaneSide
+  tabId: string
+  serverName: string
+  fingerprint: string
+  knownFingerprint?: string
+}
+
 /** One open connection (a server) inside a pane. Owns its session, path,
  *  view mode, cached entries, and selection. */
 export interface SftpTab {
@@ -241,6 +250,7 @@ export interface SftpStore {
   pendingDirectoryDrop: PendingDirectoryDrop | null
   /** 桌面端（Tauri）外部文件拖入悬停目标：onDragDropEvent 驱动（浏览器走 HTML5 由组件局部状态处理）。 */
   externalHover: { target: SftpDropTarget; count: number } | null
+  pendingHostKey: PendingSftpHostKey | null
 
   // Per-pane actions
   navigate: (pane: PaneSide, path: string) => Promise<void>
@@ -254,6 +264,7 @@ export interface SftpStore {
   setActiveTab: (pane: PaneSide, tabId: string) => void
   connectServer: (pane: PaneSide, server: SftpServer) => Promise<void>
   loadServers: () => Promise<void>
+  decideHostKey: (decision: 'trust_once' | 'trust_permanently' | 'reject') => Promise<void>
 
   // File operations
   mkdir: (pane: PaneSide, path: string) => Promise<void>
@@ -352,6 +363,7 @@ export function createSftpStore(): SftpStoreApi {
     dropTarget: null,
     externalHover: null,
     pendingDirectoryDrop: null,
+    pendingHostKey: null,
 
     // Dialog states
     newFileDialog: null,
@@ -376,6 +388,13 @@ export function createSftpStore(): SftpStoreApi {
       } catch {
         set({ serversLoading: false })
       }
+    },
+
+    decideHostKey: async (decision) => {
+      const pending = get().pendingHostKey
+      if (!pending) return
+      await sftpApi.decideHostKey(pending.sessionId, pending.fingerprint, decision)
+      set({ pendingHostKey: null })
     },
 
     connectServer: async (pane, server) => {
@@ -884,11 +903,26 @@ async function connectAndNavigate(
 
     // Wait for connection (max 30 seconds)
     const deadline = Date.now() + 30000
-    while (status === 'connecting' && Date.now() < deadline) {
+    while (
+      (status === 'connecting' || status === 'reconnecting' || status === 'hostkey_confirm')
+      && Date.now() < deadline
+    ) {
       await new Promise((r) => setTimeout(r, 500))
       try {
         const info = await sftpApi.getSession(sessionId)
         status = info.status
+        if (status === 'hostkey_confirm' && info.host_key_fingerprint) {
+          set({
+            pendingHostKey: {
+              sessionId,
+              pane,
+              tabId,
+              serverName: server.name,
+              fingerprint: info.host_key_fingerprint,
+              knownFingerprint: info.known_host_key_fingerprint,
+            },
+          })
+        }
         if (info.error) {
           throw new Error(info.error)
         }

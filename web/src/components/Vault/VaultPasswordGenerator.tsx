@@ -1,10 +1,11 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Slider } from '@/components/ui/slider'
 import { Copy, Check, Dices } from 'lucide-react'
 import { toast } from 'sonner'
+import { copySensitiveText } from '@/lib/clipboard'
 
 interface VaultPasswordGeneratorProps {
   onApply: (pwd: string) => void
@@ -25,6 +26,8 @@ export function VaultPasswordGenerator({ onApply }: VaultPasswordGeneratorProps)
   const [excludeAmbiguous, setExcludeAmbiguous] = useState(true)
   const [result, setResult] = useState('')
   const [copied, setCopied] = useState(false)
+  const [clearCountdown, setClearCountdown] = useState(0)
+  const clipboardSequence = useRef(0)
 
   const charset = useMemo(() => {
     let cs = ''
@@ -40,6 +43,8 @@ export function VaultPasswordGenerator({ onApply }: VaultPasswordGeneratorProps)
 
   const generate = useCallback(() => {
     if (!charset) return
+    clipboardSequence.current += 1
+    setClearCountdown(0)
     // 使用 crypto.getRandomValues 保证密码学安全，禁用 Math.random
     const bytes = new Uint32Array(length)
     crypto.getRandomValues(bytes)
@@ -54,10 +59,17 @@ export function VaultPasswordGenerator({ onApply }: VaultPasswordGeneratorProps)
   const handleCopy = async () => {
     if (!result) return
     try {
-      await navigator.clipboard.writeText(result)
+      const sequence = ++clipboardSequence.current
+      await copySensitiveText(result, (remaining, cleared) => {
+        if (sequence !== clipboardSequence.current) return
+        setClearCountdown(remaining)
+        if (remaining === 0) {
+          setCopied(false)
+          if (cleared) toast.success('剪贴板中的密码已清除')
+        }
+      })
       setCopied(true)
-      toast.success('已复制')
-      setTimeout(() => setCopied(false), 1500)
+      toast.success('已复制，30 秒后自动清除')
     } catch {
       toast.error('复制失败')
     }
@@ -133,6 +145,7 @@ export function VaultPasswordGenerator({ onApply }: VaultPasswordGeneratorProps)
           <Dices size={14} />
         </Button>
       </div>
+      {clearCountdown > 0 ? <small>剪贴板将在 {clearCountdown} 秒后清除</small> : null}
 
       <div className="vault-gen-pwd-actions">
         <Button

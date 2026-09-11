@@ -10,6 +10,7 @@ import { check, type Update } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { getVersion } from '@tauri-apps/api/app'
 import { isTauri } from './desktop'
+import { isDesktopRuntime } from './platform'
 import { toast } from 'sonner'
 import { invoke } from '@tauri-apps/api/core'
 import type { UpdateChannel } from '@/store/settings'
@@ -87,7 +88,7 @@ export interface UpdateDownloadProgress {
 /** 检查更新（不下载）。 */
 export async function checkForUpdates(channel: UpdateChannel = preferredUpdateChannel()): Promise<UpdateCheckResult> {
   const version = await appVersion()
-  if (!isTauri()) return { available: false, version, newVersion: '', notes: '' }
+  if (!isDesktopRuntime()) return { available: false, version, newVersion: '', notes: '' }
   const update: Update | null = await checkChannel(channel)
   return {
     available: Boolean(update?.available),
@@ -160,7 +161,7 @@ export async function downloadAndInstallUpdate(
 
 /** 启动静默检查（延迟 10s 避免抢启动带宽）：有更新时 toast 提示一键升级。 */
 export function scheduleSilentUpdateCheck(): void {
-  if (!isTauri()) return
+  if (!isDesktopRuntime()) return
   window.setTimeout(() => {
     const channel = preferredUpdateChannel()
     void checkForUpdates(channel)

@@ -14,7 +14,6 @@ concurrency:
 env:
   ANDROID_NDK_VERSION: 29.0.14206865
   CARGO_TERM_COLOR: never
-  RUST_BACKTRACE: '1'
 
 jobs:
   apk:
@@ -66,7 +65,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          npm run android:build -- --verbose --verbose --debug --apk --target aarch64 --ci 2>&1 \
+          npm run android:build -- --debug --apk --target aarch64 --ci 2>&1 \
             | tee "$RUNNER_TEMP/android-apk.log"
       - name: Publish Android failure summary
         if: failure()

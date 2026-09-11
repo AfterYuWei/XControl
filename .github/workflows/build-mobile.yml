@@ -12,7 +12,6 @@ permissions:
 env:
   ANDROID_NDK_VERSION: 29.0.14206865
   CARGO_TERM_COLOR: never
-  RUST_BACKTRACE: '1'
 
 concurrency:
   group: mobile-${{ github.ref }}
@@ -93,7 +92,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          npm run android:build -- --verbose --verbose --debug --apk --target aarch64 --ci 2>&1 \
+          npm run android:build -- --debug --apk --target aarch64 --ci 2>&1 \
             | tee "$RUNNER_TEMP/android-debug.log"
       - name: Publish Android failure summary
         if: failure()
@@ -186,7 +185,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          npm run ios:build -- --verbose --verbose --target aarch64-sim --ci 2>&1 \
+          npm run ios:build -- --target aarch64-sim --ci 2>&1 \
             | tee "$RUNNER_TEMP/ios-simulator.log"
       - name: Publish iOS failure summary
         if: failure()

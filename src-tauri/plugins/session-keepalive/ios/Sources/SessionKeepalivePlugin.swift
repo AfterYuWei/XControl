@@ -15,7 +15,7 @@ final class SessionKeepalivePlugin: Plugin {
     private let networkMonitor = NWPathMonitor()
     private let networkQueue = DispatchQueue(label: "com.yuweinfo.eizhu.network")
     private let networkLock = NSLock()
-    private var networkGeneration: UInt64 = 0
+    private var networkGeneration = 0
     private var networkSignature = ""
     private var networkState = "unknown"
 

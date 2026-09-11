@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+env:
+  ANDROID_NDK_VERSION: 29.0.14206865
+  CARGO_TERM_COLOR: never
+  RUST_BACKTRACE: '1'
+
 concurrency:
   group: mobile-${{ github.ref }}
   cancel-in-progress: true
@@ -18,19 +23,36 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: |
             package-lock.json
             web/package-lock.json
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      - name: Set up Android SDK and NDK in GitHub runner
+        uses: android-actions/setup-android@v4
+        with:
+          packages: >-
+            tools
+            platform-tools
+            platforms;android-36
+            build-tools;36.0.0
+            ndk;29.0.14206865
+      - name: Export and verify Android toolchain
+        shell: bash
+        run: |
+          SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          NDK_ROOT="$SDK_ROOT/ndk/$ANDROID_NDK_VERSION"
+          test -x "$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
+          echo "NDK_HOME=$NDK_ROOT" >> "$GITHUB_ENV"
+          java -version
+          "$SDK_ROOT/platform-tools/adb" version
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
@@ -68,7 +90,51 @@ jobs:
             echo "storeFile=$RUNNER_TEMP/eizhu-upload.jks"
           } > src-tauri/gen/android/keystore.properties
       - name: Build Android debug APK (arm64)
-        run: npm run android:build -- --debug --apk --target aarch64 --ci
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run android:build -- --verbose --verbose --debug --apk --target aarch64 --ci 2>&1 \
+            | tee "$RUNNER_TEMP/android-debug.log"
+      - name: Publish Android failure summary
+        if: failure()
+        shell: bash
+        run: |
+          test -f "$RUNNER_TEMP/android-debug.log" || exit 0
+          {
+            echo "## Android build failure"
+            echo
+            echo "### Detected error lines"
+            echo '```text'
+            grep -nE 'error(\[[^]]+\])?:|Caused by:|FAILURE:|What went wrong:|Execution failed' \
+              "$RUNNER_TEMP/android-debug.log" | tail -n 100 || true
+            echo '```'
+            echo
+            echo "### Last 200 log lines"
+            echo '```text'
+            tail -n 200 "$RUNNER_TEMP/android-debug.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload Android diagnostic log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eizhu-android-log-${{ github.sha }}
+          path: ${{ runner.temp }}/android-debug.log
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Upload generated Android project on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eizhu-android-generated-${{ github.sha }}
+          path: |
+            src-tauri/gen/android/**
+            !src-tauri/gen/android/**/.gradle/**
+            !src-tauri/gen/android/**/build/**
+            !src-tauri/gen/android/local.properties
+            !src-tauri/gen/android/keystore.properties
+          if-no-files-found: warn
+          retention-days: 14
       - name: Build Android release AAB (arm64, R8)
         run: npm run android:build -- --aab --target aarch64 --ci
       - name: Verify Android R8 output
@@ -88,14 +154,24 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: |
             package-lock.json
             web/package-lock.json
+      - name: Select latest installed Xcode 26
+        shell: bash
+        run: |
+          XCODE_APP=""
+          for candidate in /Applications/Xcode_26*.app; do
+            test -d "$candidate" && XCODE_APP="$candidate"
+          done
+          test -n "$XCODE_APP"
+          sudo xcode-select --switch "$XCODE_APP/Contents/Developer"
+          xcodebuild -version
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
@@ -107,7 +183,48 @@ jobs:
       - name: Initialize iOS project when absent
         run: test -d src-tauri/gen/apple || npm run ios:init -- --ci
       - name: Build iOS simulator app
-        run: npm run ios:build -- --target aarch64-sim --ci
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run ios:build -- --verbose --verbose --target aarch64-sim --ci 2>&1 \
+            | tee "$RUNNER_TEMP/ios-simulator.log"
+      - name: Publish iOS failure summary
+        if: failure()
+        shell: bash
+        run: |
+          test -f "$RUNNER_TEMP/ios-simulator.log" || exit 0
+          {
+            echo "## iOS build failure"
+            echo
+            echo "### Detected error lines"
+            echo '```text'
+            grep -nE 'error(\[[^]]+\])?:|fatal error:|BUILD FAILED|PhaseScriptExecution' \
+              "$RUNNER_TEMP/ios-simulator.log" | tail -n 100 || true
+            echo '```'
+            echo
+            echo "### Last 200 log lines"
+            echo '```text'
+            tail -n 200 "$RUNNER_TEMP/ios-simulator.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload iOS diagnostic log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eizhu-ios-log-${{ github.sha }}
+          path: ${{ runner.temp }}/ios-simulator.log
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Upload generated iOS project on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eizhu-ios-generated-${{ github.sha }}
+          path: |
+            src-tauri/gen/apple/**
+            !src-tauri/gen/apple/build/**
+          if-no-files-found: warn
+          retention-days: 14
       - name: Require App Store signing secrets on main
         if: github.ref == 'refs/heads/main'
         env:

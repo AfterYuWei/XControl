@@ -13,6 +13,8 @@ concurrency:
 
 env:
   ANDROID_NDK_VERSION: 29.0.14206865
+  CARGO_TERM_COLOR: never
+  RUST_BACKTRACE: '1'
 
 jobs:
   apk:
@@ -20,15 +22,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: |
             package-lock.json
             web/package-lock.json
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -46,8 +48,10 @@ jobs:
         run: |
           SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
           NDK_ROOT="$SDK_ROOT/ndk/$ANDROID_NDK_VERSION"
-          test -d "$NDK_ROOT"
+          test -x "$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
           echo "NDK_HOME=$NDK_ROOT" >> "$GITHUB_ENV"
+          java -version
+          "$SDK_ROOT/platform-tools/adb" version
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android
@@ -59,7 +63,38 @@ jobs:
       - name: Initialize generated Android project
         run: test -d src-tauri/gen/android || npm run android:init -- --ci
       - name: Build installable arm64 debug APK
-        run: npm run android:build -- --debug --apk --target aarch64 --ci
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run android:build -- --verbose --verbose --debug --apk --target aarch64 --ci 2>&1 \
+            | tee "$RUNNER_TEMP/android-apk.log"
+      - name: Publish Android failure summary
+        if: failure()
+        shell: bash
+        run: |
+          test -f "$RUNNER_TEMP/android-apk.log" || exit 0
+          {
+            echo "## Android APK build failure"
+            echo
+            echo "### Detected error lines"
+            echo '```text'
+            grep -nE 'error(\[[^]]+\])?:|Caused by:|FAILURE:|What went wrong:|Execution failed' \
+              "$RUNNER_TEMP/android-apk.log" | tail -n 100 || true
+            echo '```'
+            echo
+            echo "### Last 200 log lines"
+            echo '```text'
+            tail -n 200 "$RUNNER_TEMP/android-apk.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload Android diagnostic log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eizhu-android-apk-log-${{ github.sha }}
+          path: ${{ runner.temp }}/android-apk.log
+          if-no-files-found: warn
+          retention-days: 14
       - name: Record APK checksum
         id: apk
         shell: bash
@@ -84,6 +119,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Upload generated Android project
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: eizhu-android-generated-${{ github.sha }}

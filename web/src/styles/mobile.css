@@ -7,7 +7,7 @@
   --m-pad: 16px;
   --m-header-compact-h: 44px;
   --m-tabbar-h: 60px;
-  --m-tabbar-inset: calc(14px + var(--safe-inset-bottom, env(safe-area-inset-bottom)));
+  --m-tabbar-inset: calc(20px + var(--safe-inset-bottom, env(safe-area-inset-bottom)));
   --m-radius-card: 16px;
   --m-radius-row-icon: 10px;
   --m-glass-bar: color-mix(in srgb, var(--surface-chrome) 72%, transparent);

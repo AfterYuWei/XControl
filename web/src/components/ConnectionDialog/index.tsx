@@ -1,10 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, Check, Loader2, ShieldAlert, X } from 'lucide-react'
+import {
+  AlertTriangle,
+  Check,
+  ChevronDown,
+  Copy,
+  Loader2,
+  ShieldAlert,
+  SquareTerminal,
+  X,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Separator } from '@/components/ui/separator'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import { writeClipboardText } from '@/lib/clipboard'
 import { ServerIcon } from '@/lib/serverIcons'
+import { cn } from '@/lib/utils'
 import type { ConnectionLogEntry } from '@/types/sessionMessage'
+import '@/styles/connection-dialog.css'
 
 interface ConnectionStep {
   id: string
@@ -70,9 +81,9 @@ const STAGE_SHORT_LABELS: Record<string, string> = {
 }
 
 const LOG_LEVEL_CLASS: Record<string, string> = {
-  info: 'text-[var(--fg-3)]',
-  warn: 'text-[var(--yellow-deep)]',
-  error: 'text-[var(--red)]',
+  info: 'connection-log-info',
+  warn: 'connection-log-warn',
+  error: 'connection-log-error',
 }
 
 function stageLabel(stage?: string) {
@@ -93,20 +104,6 @@ function stageIndex(stage?: string) {
 function formatLogTime(at: number) {
   if (!at) return '--:--:--'
   return new Date(at).toLocaleTimeString('zh-CN', { hour12: false })
-}
-
-function dotClass(status: ConnectionStep['status']) {
-  if (status === 'done') return 'border-[var(--accent)] bg-[var(--accent)] text-white'
-  if (status === 'active') return 'border-[var(--accent)] bg-[var(--accent-bg)] text-[var(--accent)]'
-  if (status === 'error') return 'border-[var(--red)] bg-[var(--red-bg)] text-[var(--red)]'
-  return 'border-[var(--border)] bg-[var(--bg-panel)] text-[var(--fg-4)]'
-}
-
-function stepLineClass(status: ConnectionStep['status']) {
-  if (status === 'error') return 'bg-[var(--red)]/45'
-  if (status === 'done') return 'bg-[var(--accent)]'
-  if (status === 'active') return 'bg-[var(--accent)]/40'
-  return 'bg-[var(--border)]'
 }
 
 export function ConnectionDialog({
@@ -131,6 +128,8 @@ export function ConnectionDialog({
 }: ConnectionDialogProps) {
   const [elapsed, setElapsed] = useState(0)
   const [remainingMs, setRemainingMs] = useState(0)
+  const [logsExpanded, setLogsExpanded] = useState(status === 'error')
+  const [copiedFingerprint, setCopiedFingerprint] = useState<'known' | 'current' | null>(null)
   const logContainerRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -147,6 +146,10 @@ export function ConnectionDialog({
   }, [status, onOpenChange])
 
   useEffect(() => {
+    if (status === 'error') setLogsExpanded(true)
+  }, [status])
+
+  useEffect(() => {
     if (status !== 'reconnecting' || !nextRetryAt) {
       setRemainingMs(0)
       return
@@ -159,7 +162,7 @@ export function ConnectionDialog({
   }, [status, nextRetryAt])
 
   useEffect(() => {
-    if (!open) return
+    if (!open || !logsExpanded) return
     const container = logContainerRef.current
     if (!container) return
 
@@ -168,7 +171,13 @@ export function ConnectionDialog({
     })
 
     return () => cancelAnimationFrame(raf)
-  }, [logs, open])
+  }, [logs, logsExpanded, open])
+
+  useEffect(() => {
+    if (!copiedFingerprint) return
+    const timer = setTimeout(() => setCopiedFingerprint(null), 1800)
+    return () => clearTimeout(timer)
+  }, [copiedFingerprint])
 
   const steps = useMemo<ConnectionStep[]>(() => {
     const currentIndex = stageIndex(currentStage)
@@ -194,7 +203,7 @@ export function ConnectionDialog({
         item.status = status === 'error' ? 'error' : 'active'
 
         if (currentStage === 'hostkey_confirm') {
-          item.detail = '检测到主机指纹变更，正在等待你的确认。'
+          item.detail = '请核对服务器主机指纹后决定是否继续。'
         } else if (status === 'reconnecting') {
           item.detail = errorMessage || '连接中断后，系统正在自动重连。'
         } else if (status === 'error') {
@@ -209,6 +218,8 @@ export function ConnectionDialog({
 
     if ((status === 'error' || status === 'reconnecting') && currentStage === 'disconnected') {
       items[items.length - 1].status = status === 'error' ? 'error' : 'active'
+      items[items.length - 1].label = stageLabel('disconnected')
+      items[items.length - 1].shortLabel = stageShortLabel('disconnected')
       items[items.length - 1].detail = errorMessage
     }
 
@@ -220,21 +231,11 @@ export function ConnectionDialog({
     [steps],
   )
 
-  const progressWidth = useMemo(() => {
-    if (status === 'connected' || status === 'error') return '100%'
-
-    if (status === 'reconnecting') {
-      if (!nextRetryAt || !reconnectAttempt) return '100%'
-      const backoff = [1000, 2000, 4000, 8000, 16000, 30000, 30000, 30000, 30000, 30000]
-      const total = backoff[Math.min(reconnectAttempt - 1, backoff.length - 1)] ?? 30000
-      const elapsedMs = total - remainingMs
-      return `${Math.min(100, (elapsedMs / total) * 100)}%`
-    }
-
-    return `${((stageIndex(currentStage) + 1) / STAGE_ORDER.length) * 100}%`
-  }, [currentStage, nextRetryAt, reconnectAttempt, remainingMs, status])
-
   const isHostKeyStep = status === 'hostkey' || currentStage === 'hostkey_confirm'
+  const isChangedHostKey = isHostKeyStep && Boolean(knownHostKeyFingerprint)
+  const activeStepIndex = steps.findIndex((step) => step.status === 'active' || step.status === 'error')
+  const currentStepNumber = status === 'connected' ? steps.length : Math.max(0, activeStepIndex) + 1
+  const latestLog = logs.at(-1)?.message
 
   const summaryText =
     status === 'connected'
@@ -246,15 +247,42 @@ export function ConnectionDialog({
             ? `第 ${reconnectAttempt} 次自动重连`
             : '正在自动重连'
           : isHostKeyStep
-            ? '等待确认主机指纹'
+            ? '等待安全确认'
             : `正在连接 · ${elapsed}s`
 
-  const stageText = stageLabel(currentStage)
+  const focusTitle =
+    status === 'connected'
+      ? '连接成功'
+      : status === 'error'
+        ? currentStage === 'disconnected'
+          ? '连接已中断'
+          : currentStep?.label || '连接失败'
+        : status === 'reconnecting'
+          ? summaryText
+          : isHostKeyStep
+            ? isChangedHostKey
+              ? '服务器主机指纹已发生变化'
+              : '首次连接，需要验证主机身份'
+            : `正在${currentStep?.label || stageLabel(currentStage)}`
+
+  const focusDetail =
+    status === 'reconnecting' && remainingMs > 0
+      ? `${Math.ceil(remainingMs / 1000)} 秒后再次尝试`
+      : currentStep?.detail || errorMessage || latestLog || '正在推进连接流程'
+
+  const canCloseByClick = status !== 'connecting' && status !== 'reconnecting' && status !== 'hostkey'
+
+  const copyFingerprint = async (kind: 'known' | 'current', value?: string) => {
+    if (!value) return
+    try {
+      await writeClipboardText(value)
+      setCopiedFingerprint(kind)
+    } catch {
+      setCopiedFingerprint(null)
+    }
+  }
 
   if (!open) return null
-
-  // 连接中、重连中或等待确认主机指纹时不允许点击外部关闭
-  const canCloseByClick = status !== 'connecting' && status !== 'reconnecting' && status !== 'hostkey'
 
   return (
     <Dialog
@@ -267,291 +295,215 @@ export function ConnectionDialog({
         showCloseButton={false}
         onEscapeKeyDown={(event) => !canCloseByClick && event.preventDefault()}
         onPointerDownOutside={(event) => !canCloseByClick && event.preventDefault()}
-        className="flex h-[min(560px,calc(100dvh-2rem))] w-[min(860px,calc(100vw-2rem))] max-w-none flex-col gap-0 overflow-hidden p-0 text-[var(--fg)]"
-        style={{
-          borderRadius: 'var(--r-lg)',
-        }}
+        className="connection-dialog"
+        data-status={status}
+        data-host-key-change={isChangedHostKey ? 'true' : 'false'}
       >
-        <DialogTitle className="sr-only">连接进度</DialogTitle>
-        <div className="shrink-0 border-b border-[var(--border)] px-4 py-3.5">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex min-w-0 items-start gap-3">
-              <div
-                className="flex h-9 w-9 shrink-0 items-center justify-center border bg-[var(--bg)] text-[var(--fg-2)]"
-                style={{ borderColor: 'var(--border)', borderRadius: 'var(--r-sm)' }}
-              >
-                {isHostKeyStep ? (
-                  <ShieldAlert size={17} />
-                ) : status === 'reconnecting' || status === 'error' ? (
-                  <AlertTriangle size={17} />
-                ) : (
-                  <ServerIcon iconKey={icon} size={17} />
-                )}
-              </div>
+        <DialogTitle className="sr-only">{focusTitle}</DialogTitle>
 
-              <div className="min-w-0">
-                <div className="font-mono text-[11px] uppercase text-[var(--fg-4)]">SSH Session</div>
-                <h3 className="truncate text-[15px] font-semibold text-[var(--fg)]">{profileName}</h3>
-                <p className="text-[12px] text-[var(--fg-3)]">
-                  {username}@{host}:{port}
-                </p>
-                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                  <span
-                    className="rounded-full border px-2 py-0.5 text-[11px] text-[var(--fg-3)]"
-                    style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg)' }}
-                  >
-                    {summaryText}
-                  </span>
-                  <span
-                    className="rounded-full border px-2 py-0.5 text-[11px] text-[var(--accent)]"
-                    style={{ borderColor: 'var(--border)', backgroundColor: 'var(--accent-bg)' }}
-                  >
-                    当前阶段：{stageText}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex shrink-0 items-center gap-2">
-              {status === 'reconnecting' && onReconnectNow && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onReconnectNow}
-                  className="h-8 rounded-[var(--r-sm)] border-[var(--border)] bg-[var(--bg-panel)] px-3 text-[var(--fg-2)] hover:bg-[var(--bg-elevated)]"
-                >
-                  立即重连
-                </Button>
-              )}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => onOpenChange(false)}
-                className="h-8 rounded-[var(--r-sm)] border-[var(--border)] bg-[var(--bg-panel)] px-3 text-[var(--fg-2)] hover:bg-[var(--bg-elevated)]"
-              >
-                {status === 'connected' ? '关闭' : '隐藏'}
-              </Button>
-            </div>
-          </div>
-
-          <div className="mt-3 h-1 overflow-hidden rounded-full bg-[var(--border-subtle)]">
-            <div className="h-full bg-[var(--accent)] transition-all duration-300 ease-out" style={{ width: progressWidth }} />
-          </div>
-        </div>
-
-        <div className="shrink-0 px-4 py-3.5">
-          <div
-            className="border bg-[var(--bg)] px-3.5 py-3.5"
-            style={{ borderColor: 'var(--border)', borderRadius: 'var(--r-lg)' }}
-          >
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <div className="font-mono text-[11px] uppercase text-[var(--fg-4)]">Lifecycle</div>
-                <h4 className="text-sm font-medium text-[var(--fg)]">连接流程</h4>
-              </div>
-              <span className="text-[11px] text-[var(--fg-4)]">{steps.length} 个阶段</span>
-            </div>
-
-            <div className="overflow-x-auto pb-1">
-              <div className="min-w-[680px]">
-                <div className="relative grid grid-cols-7 gap-2">
-                  {steps.map((step, index) => (
-                    <div key={step.id} className="relative flex flex-col items-center text-center">
-                      {index < steps.length - 1 && (
-                        <div
-                          className={`absolute left-[calc(50%+18px)] top-3.5 h-px w-[calc(100%-4px)] ${stepLineClass(step.status)}`}
-                        />
-                      )}
-
-                      <div
-                        className={`relative z-10 flex h-7 w-7 items-center justify-center rounded-full border text-[11px] font-medium ${dotClass(step.status)}`}
-                      >
-                        {step.status === 'done' ? (
-                          <Check className="h-3.5 w-3.5" />
-                        ) : step.status === 'active' ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : step.status === 'error' ? (
-                          <X className="h-3.5 w-3.5" />
-                        ) : (
-                          index + 1
-                        )}
-                      </div>
-
-                      <div className="mt-2 text-[11px] font-medium text-[var(--fg-2)]">{step.shortLabel}</div>
-                      <div className="mt-0.5 max-w-[88px] text-[10px] leading-4 text-[var(--fg-4)]">{step.label}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div
-              className="mt-3.5 border px-3.5 py-2.5"
-              style={{ borderColor: 'var(--border)', borderRadius: 'var(--r-lg)', backgroundColor: 'var(--bg-panel)' }}
-            >
-              <div className="flex items-center gap-2 text-sm">
-                {status === 'connected' ? (
-                  <Check className="h-4 w-4 text-[var(--accent)]" />
-                ) : status === 'error' ? (
-                  <X className="h-4 w-4 text-[var(--red)]" />
-                ) : isHostKeyStep ? (
-                  <ShieldAlert className="h-4 w-4 text-[var(--yellow-deep)]" />
-                ) : (
-                  <Loader2 className="h-4 w-4 animate-spin text-[var(--accent)]" />
-                )}
-                <span className="font-medium text-[var(--fg)]">{currentStep?.label || stageText}</span>
-                <span className="text-[var(--fg-4)]">·</span>
-                <span className="text-[var(--fg-3)]">
-                  {status === 'reconnecting' && remainingMs > 0
-                    ? `${Math.ceil(remainingMs / 1000)} 秒后再次尝试`
-                    : currentStep?.detail || errorMessage || '正在推进连接流程'}
-                </span>
-              </div>
-            </div>
-
-            {isHostKeyStep && (
-              <div
-                className="mt-3.5 border px-3.5 py-3"
-                style={{ borderColor: 'var(--yellow)', borderRadius: 'var(--r-lg)', backgroundColor: 'var(--yellow-bg)' }}
-              >
-                <div className="flex items-start gap-3">
-                  <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-[var(--yellow-deep)]" />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium text-[var(--fg)]">主机指纹需要确认</div>
-                    <div className="mt-1 text-xs leading-5 text-[var(--fg-3)]">
-                      {knownHostKeyFingerprint
-                        ? '当前服务器返回的主机指纹与历史记录不一致。请确认目标主机变更可信后，再继续连接。'
-                        : '这是首次连接该服务器。请通过可信渠道核对主机指纹后，再决定是否继续。'}
-                    </div>
-                    <div
-                      className="mt-3 space-y-2 border p-3"
-                      style={{ borderColor: 'var(--border)', borderRadius: 'var(--r-sm)', backgroundColor: 'var(--bg-panel)' }}
-                    >
-                      {knownHostKeyFingerprint && (
-                        <p className="text-sm text-[var(--fg-3)]">
-                          历史指纹
-                          <span className="ml-2 break-all font-mono text-xs text-[var(--fg-4)]">{knownHostKeyFingerprint}</span>
-                        </p>
-                      )}
-                      <p className="text-sm text-[var(--fg-3)]">
-                        当前指纹
-                        <span className="ml-2 break-all font-mono text-xs text-[var(--fg-4)]">{hostKeyFingerprint || '未知'}</span>
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-3 flex justify-end gap-2">
-                  {onHostKeyDecision && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => onHostKeyDecision('reject')}
-                      className="h-8 rounded-[var(--r-sm)] border-[var(--border)] bg-[var(--bg-panel)] px-3 text-[var(--fg-2)] hover:bg-[var(--bg-elevated)]"
-                    >
-                      拒绝
-                    </Button>
-                  )}
-                  {onHostKeyDecision && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => onHostKeyDecision('trust_once')}
-                      className="h-8 rounded-[var(--r-sm)] border-[var(--border)] bg-[var(--bg-panel)] px-3 text-[var(--fg-2)] hover:bg-[var(--bg-elevated)]"
-                    >
-                      仅本次信任
-                    </Button>
-                  )}
-                  {onHostKeyDecision && (
-                    <Button
-                      size="sm"
-                      onClick={() => onHostKeyDecision('trust_permanently')}
-                      className="h-8 rounded-[var(--r-sm)] bg-[var(--fg-2)] px-3 text-white hover:bg-[var(--fg)]"
-                    >
-                      永久信任并继续
-                    </Button>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {(status === 'error' || status === 'reconnecting') && errorMessage && (
-              <div
-                className="mt-3.5 border px-3.5 py-3"
-                style={{ borderColor: 'var(--red)', borderRadius: 'var(--r-lg)', backgroundColor: 'var(--red-bg)' }}
-              >
-                <div className="flex items-start gap-3">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[var(--red)]" />
-                  <div className="flex-1">
-                    <div className="text-sm font-medium text-[var(--fg)]">
-                      {status === 'reconnecting' ? '连接已中断，正在恢复' : '连接失败'}
-                    </div>
-                    <p className="mt-1 text-sm text-[var(--fg-3)]">{errorMessage}</p>
-                  </div>
-                </div>
-
-                <div className="mt-3 flex justify-end gap-2">
-                  {status === 'error' && onReconnectNow && (
-                    <Button
-                      size="sm"
-                      onClick={onReconnectNow}
-                      className="h-8 rounded-[var(--r-sm)] bg-[var(--fg-2)] px-3 text-white hover:bg-[var(--fg)]"
-                    >
-                      重新连接
-                    </Button>
-                  )}
-                  {onCancel && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={onCancel}
-                      className="h-8 rounded-[var(--r-sm)] border-[var(--border)] bg-[var(--bg-panel)] px-3 text-[var(--fg-2)] hover:bg-[var(--bg-elevated)]"
-                    >
-                      关闭标签
-                    </Button>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <Separator className="shrink-0 bg-[var(--border)]" />
-
-        <div className="flex min-h-0 flex-1 flex-col px-4 py-3.5">
-          <div className="mb-3 flex shrink-0 items-center justify-between gap-3">
-            <div>
-              <div className="font-mono text-[11px] uppercase text-[var(--fg-4)]">Logs</div>
-              <h4 className="text-sm font-medium text-[var(--fg)]">实时日志</h4>
-            </div>
-            <span className="text-[11px] text-[var(--fg-4)]">{logs.length} 条记录</span>
-          </div>
-
-          <div
-            ref={logContainerRef}
-            className="min-h-0 flex-1 overflow-y-auto border bg-[var(--bg)]"
-            style={{ borderColor: 'var(--border)', borderRadius: 'var(--r-lg)' }}
-          >
-            {logs.length === 0 ? (
-              <div className="p-4 text-sm text-[var(--fg-4)]">正在等待后端返回连接日志…</div>
+        <header className="connection-dialog-header">
+          <div className="connection-server-icon" aria-hidden="true">
+            {isHostKeyStep ? (
+              <ShieldAlert />
+            ) : status === 'reconnecting' || status === 'error' ? (
+              <AlertTriangle />
             ) : (
-              <div className="divide-y divide-[var(--border)]">
-                {logs.map((log, index) => (
-                  <div key={`${log.at}-${index}`} className="px-4 py-2.5">
-                    <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px] text-[var(--fg-4)]">
-                      <span>{formatLogTime(log.at)}</span>
-                      <span>{stageLabel(log.stage)}</span>
-                      <span className={`font-medium ${LOG_LEVEL_CLASS[log.level] ?? 'text-[var(--fg-4)]'}`}>
-                        {log.level.toUpperCase()}
-                      </span>
-                    </div>
-                    <p className={`text-sm leading-5 ${LOG_LEVEL_CLASS[log.level] ?? 'text-[var(--fg-3)]'}`}>{log.message}</p>
-                  </div>
-                ))}
-              </div>
+              <ServerIcon iconKey={icon} size={17} />
             )}
           </div>
-        </div>
+
+          <div className="connection-server-identity">
+            <span>SSH SESSION</span>
+            <strong>{profileName}</strong>
+            <small>
+              {username}@{host}:{port}
+            </small>
+          </div>
+
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} className="connection-hide-button">
+            {status === 'connected' ? '关闭' : '隐藏'}
+          </Button>
+        </header>
+
+        <main className="connection-dialog-main">
+          <section className="connection-current-stage" aria-live="polite">
+            <div className="connection-stage-indicator" aria-hidden="true">
+              {status === 'connected' ? (
+                <Check />
+              ) : status === 'error' ? (
+                <X />
+              ) : isHostKeyStep ? (
+                <ShieldAlert />
+              ) : (
+                <Loader2 className="connection-spin" />
+              )}
+            </div>
+            <div className="connection-current-copy">
+              <strong>{focusTitle}</strong>
+              <span>{focusDetail}</span>
+            </div>
+            <span className="connection-elapsed">{isHostKeyStep ? `${currentStepNumber}/${steps.length}` : summaryText}</span>
+          </section>
+
+          <section className="connection-steps" aria-label={`连接进度：第 ${currentStepNumber} 步，共 ${steps.length} 步`}>
+            <div className="connection-step-rail">
+              {steps.map((step, index) => (
+                <div className="connection-step-segment" key={step.id}>
+                  <div className={cn('connection-step-node', `is-${step.status}`)} aria-current={step.status === 'active' ? 'step' : undefined}>
+                    {step.status === 'done' ? (
+                      <Check />
+                    ) : step.status === 'active' ? (
+                      <Loader2 className="connection-spin" />
+                    ) : step.status === 'error' ? (
+                      <X />
+                    ) : (
+                      index + 1
+                    )}
+                  </div>
+                  {index < steps.length - 1 && <div className={cn('connection-step-line', `is-${step.status}`)} />}
+                </div>
+              ))}
+            </div>
+            <div className="connection-step-labels" aria-hidden="true">
+              {steps.map((step) => (
+                <span className={cn(step.status === 'active' && 'is-active', step.status === 'error' && 'is-error')} key={step.id}>
+                  {step.shortLabel}
+                </span>
+              ))}
+            </div>
+          </section>
+
+          {isHostKeyStep && (
+            <section className={cn('connection-host-key', isChangedHostKey ? 'is-changed' : 'is-first')} role="alert">
+              <div className="connection-security-heading">
+                {isChangedHostKey ? <AlertTriangle aria-hidden="true" /> : <ShieldAlert aria-hidden="true" />}
+                <div>
+                  <strong>{isChangedHostKey ? '主机指纹与历史记录不一致' : '确认这台服务器的主机指纹'}</strong>
+                  <p>
+                    {isChangedHostKey
+                      ? '这可能是服务器重装或密钥轮换，也可能存在中间人攻击。请先通过可信渠道核对新指纹。'
+                      : '这是首次连接这台服务器。请通过可信渠道核对指纹，确认目标服务器身份。'}
+                  </p>
+                </div>
+              </div>
+
+              <div className={cn('connection-fingerprint-grid', !isChangedHostKey && 'is-single')}>
+                {knownHostKeyFingerprint && (
+                  <div className="connection-fingerprint is-known">
+                    <div>
+                      <span>历史指纹</span>
+                      <small>上次保存</small>
+                    </div>
+                    <code>{knownHostKeyFingerprint}</code>
+                    <button type="button" onClick={() => void copyFingerprint('known', knownHostKeyFingerprint)} aria-label="复制历史指纹">
+                      {copiedFingerprint === 'known' ? <Check /> : <Copy />}
+                    </button>
+                  </div>
+                )}
+                <div className="connection-fingerprint is-current">
+                  <div>
+                    <span>{isChangedHostKey ? '当前指纹' : '服务器指纹'}</span>
+                    <small>{isChangedHostKey ? '本次返回' : 'SHA-256'}</small>
+                  </div>
+                  <code>{hostKeyFingerprint || '未知'}</code>
+                  <button type="button" onClick={() => void copyFingerprint('current', hostKeyFingerprint)} disabled={!hostKeyFingerprint} aria-label="复制当前指纹">
+                    {copiedFingerprint === 'current' ? <Check /> : <Copy />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="connection-host-key-actions">
+                {onHostKeyDecision && (
+                  <Button
+                    size="sm"
+                    variant={isChangedHostKey ? 'destructive' : 'outline'}
+                    onClick={() => onHostKeyDecision('reject')}
+                    className="connection-security-action"
+                  >
+                    {isChangedHostKey ? '拒绝并断开' : '取消连接'}
+                  </Button>
+                )}
+                {onHostKeyDecision && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onHostKeyDecision('trust_once')}
+                    className="connection-security-action"
+                  >
+                    仅本次信任
+                  </Button>
+                )}
+                {onHostKeyDecision && (
+                  <Button
+                    size="sm"
+                    variant={isChangedHostKey ? 'outline' : 'default'}
+                    onClick={() => onHostKeyDecision('trust_permanently')}
+                    className="connection-security-action"
+                  >
+                    {isChangedHostKey ? '更新指纹并继续' : '信任并继续'}
+                  </Button>
+                )}
+              </div>
+            </section>
+          )}
+
+          {(status === 'error' || status === 'reconnecting') && errorMessage && (
+            <section className={cn('connection-error-panel', status === 'reconnecting' && 'is-reconnecting')} role="alert">
+              <AlertTriangle aria-hidden="true" />
+              <div>
+                <strong>{status === 'reconnecting' ? '连接已中断，正在恢复' : '连接失败'}</strong>
+                <p>{errorMessage}</p>
+              </div>
+              <div className="connection-error-actions">
+                {onReconnectNow && (
+                  <Button size="sm" onClick={onReconnectNow} variant={status === 'error' ? 'default' : 'outline'}>
+                    {status === 'error' ? '重新连接' : '立即重连'}
+                  </Button>
+                )}
+                {onCancel && (
+                  <Button size="sm" variant="outline" onClick={onCancel}>
+                    关闭标签
+                  </Button>
+                )}
+              </div>
+            </section>
+          )}
+        </main>
+
+        <footer className="connection-logs-section">
+          <button
+            type="button"
+            className="connection-logs-toggle"
+            onClick={() => setLogsExpanded((value) => !value)}
+            aria-expanded={logsExpanded}
+            aria-controls="connection-live-logs"
+          >
+            <SquareTerminal aria-hidden="true" />
+            <span>连接日志</span>
+            <em>{logs.length}</em>
+            {!logsExpanded && latestLog && <small>{latestLog}</small>}
+            <ChevronDown className="connection-logs-chevron" aria-hidden="true" />
+          </button>
+
+          {logsExpanded && (
+            <div id="connection-live-logs" ref={logContainerRef} className="connection-live-logs" aria-live="polite">
+              {logs.length === 0 ? (
+                <div className="connection-log-empty">正在等待后端返回连接日志…</div>
+              ) : (
+                logs.map((log, index) => (
+                  <div className="connection-log-entry" key={`${log.at}-${index}`}>
+                    <div>
+                      <time>{formatLogTime(log.at)}</time>
+                      <span>{stageLabel(log.stage)}</span>
+                      <b className={LOG_LEVEL_CLASS[log.level] ?? 'connection-log-info'}>{log.level.toUpperCase()}</b>
+                    </div>
+                    <p className={LOG_LEVEL_CLASS[log.level] ?? 'connection-log-info'}>{log.message}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </footer>
       </DialogContent>
     </Dialog>
   )

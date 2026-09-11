@@ -1,29 +1,128 @@
-import { useRef } from 'react'
-import { ChevronRight, Monitor, Moon, Settings, ShieldCheck, Sun, Wifi } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import {
+  Activity, ChevronLeft, ChevronRight, CloudSync, DatabaseBackup,
+  Info, Palette, ShieldCheck, SquareTerminal, Wifi,
+} from 'lucide-react'
+import type { ComponentType } from 'react'
 import { MobileHeader } from './MobileHeader'
 import { useHeaderCollapse } from './useHeaderCollapse'
-
+import { MobileAppearancePanel, MobileTerminalPanel } from './MobileSettingsPanels'
+import { BackupPanel } from '@/components/SettingsDialog/BackupPanel'
+import { SyncPanel } from '@/components/SettingsDialog/SyncPanel'
+import { AboutPanel } from '@/components/SettingsDialog/AboutPanel'
+import { MobileDiagnosticsPanel } from '@/components/SettingsDialog/MobileDiagnosticsPanel'
 import { useSettingsStore } from '@/store/settings'
+import { terminalThemes } from '@/lib/terminalThemes'
 import type { NativePlatform } from '@/lib/platform'
 
+export type MobileSettingsSubPage =
+  | 'appearance'
+  | 'terminal'
+  | 'backup'
+  | 'sync'
+  | 'diagnostics'
+  | 'about'
+
 const THEME_LABELS = { light: '浅色', dark: '深色', system: '跟随系统' } as const
+
+const SUB_TITLES: Record<MobileSettingsSubPage, string> = {
+  appearance: '外观',
+  terminal: '终端',
+  backup: '数据备份',
+  sync: '云同步',
+  diagnostics: '诊断',
+  about: '关于',
+}
+
+const MENU_ITEMS: Array<{
+  key: MobileSettingsSubPage
+  label: string
+  desc: string
+  icon: ComponentType<{ size?: number }>
+}> = [
+  { key: 'appearance', label: '外观', desc: '主题、字体与显示', icon: Palette },
+  { key: 'terminal', label: '终端', desc: '主题、字体与补全', icon: SquareTerminal },
+  { key: 'backup', label: '数据备份', desc: '导出与导入本地备份', icon: DatabaseBackup },
+  { key: 'sync', label: '云同步', desc: '跨设备同步与版本控制', icon: CloudSync },
+  { key: 'diagnostics', label: '诊断', desc: '网络与运行环境状态', icon: Activity },
+  { key: 'about', label: '关于', desc: '版本与项目信息', icon: Info },
+]
 
 interface MobileSettingsPageProps {
   platform: NativePlatform
   connectedTabs: number
-  onOpenSettings: () => void
+  subPage: MobileSettingsSubPage | null
+  onOpenSubPage: (page: MobileSettingsSubPage) => void
+  onBackFromSubPage: () => void
 }
 
-export function MobileSettingsPage({ platform, connectedTabs, onOpenSettings }: MobileSettingsPageProps) {
+export function MobileSettingsPage({
+  platform,
+  connectedTabs,
+  subPage,
+  onOpenSubPage,
+  onBackFromSubPage,
+}: MobileSettingsPageProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const collapsed = useHeaderCollapse(scrollRef)
+  const reducedMotion = useReducedMotion()
   const theme = useSettingsStore((state) => state.theme)
-  const setTheme = useSettingsStore((state) => state.setTheme)
+  const terminalTheme = useSettingsStore((state) => state.terminalTheme)
   const platformLabel = platform === 'android' ? 'Android 设备' : platform === 'ios' ? 'iPhone 与 iPad' : '移动设备'
-  const ThemeIcon = theme === 'dark' ? Moon : theme === 'light' ? Sun : Monitor
+  // 记录导航方向，二级页 push 从右滑入、pop 向右滑出（对称路径）
+  const [navDir, setNavDir] = useState<'push' | 'pop'>('push')
 
-  const cycleTheme = () => {
-    setTheme(theme === 'system' ? 'light' : theme === 'light' ? 'dark' : 'system')
+  const openSub = (page: MobileSettingsSubPage) => {
+    setNavDir('push')
+    onOpenSubPage(page)
+  }
+  const backFromSub = () => {
+    setNavDir('pop')
+    onBackFromSubPage()
+  }
+
+  const menuSubtitle: Record<'appearance' | 'terminal', string> = {
+    appearance: THEME_LABELS[theme],
+    terminal: terminalThemes.find((t) => t.id === terminalTheme)?.label ?? '默认深色',
+  }
+
+  if (subPage) {
+    return (
+      <div className="m-page m-sub-host">
+        <AnimatePresence initial={false}>
+          <motion.div
+            key={subPage}
+            className="m-subpage"
+            initial={reducedMotion
+              ? { opacity: 0 }
+              : navDir === 'push' ? { opacity: 0, x: '24%' } : { opacity: 0, x: '-24%' }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={reducedMotion
+              ? { opacity: 0 }
+              : navDir === 'push' ? { opacity: 0, x: '-24%' } : { opacity: 0, x: '24%' }}
+            transition={reducedMotion ? { duration: 0.2, ease: 'easeOut' } : { type: 'spring', bounce: 0, duration: 0.3 }}
+          >
+            <div className="m-subbar">
+              <button type="button" className="m-subbar-back" aria-label="返回" onClick={backFromSub}>
+                <ChevronLeft size={24} />
+              </button>
+              <span className="m-subbar-title">{SUB_TITLES[subPage]}</span>
+            </div>
+            <div className="m-page-scroll">
+              <div className="m-page-body m-settings-flow">
+                {subPage === 'appearance' && <MobileAppearancePanel />}
+                {subPage === 'terminal' && <MobileTerminalPanel />}
+                {subPage === 'backup' && <div className="m-subpanel"><BackupPanel /></div>}
+                {subPage === 'sync' && <div className="m-subpanel"><SyncPanel /></div>}
+                {subPage === 'diagnostics' && <div className="m-subpanel"><MobileDiagnosticsPanel /></div>}
+                {subPage === 'about' && <div className="m-subpanel"><AboutPanel /></div>}
+              </div>
+            </div>
+          </motion.div>
+        </AnimatePresence>
+      </div>
+    )
   }
 
   return (
@@ -45,24 +144,26 @@ export function MobileSettingsPage({ platform, connectedTabs, onOpenSettings }: 
             <span className="m-status-badge">正常</span>
           </section>
 
-          <h2 className="m-eyebrow"><span>管理</span></h2>
+          <h2 className="m-eyebrow"><span>设置</span></h2>
           <div className="m-card">
-            <button type="button" className="m-set-row" onClick={cycleTheme}>
-              <span className="m-set-row-icon is-settings"><ThemeIcon size={17} /></span>
-              <span className="m-set-row-copy">
-                <strong>外观</strong>
-                <span>{THEME_LABELS[theme]}</span>
-              </span>
-              <ChevronRight size={16} />
-            </button>
-            <button type="button" className="m-set-row" onClick={onOpenSettings}>
-              <span className="m-set-row-icon is-settings"><Settings size={17} /></span>
-              <span className="m-set-row-copy">
-                <strong>应用设置</strong>
-                <span>外观、终端、备份与同步</span>
-              </span>
-              <ChevronRight size={16} />
-            </button>
+            {MENU_ITEMS.map((item) => {
+              const Icon = item.icon
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  className="m-set-row"
+                  onClick={() => openSub(item.key)}
+                >
+                  <span className="m-set-row-icon is-settings"><Icon size={17} /></span>
+                  <span className="m-set-row-copy">
+                    <strong>{item.label}</strong>
+                    <span>{menuSubtitle[item.key as 'appearance' | 'terminal'] ?? item.desc}</span>
+                  </span>
+                  <ChevronRight size={16} />
+                </button>
+              )
+            })}
           </div>
 
           <h2 className="m-eyebrow"><span>连接状态</span></h2>

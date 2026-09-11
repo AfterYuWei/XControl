@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { onBackButtonPress } from '@tauri-apps/api/app'
 import { MonitorSmartphone, X } from 'lucide-react'
@@ -15,12 +15,8 @@ import { MobileHeader } from './MobileHeader'
 import { MobileTabBar, type MobileSection } from './MobileTabBar'
 import { MobileEmpty } from './MobileEmpty'
 import { MobileHostList } from './MobileHostList'
-import { MobileSettingsPage } from './MobileSettingsPage'
+import { MobileSettingsPage, type MobileSettingsSubPage } from './MobileSettingsPage'
 import { useSafeAreaInsets } from './useSafeArea'
-
-const SettingsDialog = lazy(() =>
-  import('@/components/SettingsDialog').then((module) => ({ default: module.SettingsDialog })),
-)
 
 const STATUS_LABELS = {
   connecting: '连接中',
@@ -37,7 +33,7 @@ const PAGE_FADE = { duration: 0.2, ease: 'easeOut' } as const
 export function MobileLayout() {
   const reducedMotion = useReducedMotion()
   const [section, setSection] = useState<MobileSection>('hosts')
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsSub, setSettingsSub] = useState<MobileSettingsSubPage | null>(null)
   const [keyboardOpen, setKeyboardOpen] = useState(false)
   const lastBackAt = useRef(0)
   const { fetchProfiles, fetchGroups } = useProfileStore()
@@ -115,8 +111,8 @@ export function MobileLayout() {
     let unlisten: (() => Promise<void>) | undefined
     void onBackButtonPress(() => {
       if (consumeMobileBackNavigation()) return
-      if (settingsOpen) {
-        setSettingsOpen(false)
+      if (settingsSub) {
+        setSettingsSub(null)
         return
       }
       if (section !== 'hosts') {
@@ -137,7 +133,7 @@ export function MobileLayout() {
       unlisten = () => listener.unregister()
     })
     return () => void unlisten?.()
-  }, [activeTab, closeTab, section, settingsOpen])
+  }, [activeTab, closeTab, section, settingsSub])
 
   const navigate = (next: MobileSection) => {
     if (next === 'files') {
@@ -277,7 +273,9 @@ export function MobileLayout() {
               <MobileSettingsPage
                 platform={platform}
                 connectedTabs={connectedTabs}
-                onOpenSettings={() => setSettingsOpen(true)}
+                subPage={settingsSub}
+                onOpenSubPage={setSettingsSub}
+                onBackFromSubPage={() => setSettingsSub(null)}
               />
             )}
           </motion.div>
@@ -286,11 +284,6 @@ export function MobileLayout() {
 
       <MobileTabBar section={section} sessionCount={terminalTabs.length} onNavigate={navigate} />
 
-      {settingsOpen && (
-        <Suspense fallback={null}>
-          <SettingsDialog open onOpenChange={setSettingsOpen} />
-        </Suspense>
-      )}
       <Toaster
         position="top-center"
         theme={theme === 'system'

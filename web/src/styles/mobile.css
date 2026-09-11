@@ -663,25 +663,6 @@
 
 /* ─────────────── 桌面弹窗的移动适配（Portal，移动运行时限定） ─────────────── */
 
-/* 设置：左侧竖向导航改为顶部横向导航，弹窗高度贴合视口 */
-:root[data-eizhu-mobile] .settings-dialog-content {
-  height: calc(var(--mobile-viewport-height, 100dvh) - 24px);
-}
-:root[data-eizhu-mobile] .settings-dialog-content .settings-layout { flex-direction: column; }
-:root[data-eizhu-mobile] .settings-dialog-content .settings-nav {
-  width: auto;
-  flex: none;
-  flex-direction: row;
-  gap: 2px;
-  overflow-x: auto;
-  padding: 4px 10px 8px;
-  border-right: 0;
-  border-bottom: 1px solid var(--border-subtle);
-  scrollbar-width: none;
-}
-:root[data-eizhu-mobile] .settings-nav-item { width: auto; flex: none; white-space: nowrap; }
-:root[data-eizhu-mobile] .settings-section { padding: 8px 16px 20px; }
-
 /* 主机表单：内边距收紧，两列网格合并为单列 */
 :root[data-eizhu-mobile] .pf-dialog-content { padding: 16px 14px; }
 :root[data-eizhu-mobile] .pf-dialog-content .pf-grid-2,
@@ -700,6 +681,122 @@
   width: calc(100vw - 12px);
   height: calc(var(--mobile-viewport-height, 100dvh) - 24px);
 }
+
+/* ─────────────── 设置二级页（Android 系统设置式两级导航） ─────────────── */
+
+.mobile-layout .m-sub-host { position: relative; height: 100%; min-height: 0; }
+.mobile-layout .m-subpage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.mobile-layout .m-subbar {
+  height: var(--m-header-compact-h);
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+}
+.mobile-layout .m-subbar-back {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.mobile-layout .m-subbar-back:active { background: var(--bg-active); }
+.mobile-layout .m-subbar-title {
+  flex: 1;
+  /* 平衡左侧返回键宽度，让标题视觉居中 */
+  margin-right: 40px;
+  overflow: hidden;
+  text-align: center;
+  color: var(--fg);
+  font: 600 1.0625rem/1.2 var(--sans);
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 字段行（Android 设置风格：左标签/描述，右控件） */
+.mobile-layout .m-field-card { padding: 4px 0; }
+.mobile-layout .m-field {
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+}
+.mobile-layout .m-field + .m-field { border-top: 1px solid var(--border-subtle); }
+.mobile-layout .m-field-copy {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mobile-layout .m-field-copy strong { color: var(--fg); font: 600 0.9375rem/1.25 var(--sans); letter-spacing: -0.01em; }
+.mobile-layout .m-field-copy span { color: var(--fg-4); font: 400 0.75rem/1.3 var(--sans); }
+.mobile-layout .m-field-control {
+  flex: none;
+  max-width: 52%;
+  display: flex;
+  align-items: center;
+}
+.mobile-layout .m-field-select { width: 168px; max-width: 100%; height: 36px; }
+.mobile-layout .m-field-link {
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border: 0;
+  padding: 0 4px;
+  background: transparent;
+  color: var(--fg-2);
+  font: 500 0.875rem/1 var(--sans);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.mobile-layout .m-field-link svg { color: var(--fg-5); }
+.mobile-layout .m-stepper {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg-elevated);
+}
+.mobile-layout .m-stepper button {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--fg-2);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.mobile-layout .m-stepper button:disabled { opacity: 0.35; cursor: default; }
+.mobile-layout .m-stepper button:not(:disabled):active { background: var(--bg-active); }
+.mobile-layout .m-stepper output {
+  min-width: 52px;
+  text-align: center;
+  color: var(--fg);
+  font: 550 0.8125rem/1 var(--mono);
+}
+
+/* 嵌入的桌面面板：标题交给二级页标题栏，收紧留白 */
+.mobile-layout .m-subpanel .settings-section { padding: 0; }
+.mobile-layout .m-subpanel .settings-section-title { display: none; }
 
 /* ─────────────── 空态 ─────────────── */
 

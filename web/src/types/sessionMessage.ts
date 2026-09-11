@@ -7,6 +7,7 @@ export type SessionMessageType =
   | 'ping'
   | 'pong'
   | 'auth'
+  | 'auth_request'
   | 'metadata'
   | 'cwd'
   | 'complete_request'
@@ -68,7 +69,17 @@ export interface ConnectionStatePayload {
   waiting_for_host_key?: boolean
   host_key_fingerprint?: string
   known_host_key_fingerprint?: string
+  retry_attempt?: number
+  next_retry_at?: number
   logs?: ConnectionLogEntry[]
+}
+
+export interface AuthenticationRequestPayload {
+  request_id: string
+  profile_id: string
+  name: string
+  instructions: string
+  prompts: Array<{ prompt: string; echo: boolean }>
 }
 
 // 动态补全:客户端请求远端执行只读脚本

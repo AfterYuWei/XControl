@@ -1,4 +1,5 @@
 use std::{
+    collections::{HashMap, HashSet},
     future::Future,
     pin::Pin,
     sync::{Arc, Mutex as StdMutex},
@@ -8,15 +9,20 @@ use chrono::{Local, SecondsFormat};
 use russh::{client, ChannelMsg, Disconnect, Pty};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use tauri::ipc::Channel;
 use tokio::{
-    sync::{mpsc, Mutex, Notify},
+    sync::{mpsc, oneshot, Mutex, Notify},
     time::{timeout, Duration},
 };
 use tokio_util::sync::CancellationToken;
 
-use super::transport::{connect_route, ClientHandler, ConnectedRoute, HostKeyVerifier};
+use super::transport::{
+    connect_route, host_key_matches, AuthenticationRequest, AuthenticationResponder, ClientHandler,
+    ConnectedRoute, HostKeyVerifier,
+};
 use super::{session_manager::SessionManager, SessionEventSink, SshError};
 use crate::{
+    app::RECONNECT_BACKOFF_SECONDS,
     audit::AuditRepository,
     error::CommandError,
     profile::{ProfileService, ResolvedProfileNode},
@@ -25,6 +31,8 @@ use crate::{
 const COMPLETE_TIMEOUT: Duration = Duration::from_millis(400);
 const SHELL_DETECT_TIMEOUT: Duration = Duration::from_secs(10);
 const PRE_ATTACH_OUTPUT_LIMIT: usize = 1024 * 1024;
+const OUTPUT_BATCH_BYTES: usize = 32 * 1024;
+const OUTPUT_BATCH_INTERVAL: Duration = Duration::from_millis(16);
 const OSC7_BOOTSTRAP_ACK: &[u8] = b"\x1b]1337;eizhuOsc7Ready\x07";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -56,6 +64,10 @@ pub struct SessionSnapshot {
     host_key_fingerprint: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     known_host_key_fingerprint: String,
+    #[serde(skip_serializing_if = "is_zero")]
+    retry_attempt: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_retry_at: Option<i64>,
     logs: Vec<ConnectionLogEntry>,
     #[serde(skip)]
     version: u64,
@@ -96,7 +108,9 @@ pub struct ClientMessage {
 enum SessionCommand {
     Input(String),
     Resize(u32, u32),
-    Ping,
+    Ping {
+        response: oneshot::Sender<Result<(), String>>,
+    },
     Complete {
         request_id: String,
         script: String,
@@ -111,11 +125,15 @@ pub(super) struct Session {
     username: String,
     created_at: String,
     snapshot: StdMutex<SessionSnapshot>,
-    host_key_decision: StdMutex<Option<String>>,
+    host_key_decision: StdMutex<Option<HostKeyDecision>>,
+    trusted_once_host_keys: StdMutex<HashSet<String>>,
     host_key_notify: Notify,
+    pending_auth: StdMutex<Option<PendingAuthentication>>,
+    auth_notify: Notify,
     cancel: CancellationToken,
     commands: Mutex<Option<mpsc::Sender<SessionCommand>>>,
     pending_resize: StdMutex<Option<(u32, u32)>>,
+    dimensions: StdMutex<(u32, u32)>,
     delivery: StdMutex<SessionDelivery>,
     events: Arc<dyn SessionEventSink>,
 }
@@ -125,11 +143,95 @@ struct SessionDelivery {
     attached: bool,
     output_bytes: usize,
     messages: Vec<ClientMessage>,
+    subscriptions: HashMap<String, Channel<ClientMessage>>,
+}
+
+impl SessionDelivery {
+    fn push_output(&mut self, message: ClientMessage) {
+        self.output_bytes = self.output_bytes.saturating_add(message.data.len());
+        if let Some(last) = self.messages.last_mut() {
+            if last.message_type == "output" {
+                last.data.push_str(&message.data);
+            } else {
+                self.messages.push(message);
+            }
+        } else {
+            self.messages.push(message);
+        }
+        while self.output_bytes > PRE_ATTACH_OUTPUT_LIMIT {
+            let Some(index) = self
+                .messages
+                .iter()
+                .position(|message| message.message_type == "output")
+            else {
+                self.output_bytes = 0;
+                break;
+            };
+            let excess = self.output_bytes - PRE_ATTACH_OUTPUT_LIMIT;
+            let length = self.messages[index].data.len();
+            if length <= excess {
+                self.output_bytes -= length;
+                self.messages.remove(index);
+            } else {
+                let boundary = self.messages[index]
+                    .data
+                    .char_indices()
+                    .map(|(offset, _)| offset)
+                    .find(|offset| *offset >= excess)
+                    .unwrap_or(length);
+                self.messages[index].data.drain(..boundary);
+                self.output_bytes -= boundary;
+            }
+        }
+    }
+}
+
+struct HostKeyDecision {
+    fingerprint: String,
+    persist: bool,
+}
+
+struct PendingAuthentication {
+    request_id: String,
+    responses: Option<Vec<String>>,
 }
 
 impl Session {
-    fn new(profile: &ResolvedProfileNode, events: Arc<dyn SessionEventSink>) -> Self {
-        let id = uuid::Uuid::new_v4().to_string();
+    fn new(
+        profile: &ResolvedProfileNode,
+        events: Arc<dyn SessionEventSink>,
+        cols: u32,
+        rows: u32,
+    ) -> Self {
+        Self::with_identity(
+            profile,
+            events,
+            uuid::Uuid::new_v4().to_string(),
+            cols,
+            rows,
+            false,
+        )
+    }
+
+    fn reconnecting(
+        profile: &ResolvedProfileNode,
+        events: Arc<dyn SessionEventSink>,
+        id: String,
+        cols: u32,
+        rows: u32,
+        attached: bool,
+    ) -> Self {
+        Self::with_identity(profile, events, id, cols, rows, attached)
+    }
+
+    fn with_identity(
+        profile: &ResolvedProfileNode,
+        events: Arc<dyn SessionEventSink>,
+        id: String,
+        cols: u32,
+        rows: u32,
+        attached: bool,
+    ) -> Self {
         let initial_log = ConnectionLogEntry {
             at: now_millis(),
             level: "info".into(),
@@ -139,13 +241,19 @@ impl Session {
         Self {
             snapshot: StdMutex::new(SessionSnapshot {
                 session_id: id.clone(),
-                status: "connecting".into(),
+                status: if attached {
+                    "reconnecting".into()
+                } else {
+                    "connecting".into()
+                },
                 stage: "preparing".into(),
                 message: initial_log.message.clone(),
                 error: String::new(),
                 waiting_for_host_key: false,
                 host_key_fingerprint: String::new(),
                 known_host_key_fingerprint: String::new(),
+                retry_attempt: 0,
+                next_retry_at: None,
                 logs: vec![initial_log],
                 version: 1,
             }),
@@ -155,11 +263,18 @@ impl Session {
             username: profile.username.clone(),
             created_at: Local::now().to_rfc3339_opts(SecondsFormat::AutoSi, true),
             host_key_decision: StdMutex::new(None),
+            trusted_once_host_keys: StdMutex::new(HashSet::new()),
             host_key_notify: Notify::new(),
+            pending_auth: StdMutex::new(None),
+            auth_notify: Notify::new(),
             cancel: CancellationToken::new(),
             commands: Mutex::new(None),
             pending_resize: StdMutex::new(None),
-            delivery: StdMutex::new(SessionDelivery::default()),
+            dimensions: StdMutex::new((cols, rows)),
+            delivery: StdMutex::new(SessionDelivery {
+                attached,
+                ..SessionDelivery::default()
+            }),
             events,
         }
     }
@@ -187,6 +302,41 @@ impl Session {
     pub(super) fn cancel(&self) {
         self.cancel.cancel();
         self.host_key_notify.notify_waiters();
+        self.auth_notify.notify_waiters();
+    }
+
+    pub(super) fn dimensions(&self) -> (u32, u32) {
+        *self.dimensions.lock().expect("dimensions mutex poisoned")
+    }
+
+    pub(super) fn is_attached(&self) -> bool {
+        self.delivery
+            .lock()
+            .expect("delivery mutex poisoned")
+            .attached
+    }
+
+    pub(super) fn status(&self) -> String {
+        self.snapshot().status
+    }
+
+    pub(super) fn suspend_for_background_limit(&self) {
+        self.cancel();
+        self.snapshot.lock().expect("session mutex poisoned").status = "suspended".into();
+        self.stage(
+            "background_limit",
+            "warn",
+            "后台恢复窗口已结束，等待回到前台重连",
+        );
+        self.emit_message(
+            "disconnect",
+            "",
+            Some(json!({
+                "code":"BACKGROUND_LIMIT",
+                "reason":"background_limit",
+                "message":"后台恢复窗口已结束"
+            })),
+        );
     }
 
     fn stage(&self, stage: &str, level: &str, message: impl Into<String>) {
@@ -212,8 +362,27 @@ impl Session {
     }
 
     fn connected(&self, stage: &str, message: &str) {
-        self.snapshot.lock().expect("session mutex poisoned").status = "connected".into();
+        let mut snapshot = self.snapshot.lock().expect("session mutex poisoned");
+        snapshot.status = "connected".into();
+        snapshot.retry_attempt = 0;
+        snapshot.next_retry_at = None;
+        drop(snapshot);
         self.stage(stage, "info", message);
+    }
+
+    fn mark_reconnecting(&self, attempt: usize, delay_seconds: u64, reason: &str) {
+        let next_retry_at = now_millis().saturating_add((delay_seconds as i64) * 1_000);
+        let mut snapshot = self.snapshot.lock().expect("session mutex poisoned");
+        snapshot.status = "reconnecting".into();
+        snapshot.error = reason.into();
+        snapshot.retry_attempt = attempt as u32;
+        snapshot.next_retry_at = Some(next_retry_at);
+        drop(snapshot);
+        self.stage(
+            "reconnecting",
+            "warn",
+            format!("连接中断，{delay_seconds} 秒后进行第 {attempt} 次恢复"),
+        );
     }
 
     fn failed(&self, stage: &str, message: impl Into<String>) {
@@ -232,20 +401,37 @@ impl Session {
     }
 
     fn host_key_prompt(&self, current: &str, known: &str, profile_name: &str) {
+        let changed = !known.is_empty();
         self.stage(
             "hostkey_confirm",
             "warn",
-            format!("{profile_name} 的主机指纹发生变化"),
+            if changed {
+                format!("{profile_name} 的主机指纹发生变化")
+            } else {
+                format!("首次连接 {profile_name}，请确认主机指纹")
+            },
         );
         {
             let mut snapshot = self.snapshot.lock().expect("session mutex poisoned");
             snapshot.waiting_for_host_key = true;
             snapshot.host_key_fingerprint = current.into();
             snapshot.known_host_key_fingerprint = known.into();
-            snapshot.message = "检测到服务器主机指纹变化，等待确认".into();
+            snapshot.message = if changed {
+                "检测到服务器主机指纹变化，等待确认".into()
+            } else {
+                "未知服务器主机指纹，等待确认".into()
+            };
             snapshot.version += 1;
         }
         self.emit_message("connection_state", "", Some(json!(self.snapshot())));
+    }
+
+    fn should_persist_host_key(&self, fingerprint: &str) -> bool {
+        !self
+            .trusted_once_host_keys
+            .lock()
+            .expect("trusted host key mutex poisoned")
+            .contains(fingerprint)
     }
 
     fn clear_host_key_prompt(&self, profile_name: &str) {
@@ -262,6 +448,23 @@ impl Session {
         );
     }
 
+    fn provide_auth_response(&self, request_id: &str, responses: Vec<String>) -> bool {
+        let mut pending = self
+            .pending_auth
+            .lock()
+            .expect("authentication mutex poisoned");
+        let Some(request) = pending.as_mut() else {
+            return false;
+        };
+        if request.request_id != request_id || request.responses.is_some() {
+            return false;
+        }
+        request.responses = Some(responses);
+        drop(pending);
+        self.auth_notify.notify_waiters();
+        true
+    }
+
     fn emit_message(&self, message_type: &str, data: &str, payload: Option<Value>) {
         let message = ClientMessage {
             session_id: self.id.clone(),
@@ -271,57 +474,41 @@ impl Session {
         };
         let should_emit = {
             let mut delivery = self.delivery.lock().expect("delivery mutex poisoned");
-            if delivery.attached {
-                true
-            } else {
-                match message_type {
-                    "output" => {
-                        delivery.output_bytes = delivery.output_bytes.saturating_add(data.len());
-                        if let Some(last) = delivery.messages.last_mut() {
-                            if last.message_type == "output" {
-                                last.data.push_str(data);
-                            } else {
-                                delivery.messages.push(message.clone());
-                            }
-                        } else {
-                            delivery.messages.push(message.clone());
-                        }
-                        while delivery.output_bytes > PRE_ATTACH_OUTPUT_LIMIT {
-                            let Some(index) = delivery
-                                .messages
-                                .iter()
-                                .position(|message| message.message_type == "output")
-                            else {
-                                delivery.output_bytes = 0;
-                                break;
-                            };
-                            let excess = delivery.output_bytes - PRE_ATTACH_OUTPUT_LIMIT;
-                            let length = delivery.messages[index].data.len();
-                            if length <= excess {
-                                delivery.output_bytes -= length;
-                                delivery.messages.remove(index);
-                            } else {
-                                let boundary = delivery.messages[index]
-                                    .data
-                                    .char_indices()
-                                    .map(|(offset, _)| offset)
-                                    .find(|offset| *offset >= excess)
-                                    .unwrap_or(length);
-                                delivery.messages[index].data.drain(..boundary);
-                                delivery.output_bytes -= boundary;
-                            }
-                        }
-                    }
-                    // attach_messages reconstructs the latest connection state.
-                    "connection_state" => {}
-                    _ => delivery.messages.push(message.clone()),
-                }
-                false
+            if message_type == "output" {
+                delivery.push_output(message.clone());
             }
+            delivery
+                .subscriptions
+                .retain(|_, channel| channel.send(message.clone()).is_ok());
+            delivery.attached
         };
         if should_emit {
             self.events.emit_session(json!(message));
         }
+    }
+
+    fn subscribe(&self, channel: Channel<ClientMessage>) -> String {
+        let subscription_id = uuid::Uuid::new_v4().to_string();
+        let mut delivery = self.delivery.lock().expect("delivery mutex poisoned");
+        for message in self.initial_messages(delivery.attached) {
+            let _ = channel.send(message);
+        }
+        for message in delivery.messages.iter().cloned() {
+            let _ = channel.send(message);
+        }
+        delivery.attached = true;
+        delivery
+            .subscriptions
+            .insert(subscription_id.clone(), channel);
+        subscription_id
+    }
+
+    fn unsubscribe(&self, subscription_id: &str) {
+        self.delivery
+            .lock()
+            .expect("delivery mutex poisoned")
+            .subscriptions
+            .remove(subscription_id);
     }
 
     fn metadata(&self) -> ClientMessage {
@@ -379,7 +566,14 @@ impl HostKeyVerifier for SessionHostKeyVerifier {
         current: &'a str,
     ) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>> {
         Box::pin(async move {
-            if known.is_empty() || known == current {
+            if host_key_matches(known, current)
+                || self
+                    .session
+                    .trusted_once_host_keys
+                    .lock()
+                    .expect("trusted host key mutex poisoned")
+                    .contains(current)
+            {
                 return true;
             }
             self.session.host_key_prompt(current, known, profile_name);
@@ -389,14 +583,78 @@ impl HostKeyVerifier for SessionHostKeyVerifier {
                     _ = self.session.host_key_notify.notified() => {
                         let decision = self.session.host_key_decision
                             .lock().expect("host key decision mutex poisoned").take();
-                        if let Some(fingerprint) = decision {
-                            if fingerprint == current {
+                        if let Some(decision) = decision {
+                            if decision.fingerprint == current {
+                                if !decision.persist {
+                                    self.session.trusted_once_host_keys
+                                        .lock().expect("trusted host key mutex poisoned")
+                                        .insert(current.to_owned());
+                                }
                                 self.session.clear_host_key_prompt(profile_name);
                                 return true;
                             }
                             return false;
                         }
                     }
+                }
+            }
+        })
+    }
+}
+
+impl AuthenticationResponder for Session {
+    fn respond<'a>(
+        &'a self,
+        request: AuthenticationRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<String>, String>> + Send + 'a>> {
+        Box::pin(async move {
+            let request_id = uuid::Uuid::new_v4().to_string();
+            let prompts = request
+                .prompts
+                .iter()
+                .map(|prompt| json!({"prompt":prompt.prompt,"echo":prompt.echo}))
+                .collect::<Vec<_>>();
+            *self
+                .pending_auth
+                .lock()
+                .expect("authentication mutex poisoned") = Some(PendingAuthentication {
+                request_id: request_id.clone(),
+                responses: None,
+            });
+            self.stage("auth_interactive", "warn", "服务器需要补充交互式认证信息");
+            self.emit_message(
+                "auth_request",
+                "",
+                Some(json!({
+                    "request_id":request_id,
+                    "profile_id":request.profile_id,
+                    "name":request.name,
+                    "instructions":request.instructions,
+                    "prompts":prompts,
+                })),
+            );
+            loop {
+                let response = {
+                    let mut pending = self
+                        .pending_auth
+                        .lock()
+                        .expect("authentication mutex poisoned");
+                    pending
+                        .as_mut()
+                        .and_then(|request| request.responses.take())
+                };
+                if let Some(response) = response {
+                    *self
+                        .pending_auth
+                        .lock()
+                        .expect("authentication mutex poisoned") = None;
+                    return Ok(response);
+                }
+                tokio::select! {
+                    _ = self.cancel.cancelled() => {
+                        return Err("用户取消了 keyboard-interactive 认证".into());
+                    }
+                    _ = self.auth_notify.notified() => {}
                 }
             }
         })
@@ -433,7 +691,9 @@ impl SshService {
             return Err(CommandError::new("VALIDATION", "profile_id is required"));
         }
         let resolved = self.profiles.resolve_connection(&request.profile_id)?;
-        let session = Arc::new(Session::new(&resolved, self.events.clone()));
+        let cols = request.cols.filter(|value| *value > 0).unwrap_or(80);
+        let rows = request.rows.filter(|value| *value > 0).unwrap_or(24);
+        let session = Arc::new(Session::new(&resolved, self.events.clone(), cols, rows));
         let response = SessionCreateResponse {
             session_id: session.id.clone(),
             status: "connecting".into(),
@@ -441,8 +701,6 @@ impl SshService {
         self.manager.register(session.clone()).await;
         session.stage("preparing", "info", "已读取连接配置，准备建立 SSH 会话");
         let state = self.clone();
-        let cols = request.cols.filter(|value| *value > 0).unwrap_or(80);
-        let rows = request.rows.filter(|value| *value > 0).unwrap_or(24);
         let task = tokio::spawn(async move {
             state.run_session(session, resolved, cols, rows).await;
         });
@@ -457,34 +715,80 @@ impl SshService {
         cols: u32,
         rows: u32,
     ) {
-        session.stage("credential", "info", "正在准备连接凭据");
-        session.stage("hostkey_check", "info", "正在检查服务器主机指纹");
-        session.stage(
-            "establishing_ssh",
-            "info",
-            "正在建立 TCP 连接并协商 SSH 安全通道",
-        );
-        let verifier = Arc::new(SessionHostKeyVerifier {
-            session: session.clone(),
-        });
-        let route = tokio::select! {
-            _ = session.cancel.cancelled() => return,
-            result = connect_route(resolved, verifier) => match result {
+        let profile_id = resolved.profile_id.clone();
+        let mut initial_resolved = Some(resolved);
+        for attempt in 0..=RECONNECT_BACKOFF_SECONDS.len() {
+            let resolved = if let Some(resolved) = initial_resolved.take() {
+                resolved
+            } else {
+                match self.profiles.resolve_connection(&profile_id) {
+                    Ok(resolved) => resolved,
+                    Err(error) => {
+                        session.failed("credential", error.to_string());
+                        return;
+                    }
+                }
+            };
+            session.stage("credential", "info", "正在准备连接凭据");
+            session.stage("hostkey_check", "info", "正在检查服务器主机指纹");
+            session.stage(
+                "establishing_ssh",
+                "info",
+                "正在建立 TCP 连接并协商 SSH 安全通道",
+            );
+            let verifier = Arc::new(SessionHostKeyVerifier {
+                session: session.clone(),
+            });
+            let route = tokio::select! {
+                _ = session.cancel.cancelled() => return,
+                result = connect_route(resolved, verifier, Some(session.clone())) => result,
+            };
+            let route = match route {
                 Ok(route) => route,
                 Err(error) => {
-                    if !session.cancel.is_cancelled() {
-                        session.failed("establishing_ssh", format!("SSH 握手或认证失败: {error}"));
+                    let reason = format!("SSH 握手或认证失败: {error}");
+                    if !self.wait_for_retry(&session, attempt, &reason).await {
+                        return;
                     }
+                    continue;
+                }
+            };
+            session.stage("establishing_ssh", "info", "SSH 握手完成，认证通过");
+            session.stage("starting_shell", "info", "正在启动远程 Shell");
+            if let Err(error) = self.run_terminal(session.clone(), route, cols, rows).await {
+                if !self
+                    .wait_for_retry(&session, attempt, &error.to_string())
+                    .await
+                {
                     return;
                 }
+                continue;
             }
+            if session.status() == "error" {
+                if !self
+                    .wait_for_retry(&session, attempt, "网络连接已中断")
+                    .await
+                {
+                    return;
+                }
+                continue;
+            }
+            return;
+        }
+    }
+
+    async fn wait_for_retry(&self, session: &Arc<Session>, attempt: usize, reason: &str) -> bool {
+        if session.cancel.is_cancelled() {
+            return false;
+        }
+        let Some(delay) = RECONNECT_BACKOFF_SECONDS.get(attempt).copied() else {
+            session.failed("reconnect_failed", format!("自动恢复失败: {reason}"));
+            return false;
         };
-        session.stage("establishing_ssh", "info", "SSH 握手完成，认证通过");
-        session.stage("starting_shell", "info", "正在启动远程 Shell");
-        if let Err(error) = self.run_terminal(session.clone(), route, cols, rows).await {
-            if !session.cancel.is_cancelled() {
-                session.failed("starting_shell", error.to_string());
-            }
+        session.mark_reconnecting(attempt + 1, delay, reason);
+        tokio::select! {
+            _ = session.cancel.cancelled() => false,
+            _ = tokio::time::sleep(Duration::from_secs(delay)) => true,
         }
     }
 
@@ -548,7 +852,9 @@ impl SshService {
             "远程 Shell 已启动，正在初始化终端",
         );
         for (profile_id, fingerprint) in &route.host_keys {
-            let _ = self.profiles.persist_host_key(profile_id, fingerprint);
+            if session.should_persist_host_key(fingerprint) {
+                let _ = self.profiles.persist_host_key(profile_id, fingerprint);
+            }
         }
         let _ = self.profiles.update_last_used(&session.profile_id);
         let _ = self.audit.record(&session.profile_id, "connect", "");
@@ -571,6 +877,10 @@ impl SshService {
         };
         let mut exit_code = 0_u32;
         let mut normal_exit = false;
+        let mut pending_output = String::new();
+        let mut output_flush = tokio::time::interval(OUTPUT_BATCH_INTERVAL);
+        output_flush.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        output_flush.tick().await;
         loop {
             tokio::select! {
                 _ = session.cancel.cancelled() => {
@@ -591,9 +901,16 @@ impl SshService {
                         channel.window_change(cols, rows, 0, 0).await
                             .map_err(|error| format!("调整远程 PTY: {error}"))?;
                     }
-                    Some(SessionCommand::Ping) => {
-                        let _ = timeout(Duration::from_secs(5), route.handle.send_ping()).await;
-                        session.emit_message("pong", "", None);
+                    Some(SessionCommand::Ping { response }) => {
+                        let result = match timeout(Duration::from_secs(5), route.handle.send_ping()).await {
+                            Ok(Ok(())) => Ok(()),
+                            Ok(Err(error)) => Err(error.to_string()),
+                            Err(_) => Err("SSH probe timed out after 5 seconds".into()),
+                        };
+                        if result.is_ok() {
+                            session.emit_message("pong", "", None);
+                        }
+                        let _ = response.send(result);
                     }
                     Some(SessionCommand::Complete { request_id, script, cwd }) => {
                         let result = run_completion(&route.handle, script, cwd).await;
@@ -615,6 +932,9 @@ impl SshService {
                     }
                     None => session.cancel.cancel(),
                 },
+                _ = output_flush.tick(), if !pending_output.is_empty() => {
+                    session.emit_message("output", &std::mem::take(&mut pending_output), None);
+                }
                 message = channel.wait() => match message {
                     Some(ChannelMsg::Data { data })
                     | Some(ChannelMsg::ExtendedData { data, .. }) => {
@@ -633,7 +953,14 @@ impl SshService {
                             session.emit_message("cwd", "", Some(json!({"path":cwd})));
                         }
                         if !output.data.is_empty() {
-                            session.emit_message("output", &output.data, None);
+                            pending_output.push_str(&output.data);
+                            if pending_output.len() >= OUTPUT_BATCH_BYTES {
+                                session.emit_message(
+                                    "output",
+                                    &std::mem::take(&mut pending_output),
+                                    None,
+                                );
+                            }
                         }
                     }
                     Some(ChannelMsg::ExitStatus { exit_status }) => {
@@ -644,6 +971,10 @@ impl SshService {
                     _ => {}
                 }
             }
+        }
+
+        if !pending_output.is_empty() {
+            session.emit_message("output", &pending_output, None);
         }
 
         *session.commands.lock().await = None;
@@ -681,6 +1012,23 @@ impl SshService {
         Ok(self.manager.get(id).await?.attach_messages())
     }
 
+    pub(crate) async fn subscribe(
+        &self,
+        id: &str,
+        channel: Channel<ClientMessage>,
+    ) -> Result<String, CommandError> {
+        Ok(self.manager.get(id).await?.subscribe(channel))
+    }
+
+    pub(crate) async fn unsubscribe(
+        &self,
+        id: &str,
+        subscription_id: &str,
+    ) -> Result<(), CommandError> {
+        self.manager.get(id).await?.unsubscribe(subscription_id);
+        Ok(())
+    }
+
     pub(crate) async fn confirm_host_key(
         &self,
         id: &str,
@@ -704,9 +1052,51 @@ impl SshService {
         *session
             .host_key_decision
             .lock()
-            .expect("host key decision mutex poisoned") = Some(fingerprint);
+            .expect("host key decision mutex poisoned") = Some(HostKeyDecision {
+            fingerprint,
+            persist: true,
+        });
         session.host_key_notify.notify_waiters();
         Ok(json!({"status":"accepted"}))
+    }
+
+    pub(crate) async fn decide_host_key(
+        &self,
+        id: &str,
+        fingerprint: String,
+        decision: &str,
+    ) -> Result<Value, CommandError> {
+        let session = self.manager.get(id).await?;
+        let snapshot = session.snapshot();
+        if !snapshot.waiting_for_host_key || fingerprint != snapshot.host_key_fingerprint {
+            return Err(CommandError::new(
+                "HOST_KEY_CONFIRM_FAILED",
+                "session host key request is no longer active",
+            ));
+        }
+        let persist = match decision {
+            "trust_permanently" => true,
+            "trust_once" => false,
+            "reject" => {
+                session.cancel();
+                return Ok(json!({"status":"rejected"}));
+            }
+            _ => {
+                return Err(CommandError::new(
+                    "VALIDATION",
+                    "decision must be trust_once, trust_permanently or reject",
+                ));
+            }
+        };
+        *session
+            .host_key_decision
+            .lock()
+            .expect("host key decision mutex poisoned") = Some(HostKeyDecision {
+            fingerprint,
+            persist,
+        });
+        session.host_key_notify.notify_waiters();
+        Ok(json!({"status":"accepted","persisted":persist}))
     }
 
     pub(crate) async fn input(&self, id: &str, data: String) -> Result<(), CommandError> {
@@ -718,6 +1108,10 @@ impl SshService {
             return Ok(());
         }
         let session = self.manager.get(id).await?;
+        *session
+            .dimensions
+            .lock()
+            .expect("dimensions mutex poisoned") = (cols, rows);
         let sender = session.commands.lock().await.clone();
         if let Some(sender) = sender {
             sender
@@ -734,7 +1128,22 @@ impl SshService {
     }
 
     pub(crate) async fn ping(&self, id: &str) -> Result<(), CommandError> {
-        self.send_command(id, SessionCommand::Ping).await
+        let (response, receiver) = oneshot::channel();
+        self.send_command(id, SessionCommand::Ping { response })
+            .await?;
+        receiver
+            .await
+            .map_err(|_| {
+                CommandError::new("SESSION_CLOSED", "SSH probe was interrupted")
+                    .retryable()
+                    .with_session(id, "probe")
+            })?
+            .map_err(|error| {
+                CommandError::new("SSH_PROBE_FAILED", error)
+                    .retryable()
+                    .with_session(id, "probe")
+                    .with_details(serde_json::json!({"timeout_seconds": 5}))
+            })
     }
 
     pub(crate) async fn complete(
@@ -758,8 +1167,136 @@ impl SshService {
         .await
     }
 
+    pub(crate) async fn respond_auth(
+        &self,
+        request_id: &str,
+        responses: Vec<String>,
+    ) -> Result<(), CommandError> {
+        if responses.len() > 32 {
+            return Err(CommandError::new(
+                "VALIDATION",
+                "too many authentication responses",
+            ));
+        }
+        for session in self.manager.sessions().await {
+            if session.provide_auth_response(request_id, responses.clone()) {
+                return Ok(());
+            }
+        }
+        Err(CommandError::new(
+            "AUTH_REQUEST_NOT_FOUND",
+            "authentication request is no longer active",
+        ))
+    }
+
     pub(crate) async fn close(&self, id: &str) -> Result<(), CommandError> {
         self.manager.close(id).await
+    }
+
+    pub(crate) async fn active_count(&self) -> usize {
+        self.manager
+            .sessions()
+            .await
+            .into_iter()
+            .filter(|session| {
+                matches!(
+                    session.status().as_str(),
+                    "connecting" | "connected" | "reconnecting"
+                )
+            })
+            .count()
+    }
+
+    pub(crate) async fn latest_reason(&self) -> Option<String> {
+        self.manager
+            .sessions()
+            .await
+            .into_iter()
+            .filter_map(|session| {
+                let snapshot = session.snapshot();
+                if snapshot.error.is_empty() {
+                    return None;
+                }
+                let at = snapshot.logs.last().map_or(0, |entry| entry.at);
+                Some((at, snapshot.error))
+            })
+            .max_by_key(|(at, _)| *at)
+            .map(|(_, reason)| reason)
+    }
+
+    pub(crate) async fn probe_active(&self) {
+        let ids = self
+            .manager
+            .sessions()
+            .await
+            .into_iter()
+            .filter(|session| session.status() == "connected")
+            .map(|session| session.id().to_owned())
+            .collect::<Vec<_>>();
+        for id in ids {
+            if self.ping(&id).await.is_err() {
+                let _ = self.reconnect(&id).await;
+            }
+        }
+    }
+
+    pub(crate) async fn reconnect_active(&self) -> Result<(), CommandError> {
+        let ids = self
+            .manager
+            .sessions()
+            .await
+            .into_iter()
+            .filter(|session| session.status() == "connected")
+            .map(|session| session.id().to_owned())
+            .collect::<Vec<_>>();
+        for id in ids {
+            self.reconnect(&id).await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn suspend_for_background_limit(&self) {
+        self.manager.suspend_all().await;
+    }
+
+    pub(crate) async fn reconnect_suspended(&self) -> Result<(), CommandError> {
+        let ids = self
+            .manager
+            .sessions()
+            .await
+            .into_iter()
+            .filter(|session| session.status() == "suspended")
+            .map(|session| session.id().to_owned())
+            .collect::<Vec<_>>();
+        for id in ids {
+            self.reconnect(&id).await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn reconnect(&self, id: &str) -> Result<SessionCreateResponse, CommandError> {
+        let previous = self.manager.get(id).await?;
+        let resolved = self.profiles.resolve_connection(&previous.profile_id)?;
+        let (cols, rows) = previous.dimensions();
+        let session = Arc::new(Session::reconnecting(
+            &resolved,
+            self.events.clone(),
+            id.to_owned(),
+            cols,
+            rows,
+            previous.is_attached(),
+        ));
+        session.stage("reconnecting", "info", "正在恢复 SSH 会话");
+        self.manager.replace(id, session.clone()).await;
+        let state = self.clone();
+        let task = tokio::spawn(async move {
+            state.run_session(session, resolved, cols, rows).await;
+        });
+        self.manager.track(id.to_owned(), task).await;
+        Ok(SessionCreateResponse {
+            session_id: id.to_owned(),
+            status: "reconnecting".into(),
+        })
     }
 
     async fn send_command(&self, id: &str, command: SessionCommand) -> Result<(), CommandError> {
@@ -1065,6 +1602,10 @@ fn is_false(value: &bool) -> bool {
     !*value
 }
 
+fn is_zero(value: &u32) -> bool {
+    *value == 0
+}
+
 fn now_millis() -> i64 {
     Local::now().timestamp_millis()
 }
@@ -1076,6 +1617,42 @@ mod tests {
     #[test]
     fn shell_quote_escapes_single_quotes() {
         assert_eq!(shell_quote("a'b"), "'a'\\''b'");
+    }
+
+    #[test]
+    fn reconnect_backoff_is_bounded_to_ten_attempts() {
+        assert_eq!(RECONNECT_BACKOFF_SECONDS.len(), 10);
+        assert_eq!(&RECONNECT_BACKOFF_SECONDS[..6], &[1, 2, 4, 8, 16, 30]);
+        assert!(RECONNECT_BACKOFF_SECONDS[5..]
+            .iter()
+            .all(|delay| *delay == 30));
+    }
+
+    #[test]
+    fn terminal_channel_batch_and_replay_limits_match_mobile_contract() {
+        assert_eq!(OUTPUT_BATCH_INTERVAL, Duration::from_millis(16));
+        assert_eq!(OUTPUT_BATCH_BYTES, 32 * 1024);
+        assert_eq!(PRE_ATTACH_OUTPUT_LIMIT, 1024 * 1024);
+
+        let mut delivery = SessionDelivery::default();
+        delivery.messages.push(ClientMessage {
+            session_id: "session-1".into(),
+            message_type: "connection_state".into(),
+            data: String::new(),
+            payload: None,
+        });
+        delivery.push_output(ClientMessage {
+            session_id: "session-1".into(),
+            message_type: "output".into(),
+            data: "中".repeat(PRE_ATTACH_OUTPUT_LIMIT / 3 + 100),
+            payload: None,
+        });
+
+        assert!(delivery.output_bytes <= PRE_ATTACH_OUTPUT_LIMIT);
+        assert_eq!(delivery.messages[0].message_type, "connection_state");
+        let replay = &delivery.messages[1].data;
+        assert!(replay.is_char_boundary(0));
+        assert!(replay.chars().all(|character| character == '中'));
     }
 
     #[test]

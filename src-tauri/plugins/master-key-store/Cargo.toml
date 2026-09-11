@@ -1,0 +1,16 @@
+[package]
+name = "tauri-plugin-master-key-store"
+version = "0.1.0"
+authors = ["yuweinfo"]
+description = "eizhu Android Keystore and iOS Keychain bridge"
+edition = "2021"
+rust-version = "1.89"
+links = "tauri-plugin-master-key-store"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+tauri = { version = "2" }
+thiserror = "2"
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }

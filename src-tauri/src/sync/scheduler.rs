@@ -48,7 +48,7 @@ impl SyncService {
 
     pub(crate) fn notify_change(&self) {
         if let Err(error) = self.send_scheduler(Message::Change) {
-            eprintln!("queue sync change notification failed: {error}");
+            crate::app::log_runtime_error("sync_change_queue_failed", &error.to_string());
         }
     }
 
@@ -110,7 +110,7 @@ impl SyncService {
         };
         if let Ok(Err(error)) = tokio::time::timeout(Duration::from_secs(5), work).await {
             if error.code != "SYNC_PASSWORD_REQUIRED" {
-                eprintln!("shutdown backup failed: {error}");
+                crate::app::log_runtime_error("shutdown_backup_failed", &error.to_string());
             }
         }
     }
@@ -134,12 +134,12 @@ async fn run(state: SyncService, mut receiver: mpsc::Receiver<Message>) {
                 }
                 Some(Message::Sync) => {
                     if let Err(error) = state.sync_all().await {
-                        eprintln!("manual sync failed: {error}");
+                        crate::app::log_runtime_error("manual_sync_failed", &error.to_string());
                     }
                 }
                 Some(Message::Push) => {
                     if let Err(error) = state.push_latest().await {
-                        eprintln!("manual push failed: {error}");
+                        crate::app::log_runtime_error("manual_push_failed", &error.to_string());
                     }
                 }
             },
@@ -173,12 +173,15 @@ async fn fire(state: &SyncService, origin: &'static str) {
     .await;
     match result {
         Ok(Ok(Ok(Some(version)))) => {
-            eprintln!(
-                "sync version created: v{} origin={} size={}",
-                version.version, origin, version.size
+            crate::app::log_runtime_error(
+                "sync_version_created",
+                &format!(
+                    "version={} origin={origin} size={}",
+                    version.version, version.size
+                ),
             );
             if let Err(error) = state.push_latest().await {
-                eprintln!("automatic cloud push failed: {error}");
+                crate::app::log_runtime_error("automatic_cloud_push_failed", &error.to_string());
             }
             if settings.sync_mode == "auto" {
                 let _ = state.sync_all().await;

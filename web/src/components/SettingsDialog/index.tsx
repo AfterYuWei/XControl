@@ -8,14 +8,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Monitor, Terminal, Palette, Type, ChevronRight, DatabaseBackup, CloudSync, Info, FileText } from 'lucide-react'
+import { Activity, Monitor, Terminal, Palette, Type, ChevronRight, DatabaseBackup, CloudSync, Info, FileText } from 'lucide-react'
 import { TerminalThemePicker } from './TerminalThemePicker'
 import { BackupPanel } from './BackupPanel'
 import { SyncPanel } from './SyncPanel'
 import { AboutPanel } from './AboutPanel'
 import { LogPanel } from './LogPanel'
-import { isTauri } from '@/lib/desktop'
 import { isTestBuild } from '@/lib/updater'
+import { isDesktopRuntime, isMobileRuntime } from '@/lib/platform'
+import { MobileDiagnosticsPanel } from './MobileDiagnosticsPanel'
 
 interface SettingsDialogProps {
   open: boolean
@@ -103,7 +104,7 @@ const terminalFontFamilyCNOptions = [
   { value: "sans-serif", label: '系统默认' },
 ]
 
-type SettingsTab = 'appearance' | 'terminal' | 'backup' | 'sync' | 'logs' | 'about'
+type SettingsTab = 'appearance' | 'terminal' | 'backup' | 'sync' | 'logs' | 'diagnostics' | 'about'
 
 const baseTabs: { key: SettingsTab; label: string; icon: typeof Monitor }[] = [
   { key: 'appearance', label: '外观', icon: Palette },
@@ -125,9 +126,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   } = useSettingsStore()
 
   const currentThemeLabel = terminalThemes.find((t) => t.id === terminalTheme)?.label ?? '默认深色'
-  const tabs = isTauri() && isTestBuild()
+  const tabs = isDesktopRuntime() && isTestBuild()
     ? [...baseTabs.slice(0, -1), { key: 'logs' as const, label: '日志', icon: FileText }, baseTabs.at(-1)!]
-    : baseTabs
+    : isMobileRuntime()
+      ? [...baseTabs.slice(0, -1), { key: 'diagnostics' as const, label: '诊断', icon: Activity }, baseTabs.at(-1)!]
+      : baseTabs
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -328,6 +331,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             <TabsContent value="sync" className="settings-content"><SyncPanel /></TabsContent>
 
             <TabsContent value="logs" className="settings-content"><LogPanel /></TabsContent>
+
+            <TabsContent value="diagnostics" className="settings-content"><MobileDiagnosticsPanel /></TabsContent>
 
             <TabsContent value="about" className="settings-content"><AboutPanel /></TabsContent>
           </div>

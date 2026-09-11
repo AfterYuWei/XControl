@@ -2,10 +2,15 @@
 
 import { invoke } from '@tauri-apps/api/core'
 import { openUrl } from '@tauri-apps/plugin-opener'
+import {
+  getPlatformCapabilities,
+  hasTauriRuntime,
+  isDesktopRuntime,
+} from './platform'
 
 /** 是否运行在 Tauri 桌面环境（浏览器下为 false）。 */
 export function isTauri(): boolean {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+  return hasTauriRuntime()
 }
 
 /**
@@ -14,7 +19,7 @@ export function isTauri(): boolean {
  * - 浏览器：立即返回
  */
 export async function initDesktop(): Promise<void> {
-  if (!isTauri()) return
+  if (!isDesktopRuntime()) return
   await migrateElectronSettings()
 }
 
@@ -46,7 +51,7 @@ async function migrateElectronSettings(): Promise<void> {
  * 浏览器模式退化为 window.open。
  */
 export async function openExternal(url: string): Promise<void> {
-  if (isTauri()) {
+  if (getPlatformCapabilities().runtime === 'desktop') {
     await openUrl(url)
   } else {
     window.open(url, '_blank', 'noopener,noreferrer')
@@ -60,6 +65,9 @@ export async function saveTextToDisk(
   content: string,
   suggestedName: string,
 ): Promise<string | null> {
+  if (!getPlatformCapabilities().nativeFilePaths) {
+    throw new Error('当前平台尚未启用系统文件导出')
+  }
   const bytes = Array.from(new TextEncoder().encode(content))
   return await invoke<string | null>('save_blob_to_disk', { bytes, suggestedName })
 }

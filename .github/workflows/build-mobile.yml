@@ -1,0 +1,148 @@
+name: Mobile Build
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: npm ci
+      - run: npm --prefix web ci
+      - name: Initialize Android project when absent
+        run: test -d src-tauri/gen/android || npm run android:init -- --ci
+      - name: Require Android signing secrets on main
+        if: github.ref == 'refs/heads/main'
+        env:
+          ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: test -n "$ANDROID_KEY_BASE64" && test -n "$ANDROID_KEY_ALIAS" && test -n "$ANDROID_KEY_PASSWORD"
+      - name: Configure Android release signing
+        if: github.event_name != 'pull_request'
+        env:
+          ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          if [ -z "$ANDROID_KEY_BASE64" ]; then
+            echo "Android signing secrets are not configured; producing an unsigned dev artifact."
+            exit 0
+          fi
+          test -n "$ANDROID_KEY_ALIAS" && test -n "$ANDROID_KEY_PASSWORD"
+          printf '%s' "$ANDROID_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/eizhu-upload.jks"
+          {
+            echo "password=$ANDROID_KEY_PASSWORD"
+            echo "keyAlias=$ANDROID_KEY_ALIAS"
+            echo "storeFile=$RUNNER_TEMP/eizhu-upload.jks"
+          } > src-tauri/gen/android/keystore.properties
+      - name: Build Android debug APK (arm64)
+        run: npm run android:build -- --debug --apk --target aarch64 --ci
+      - name: Build Android release AAB (arm64, R8)
+        run: npm run android:build -- --aab --target aarch64 --ci
+      - name: Verify Android R8 output
+        shell: bash
+        run: test -n "$(find src-tauri/gen/android -path '*/mapping/release/mapping.txt' -print -quit)"
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: eizhu-android-${{ github.sha }}
+          path: |
+            src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+            src-tauri/gen/android/app/build/outputs/bundle/**/*.aab
+            src-tauri/gen/android/app/build/outputs/mapping/release/mapping.txt
+          if-no-files-found: error
+
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: npm ci
+      - run: npm --prefix web ci
+      - name: Initialize iOS project when absent
+        run: test -d src-tauri/gen/apple || npm run ios:init -- --ci
+      - name: Build iOS simulator app
+        run: npm run ios:build -- --target aarch64-sim --ci
+      - name: Require App Store signing secrets on main
+        if: github.ref == 'refs/heads/main'
+        env:
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: test -n "$APPLE_API_KEY_BASE64" && test -n "$APPLE_API_KEY" && test -n "$APPLE_API_ISSUER"
+      - name: Configure App Store Connect API key
+        id: apple-key
+        if: github.event_name != 'pull_request'
+        env:
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        shell: bash
+        run: |
+          if [ -z "$APPLE_API_KEY_BASE64" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "App Store signing secrets are not configured; skipping the dev Archive."
+            exit 0
+          fi
+          test -n "$APPLE_API_KEY" && test -n "$APPLE_API_ISSUER"
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY}.p8"
+          printf '%s' "$APPLE_API_KEY_BASE64" | base64 --decode > "$KEY_PATH"
+          echo "APPLE_API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+      - name: Build signed iOS Archive and IPA
+        if: steps.apple-key.outputs.configured == 'true'
+        run: npm run ios:build -- --target aarch64 --export-method app-store-connect --ci
+      - name: Upload iOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: eizhu-ios-${{ github.sha }}
+          path: |
+            src-tauri/gen/apple/build/**/*.app
+            src-tauri/gen/apple/build/**/*.xcarchive
+            src-tauri/gen/apple/build/**/*.ipa
+          if-no-files-found: error

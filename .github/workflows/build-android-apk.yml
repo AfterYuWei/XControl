@@ -1,4 +1,4 @@
-name: Android Installable APK
+name: Build Android APK
 
 on:
   pull_request:

@@ -1,4 +1,4 @@
-name: Desktop Build Core
+name: Build Desktop Core
 
 # stable/test 入口分别位于 build-desktop-stable.yml 与
 # build-desktop-test.yml。本文件只承载可复用的三平台构建和发布步骤。

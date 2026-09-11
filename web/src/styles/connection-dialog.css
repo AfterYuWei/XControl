@@ -309,7 +309,7 @@
     bottom: 0;
     left: 0;
     width: 100%;
-    max-height: min(76dvh, calc(var(--mobile-viewport-height, 100dvh) - var(--safe-inset-top, env(safe-area-inset-top)) - 8px));
+    max-height: min(76dvh, calc(var(--mobile-viewport-height, 100dvh) - var(--safe-inset-top) - 8px));
     transform: none;
     /* Tailwind v4 的 translate-x/y 工具类编译为独立 translate 属性，
        必须显式重置，否则居中位移仍生效导致面板偏出屏幕 */
@@ -318,7 +318,7 @@
     border-bottom: 0;
     border-left: 0;
     border-radius: var(--r-xl) var(--r-xl) 0 0;
-    padding-bottom: var(--safe-inset-bottom, env(safe-area-inset-bottom));
+    padding-bottom: var(--safe-inset-bottom);
     animation-name: connection-sheet-in;
   }
 

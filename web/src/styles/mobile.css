@@ -2,12 +2,23 @@
    边界约束：所有规则仅作用于 .mobile-layout 子树，或
    :root[data-eizhu-mobile] 前缀（Radix Portal 弹层）。桌面端零影响。 */
 
+/* 安全区 env() 兜底只在这一处定义；Android WebView 的 env() 恒为 0，
+   由 useSafeArea 通过原生插件把真实 insets 以内联样式写到 :root
+   （inline style 优先级高于此规则，自动覆盖兜底值）。
+   引用处一律直接 var(--safe-inset-*)，不再重复写 env() 兜底。 */
+:root {
+  --safe-inset-top: env(safe-area-inset-top, 0px);
+  --safe-inset-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-inset-left: env(safe-area-inset-left, 0px);
+  --safe-inset-right: env(safe-area-inset-right, 0px);
+}
+
 .mobile-layout {
   /* 移动令牌 */
   --m-pad: 16px;
   --m-header-compact-h: 44px;
   --m-tabbar-h: 60px;
-  --m-tabbar-inset: calc(20px + var(--safe-inset-bottom, env(safe-area-inset-bottom)));
+  --m-tabbar-inset: calc(20px + var(--safe-inset-bottom));
   --m-radius-card: 16px;
   --m-radius-row-icon: 10px;
   --m-glass-bar: color-mix(in srgb, var(--surface-chrome) 72%, transparent);
@@ -23,8 +34,8 @@
   overflow: hidden;
   background: var(--surface-app);
   color: var(--fg);
-  padding-top: var(--safe-inset-top, env(safe-area-inset-top));
-  padding-bottom: var(--safe-inset-bottom, env(safe-area-inset-bottom));
+  padding-top: var(--safe-inset-top);
+  padding-bottom: var(--safe-inset-bottom);
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -66,7 +77,7 @@
 .mobile-layout .m-page-scroll::-webkit-scrollbar { display: none; }
 
 .mobile-layout .m-page-body {
-  padding: 0 var(--m-pad) calc(84px + var(--safe-inset-bottom, env(safe-area-inset-bottom)));
+  padding: 0 var(--m-pad) calc(84px + var(--safe-inset-bottom));
 }
 
 /* ─────────────── Header ─────────────── */
@@ -684,7 +695,7 @@
   position: fixed;
   left: 8px;
   right: 8px;
-  bottom: calc(8px + var(--safe-inset-bottom, env(safe-area-inset-bottom)));
+  bottom: calc(8px + var(--safe-inset-bottom));
   z-index: 51;
   border-radius: 20px;
   background: color-mix(in srgb, var(--surface-chrome) 80%, transparent);
@@ -773,7 +784,7 @@
   display: flex;
   gap: 5px;
   overflow-x: auto;
-  padding: 6px max(8px, var(--safe-inset-left, env(safe-area-inset-left)));
+  padding: 6px max(8px, var(--safe-inset-left));
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   background: color-mix(in srgb, var(--term-bg) 88%, var(--surface-chrome));
   scrollbar-width: none;

@@ -1,7 +1,6 @@
 name: Mobile Build
 
 on:
-  pull_request:
   push:
     branches:
       - dev

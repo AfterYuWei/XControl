@@ -42,6 +42,13 @@ jobs:
       - run: npm --prefix web ci
       - name: Initialize Android project when absent
         run: test -d src-tauri/gen/android || npm run android:init -- --ci
+      - name: Require Android signing secrets on main
+        if: github.ref == 'refs/heads/main'
+        env:
+          ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: test -n "$ANDROID_KEY_BASE64" && test -n "$ANDROID_KEY_ALIAS" && test -n "$ANDROID_KEY_PASSWORD"
       - name: Configure Android release signing
         if: github.event_name != 'pull_request' && env.ANDROID_KEY_BASE64 != ''
         env:
@@ -96,8 +103,16 @@ jobs:
       - name: Initialize iOS project when absent
         run: test -d src-tauri/gen/apple || npm run ios:init -- --ci
       - name: Build iOS simulator app
-        run: npm run ios:build -- --target aarch64-sim
+        run: npm run ios:build -- --target aarch64-sim --ci
+      - name: Require App Store signing secrets on main
+        if: github.ref == 'refs/heads/main'
+        env:
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: test -n "$APPLE_API_KEY_BASE64" && test -n "$APPLE_API_KEY" && test -n "$APPLE_API_ISSUER"
       - name: Configure App Store Connect API key
+        id: apple-key
         if: github.event_name != 'pull_request' && env.APPLE_API_KEY_BASE64 != ''
         env:
           APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
@@ -108,8 +123,9 @@ jobs:
           KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY}.p8"
           printf '%s' "$APPLE_API_KEY_BASE64" | base64 --decode > "$KEY_PATH"
           echo "APPLE_API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+          echo "configured=true" >> "$GITHUB_OUTPUT"
       - name: Build signed iOS Archive and IPA
-        if: github.event_name != 'pull_request' && env.APPLE_API_KEY_PATH != ''
+        if: steps.apple-key.outputs.configured == 'true'
         run: npm run ios:build -- --target aarch64 --export-method app-store-connect --ci
       - name: Upload iOS artifacts
         uses: actions/upload-artifact@v4

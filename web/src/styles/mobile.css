@@ -7,7 +7,7 @@
   --m-pad: 16px;
   --m-header-compact-h: 44px;
   --m-tabbar-h: 60px;
-  --m-tabbar-inset: calc(8px + var(--safe-inset-bottom, env(safe-area-inset-bottom)));
+  --m-tabbar-inset: calc(14px + var(--safe-inset-bottom, env(safe-area-inset-bottom)));
   --m-radius-card: 16px;
   --m-radius-row-icon: 10px;
   --m-glass-bar: color-mix(in srgb, var(--surface-chrome) 72%, transparent);
@@ -262,11 +262,11 @@
 }
 .mobile-layout .m-tab-icon svg { width: 20px; height: 20px; }
 
-/* Telegram 风格整项选中药丸：覆盖图标+文字，轻量蓝色调 */
+/* Telegram 风格整项选中药丸：四周留边、不贴栏缘，尺寸收敛更精致 */
 .mobile-layout .m-tab-glow {
   position: absolute;
   z-index: 0;
-  inset: 4px;
+  inset: 6px 12px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--accent) 16%, transparent);
 }

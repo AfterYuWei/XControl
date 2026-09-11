@@ -24,8 +24,11 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
 }
 
 impl<R: Runtime> SystemInsetsPlugin<R> {
-    /// 读取失败时退回全零，前端 CSS 会继续使用 env(safe-area-inset-*)。
+    /// 读取失败时退回全零并留痕，前端 CSS 会继续使用 env(safe-area-inset-*)。
     pub fn get(&self) -> SystemInsets {
-        self.0.run_mobile_plugin("get", ()).unwrap_or_default()
+        self.0.run_mobile_plugin("get", ()).unwrap_or_else(|error| {
+            eprintln!("[system-insets] native get failed: {error}");
+            SystemInsets::default()
+        })
     }
 }

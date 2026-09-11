@@ -17,22 +17,31 @@ import app.tauri.plugin.Plugin
  */
 class SystemInsetsPlugin(private val activity: Activity) : Plugin(activity) {
     private var lastSignature = ""
+    private var latest: WindowInsets? = null
 
     @Command
     fun get(invoke: Invoke) {
-        invoke.resolve(readInsets())
+        invoke.resolve(currentPayload())
     }
 
     override fun load(webView: WebView) {
+        // WebView 能收到 View 层分发的真实 insets（Chromium bug 只影响 CSS env()），
+        // 缓存最新值并推送给前端
         webView.setOnApplyWindowInsetsListener { view, insets ->
+            latest = insets
             publish(insets)
             insets
         }
-        webView.post { webView.requestApplyInsets() }
+        webView.post {
+            webView.requestApplyInsets()
+            activity.window?.decorView?.requestApplyInsets()
+        }
     }
 
-    private fun readInsets(): JSObject {
-        val insets = activity.window?.decorView?.rootWindowInsets
+    /** 优先用 WebView 实际收到的 insets，尚未分发时退回 decorView。 */
+    private fun currentPayload(): JSObject {
+        val insets = latest
+            ?: activity.window?.decorView?.rootWindowInsets
             ?: return zeros()
         return toPayload(insetValues(insets))
     }

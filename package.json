@@ -7,7 +7,7 @@
     "desktop:dev": "node scripts/run-tauri.mjs dev",
     "desktop:build": "node scripts/run-tauri.mjs build",
     "desktop:smoke": "cd src-tauri && cargo run -- --smoke-test",
-    "desktop:icon": "tauri icon src-tauri/app-icon.png",
+    "desktop:icon": "node scripts/round-app-icon.mjs src-tauri/app-icon.png 0.22 && tauri icon src-tauri/app-icon.png",
     "android:init": "tauri android init",
     "android:dev": "tauri android dev",
     "android:build": "tauri android build",

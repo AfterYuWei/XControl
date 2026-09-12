@@ -13,17 +13,18 @@
 | iOS | arm64 Simulator `.app` | App Store Connect Archive / IPA | arm64 / iOS 15+ |
 
 `dev` 的 Android debug APK 会同时保存为 Actions Artifact，并发布到独立的 GitHub
-Prerelease：`android-test-v<版本>-test.<run>.<attempt>`。APK 文件名包含相同测试版本和
-`android-arm64-debug`，可直接下载到 Android 设备安装。CI 会对 Rust dev profile 使用
-`opt-level=s` 并剥离调试符号，以避免测试 APK 因 Rust 符号膨胀到数百 MB；该包仍使用 debug
-签名，不用于商店发布，也不用于原生崩溃符号调试。
+Prerelease：`test-android-v<VERSION_MOBILE>-test.<提交计数>.<短SHA>`。APK 文件名包含相同
+测试版本和 `android-arm64-debug`，可直接下载到 Android 设备安装。CI 会对 Rust dev profile
+使用 `opt-level=s` 并剥离调试符号，以避免测试 APK 因 Rust 符号膨胀到数百 MB；该包不用于
+商店发布，也不用于原生崩溃符号调试。
 
 Android 首版正式支持 arm64。需要增加 ABI 时，先在真机矩阵验证，再把 `android build` 的
 `--target` 扩展为 `armv7`、`i686` 或 `x86_64`；不得只增加产物而跳过对应设备验收。
 
-版本名称来自根目录 `VERSION` 与 `src-tauri/Cargo.toml`。Android `versionCode` 由 Tauri 按
-SemVer 派生，iOS `CFBundleVersion` 默认跟随应用版本；正式发布前必须确认商店中的构建号尚未
-使用。
+移动端版本独立于桌面端：版本名称来自根目录 `VERSION_MOBILE`（桌面端使用 `VERSION`），
+由 `scripts/run-tauri.mjs` 在 android/ios 命令时注入。test 版本号 = 提交计数 + 短 SHA，
+随历史单调递增。Android `versionCode` 由 Tauri 按 SemVer 派生，iOS `CFBundleVersion`
+默认跟随应用版本；正式发布前必须确认商店中的构建号尚未使用。
 
 ## CI 签名变量
 
@@ -34,9 +35,13 @@ SemVer 派生，iOS `CFBundleVersion` 默认跟随应用版本；正式发布前
 - `ANDROID_KEY_PASSWORD`：keystore/key 密码。
 
 CI 仅在非 pull request 构建中解码密钥，并生成不入库的
-`src-tauri/gen/android/keystore.properties`。发布 AAB 必须启用 R8，工作流会检查
-`app/build/outputs/mapping/<variant>/mapping.txt` 并与 AAB 一起保存；`<variant>` 由 Tauri
-根据 ABI/flavor 生成，例如 `arm64Release` 或 `universalRelease`，不可写死为 `release`。
+`src-tauri/gen/android/keystore.properties`；`scripts/prepare-android-signing.mjs` 会在其
+存在时把上传密钥签名注入 debug / release 构建（`tauri android init` 的默认模板本身不会
+读取 keystore.properties），因此配置 Secrets 后测试 APK 也使用固定签名，可直接覆盖安装。
+密钥生成与 Secrets 配置步骤见 `docs/ANDROID_APK_GITHUB.md`。发布 AAB 必须启用 R8，
+工作流会检查 `app/build/outputs/mapping/<variant>/mapping.txt` 并与 AAB 一起保存；
+`<variant>` 由 Tauri 根据 ABI/flavor 生成，例如 `arm64Release` 或 `universalRelease`，
+不可写死为 `release`。
 
 ### iOS
 

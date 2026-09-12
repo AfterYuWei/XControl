@@ -49,15 +49,48 @@ Android 生成工程，用于审查后回写 `src-tauri/gen/android`。
 
 完整测试矩阵见 `docs/MOBILE_RELEASE.md`。
 
-## Debug 签名限制
+## 签名与覆盖安装
 
-GitHub runner 会为 debug APK 使用临时 debug 签名。不同工作流运行生成的签名可能不同，因此
-后续 APK 覆盖安装如果提示“签名不一致”，先卸载旧版再安装新版。卸载会清除应用本地数据，
-需要保留数据时应先导出备份。
+GitHub runner 会为 debug APK 使用本机随机生成的 debug 签名，不同工作流运行产生的签名
+不同，互相覆盖安装会提示“签名不一致”，只能卸载重装（卸载会清除应用本地数据）。
 
-需要长期覆盖升级时，再创建并妥善备份固定测试/发布密钥，配置现有的
-`ANDROID_KEY_BASE64`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` GitHub Secrets，改用固定
-签名构建。在仅验证第一个 APK 的阶段不需要配置这些 Secrets，也不需要使用 Google Play 账号。
+构建流程已内置固定签名支持（`scripts/prepare-android-signing.mjs` 会在
+`src-tauri/gen/android/keystore.properties` 存在时把它注入 debug / release 构建），
+只要配置了 Android 上传密钥 Secrets，所有 APK（测试包、正式包）都会使用同一把密钥
+签名，之后即可直接覆盖升级，测试版与正式版之间也能互相覆盖切换。
+
+### 配置固定签名 Secrets（一次性）
+
+1. 用 `keytool` 生成上传密钥（JDK 自带，Android Studio 内置 JDK 位于
+   `<Android Studio>/jbr/bin/keytool`）：
+
+   ```bash
+   keytool -genkeypair -v -keystore eizhu-upload.jks \
+     -alias eizhu -keyalg RSA -keysize 2048 -validity 10000
+   ```
+
+   按提示设置并牢记 keystore 密码与 key 密码（两者可设为相同）。**务必备份该
+   `.jks` 文件和密码**——密钥丢失后已发布的 APK 将永远无法覆盖升级。
+
+2. 计算密钥文件的 Base64：
+
+   ```bash
+   base64 -w0 eizhu-upload.jks   # macOS: base64 -i eizhu-upload.jks
+   ```
+
+3. 在 GitHub 仓库 `Settings → Secrets and variables → Actions` 添加三个 Secret：
+
+   | Secret | 值 |
+   |--------|-----|
+   | `ANDROID_KEY_BASE64` | 上一步输出的 Base64（一整行，无换行） |
+   | `ANDROID_KEY_ALIAS` | `eizhu`（与 keytool `-alias` 一致） |
+   | `ANDROID_KEY_PASSWORD` | keystore / key 密码 |
+
+4. 推送到 `dev` 触发一次构建。从这次构建开始，下载的 APK 均为固定签名。
+
+> 注意：切换到固定签名后的第一个 APK 与之前随机签名的旧 APK 签名不一致，
+> 仍需最后一次卸载重装；此后即可一直覆盖升级。`main` 分支的发布门禁会强制
+> 要求这三个 Secrets 已配置。
 
 ## 失败排查
 

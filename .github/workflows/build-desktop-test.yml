@@ -18,6 +18,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # 需要完整历史计算提交计数，作为单调递增的 test 构建号。
+          fetch-depth: 0
 
       - id: meta
         shell: bash
@@ -27,11 +30,14 @@ jobs:
             echo "VERSION 必须是 SemVer（x.y.z），当前值: $BASE_VERSION" >&2
             exit 1
           fi
-          # 版本号基于提交而非运行编号：Build Mobile 使用同一提交会得到
-          # 相同的 test-v* 标签，Android APK 与桌面安装包得以合并进同一个
-          # 测试 Release。同一提交重跑时复用该 Release 并覆盖同名资产。
+          # 版本号 = 基础版本 + 提交计数 + 短 SHA：提交计数随历史单调递增，
+          # 保证 NSIS / 应用内更新始终把新测试包判定为“升级”而非“降级”
+          # （-test.<sha> 的字典序无法保证递增，会导致 Windows 覆盖安装被
+          # 强制要求先卸载）；短 SHA 提供可追溯性。同一提交两条流水线得到
+          # 相同版本号，重跑时资产覆盖到同一个 test Release。
+          TEST_BUILD="$(git rev-list --count HEAD)"
           SHORT_SHA="${GITHUB_SHA::7}"
-          VERSION="${BASE_VERSION}-test.${SHORT_SHA}"
+          VERSION="${BASE_VERSION}-test.${TEST_BUILD}.${SHORT_SHA}"
           TAG="test-v${VERSION}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"

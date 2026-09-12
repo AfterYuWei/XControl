@@ -9,16 +9,16 @@
     "desktop:smoke": "cd src-tauri && cargo run -- --smoke-test",
     "app:icon": "node scripts/round-app-icon.mjs src-tauri/app-icon.png 0.22 src-tauri/app-icon-foreground.png && tauri icon src-tauri/app-icon-manifest.json",
     "desktop:icon": "npm run app:icon",
-    "android:init": "tauri android init",
+    "android:init": "node scripts/run-tauri.mjs android init",
     "android:icon": "npm run app:icon && node scripts/verify-mobile-icons.mjs android",
     "postandroid:init": "npm run android:icon",
-    "android:dev": "npm run android:icon && tauri android dev",
-    "android:build": "npm run android:icon && tauri android build",
-    "ios:init": "tauri ios init",
+    "android:dev": "npm run android:icon && node scripts/prepare-android-signing.mjs && node scripts/run-tauri.mjs android dev",
+    "android:build": "npm run android:icon && node scripts/prepare-android-signing.mjs && node scripts/run-tauri.mjs android build",
+    "ios:init": "node scripts/run-tauri.mjs ios init",
     "ios:icon": "npm run app:icon && node scripts/verify-mobile-icons.mjs ios",
     "postios:init": "npm run ios:icon",
-    "ios:dev": "npm run ios:icon && tauri ios dev",
-    "ios:build": "npm run ios:icon && tauri ios build"
+    "ios:dev": "npm run ios:icon && node scripts/run-tauri.mjs ios dev",
+    "ios:build": "npm run ios:icon && node scripts/run-tauri.mjs ios build"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

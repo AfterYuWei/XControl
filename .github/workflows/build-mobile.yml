@@ -25,6 +25,9 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
+        with:
+          # 需要完整历史计算提交计数，作为单调递增的 test 构建号。
+          fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
@@ -146,16 +149,20 @@ jobs:
         if: github.ref == 'refs/heads/dev'
         shell: bash
         run: |
-          BASE_VERSION="$(tr -d '[:space:]' < VERSION)"
+          BASE_VERSION="$(tr -d '[:space:]' < VERSION_MOBILE)"
           if [[ ! "$BASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "VERSION 必须是 SemVer（x.y.z），当前值: $BASE_VERSION" >&2
+            echo "VERSION_MOBILE 必须是 SemVer（x.y.z），当前值: $BASE_VERSION" >&2
             exit 1
           fi
-          # 与 Build Desktop Test 使用同一提交级版本号，两个工作流把产物
-          # 发布到同一个 test-v* Release。同一提交重跑时资产同名覆盖。
+          # 移动端版本独立于桌面端（VERSION_MOBILE）。测试版本号 = 基础版本
+          # + 提交计数 + 短 SHA：提交计数随历史单调递增，保证版本顺序可比较，
+          # 桌面流水线同提交也得到相同版本号便于对照；短 SHA 提供可追溯性。
+          TEST_BUILD="$(git rev-list --count HEAD)"
           SHORT_SHA="${GITHUB_SHA::7}"
-          TEST_VERSION="${BASE_VERSION}-test.${SHORT_SHA}"
-          RELEASE_TAG="test-v${TEST_VERSION}"
+          TEST_VERSION="${BASE_VERSION}-test.${TEST_BUILD}.${SHORT_SHA}"
+          # 移动端使用独立的测试 Release（test-android-v*），与桌面测试
+          # Release（test-v*）分离：两条版本线各自独立管理。
+          RELEASE_TAG="test-android-v${TEST_VERSION}"
           APK_PATH="$(find src-tauri/gen/android/app/build/outputs/apk \
             -type f -name '*debug*.apk' -print -quit)"
           test -n "$APK_PATH"
@@ -175,14 +182,12 @@ jobs:
           TAG="${{ steps.android-release.outputs.tag }}"
           ASSET="${{ steps.android-release.outputs.asset }}"
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            # 桌面流水线可能尚未创建该 Release；先建一个占位，
-            # 桌面侧随后的发布步骤会补全标题与说明。
             gh release create "$TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --prerelease \
               --target "${GITHUB_SHA}" \
-              --title "eizhu ${{ steps.android-release.outputs.version }}" \
-              --notes "eizhu dev 测试版（Android 资产先行上传，桌面安装包随后补充）。" \
+              --title "eizhu Android ${{ steps.android-release.outputs.version }}" \
+              --notes "eizhu Android 测试版（dev 分支自动构建，覆盖安装需固定签名，见 docs/ANDROID_APK_GITHUB.md）。" \
               || true
           fi
           gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" "$ASSET" --clobber
@@ -203,24 +208,26 @@ jobs:
         if: github.ref == 'refs/heads/main'
         shell: bash
         run: |
-          VERSION="$(tr -d '[:space:]' < VERSION)"
+          VERSION="$(tr -d '[:space:]' < VERSION_MOBILE)"
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "VERSION 必须是稳定版 SemVer（x.y.z），当前值: $VERSION" >&2
+            echo "VERSION_MOBILE 必须是稳定版 SemVer（x.y.z），当前值: $VERSION" >&2
             exit 1
           fi
           APK_PATH="$(find src-tauri/gen/android/app/build/outputs/apk \
             -type f -name '*.apk' ! -name '*debug*' -print -quit)"
           test -n "$APK_PATH"
-          # 与 Build Desktop Stable 发布到同一个 v<VERSION> 正式 Release；
-          # 与桌面同一原则：main 上的每次合并都是一次正式发版，必须先提升
-          # VERSION，防止不同提交复用同一 tag 覆盖已有 Release。
+          # 与 Build Desktop Stable 发布到同一个 v<VERSION> 正式 Release：
+          # 当桌面 VERSION 与移动端 VERSION_MOBILE 相同时两条流水线共用
+          # 同一正式 Release；版本不同时移动端使用自己的 v<VERSION_MOBILE>
+          # Release。同一原则：main 上的每次合并都是一次正式发版，必须先
+          # 提升对应 VERSION 文件，防止复用 tag 覆盖已有 Release。
           TAG="v${VERSION}"
           set +e
           git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null
           STATUS=$?
           set -e
           if [ "$STATUS" -eq 0 ]; then
-            echo "正式版 ${TAG} 已存在；合并到 main 前请先提升 VERSION" >&2
+            echo "正式版 ${TAG} 已存在；合并到 main 前请先提升 VERSION_MOBILE" >&2
             exit 1
           elif [ "$STATUS" -ne 2 ]; then
             echo "无法检查远端版本标记（git ls-remote 退出码 $STATUS）" >&2
@@ -243,7 +250,7 @@ jobs:
             gh release create "$TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --target "${GITHUB_SHA}" \
-              --title "eizhu $(tr -d '[:space:]' < VERSION)" \
+              --title "eizhu $(tr -d '[:space:]' < VERSION_MOBILE)" \
               --notes "eizhu 正式版（Android 资产先行上传，桌面安装包随后补充）。" \
               || true
           fi

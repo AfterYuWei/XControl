@@ -31,6 +31,9 @@
   "bundle": {
     "active": true,
     "category": "DeveloperTool",
+    "windows": {
+      "allowDowngrades": true
+    },
     "shortDescription": "eizhu - 跨平台 SSH 终端与 SFTP 管理器",
     "copyright": "Copyright © yuweinfo",
     "icon": [

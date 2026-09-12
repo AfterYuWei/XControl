@@ -16,6 +16,7 @@ import { MobileHeader } from './MobileHeader'
 import { MobileTabBar, type MobileSection } from './MobileTabBar'
 import { MobileEmpty } from './MobileEmpty'
 import { MobileHostList } from './MobileHostList'
+import { MobileVaultPage } from './MobileVaultPage'
 import { MobileSettingsPage, type MobileSettingsSubPage } from './MobileSettingsPage'
 import { useSafeAreaInsets } from './useSafeArea'
 
@@ -270,10 +271,7 @@ export function MobileLayout() {
             )}
 
             {section === 'vault' && (
-              <div className="m-page-stack">
-                <MobileHeader variant="compact" title="密码库" />
-                <div className="m-page-fill"><TerminalView /></div>
-              </div>
+              <MobileVaultPage />
             )}
 
             {section === 'settings' && (

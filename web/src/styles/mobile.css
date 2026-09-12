@@ -610,50 +610,46 @@
   font: 400 0.75rem/1.6 var(--sans);
 }
 
-/* ─────────────── 密码库页（VaultView 移动适配） ─────────────── */
+/* ─────────────── 密码库页（MobileVaultPage） ─────────────── */
 
-/* 桌面工具栏：搜索独占一行，筛选与操作合并为一行；标题交给页头 */
-.mobile-layout .vault-view { background: var(--surface-app); }
-.mobile-layout .vault-toolbar {
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 8px var(--m-pad) 10px;
-  border-bottom: 1px solid var(--border-subtle);
-  background: transparent;
-}
-.mobile-layout .vault-toolbar-title { display: none; }
-.mobile-layout .vault-toolbar-filter { min-width: 96px; }
-.mobile-layout .vault-toolbar-search {
-  order: 3;
-  flex: 1 1 100%;
-  max-width: none;
-  height: 36px;
-  border-radius: 999px;
-  font-size: 0.9375rem;
-}
-.mobile-layout .vault-toolbar-actions { margin-left: auto; gap: 10px; }
-/* 操作收窄为圆形玻璃图标按钮，与主页新增按钮（m-round-btn）同一语言 */
-.mobile-layout .vault-toolbar-actions button {
-  width: 36px;
-  height: 36px;
-  min-height: 36px;
-  padding: 0;
+/* 分段控件（iOS segmented：凹槽容器 + 浮起选中段） */
+.mobile-layout .m-seg {
   display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--m-glass-heavy);
-  box-shadow: var(--m-specular);
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  margin-top: 10px;
+  padding: 2px;
+  border-radius: var(--m-radius-control);
+  background: var(--m-fill);
 }
-.mobile-layout .vault-toolbar-actions button svg { width: 18px; height: 18px; }
-.mobile-layout .vault-toolbar-actions .vault-btn-label { display: none; }
-.mobile-layout .vault-toolbar-actions button:active { transform: scale(0.92); }
+.mobile-layout .m-seg button {
+  height: 30px;
+  border: 0;
+  padding: 0 4px;
+  border-radius: calc(var(--m-radius-control) - 2px);
+  background: transparent;
+  color: var(--fg-3);
+  font: 500 0.8125rem/1 var(--sans);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.mobile-layout .m-seg button.is-active {
+  background: var(--surface-panel);
+  color: var(--fg);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.12), var(--m-specular);
+}
 
-/* 卡片单列，滚动区为悬浮 TabBar 预留底部空间 */
-.mobile-layout .vault-grid {
-  grid-template-columns: 1fr;
-  gap: 10px;
-  padding: 12px var(--m-pad) calc(84px + var(--safe-inset-bottom));
+/* 凭据行图标：密码走 accent 蓝，私钥保持中性填充（项目无 blue/purple 令牌） */
+.mobile-layout .m-vault-row-icon.is-password { color: var(--accent); background: var(--accent-bg); }
+
+/* 引用列表（无法删除弹窗内） */
+:root[data-eizhu-mobile] .m-vault-refs {
+  margin: 6px 0 0;
+  padding-left: 18px;
 }
+:root[data-eizhu-mobile] .m-vault-refs li { margin: 2px 0; }
 
 /* ─────────────── 桌面弹窗的移动适配（Portal，移动运行时限定） ─────────────── */
 
@@ -1003,7 +999,6 @@
     border-left: 1px solid var(--border-subtle);
   }
   .mobile-layout .m-settings-flow { max-width: 720px; margin: 0 auto; }
-  .mobile-layout .vault-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
 }
 
 /* 触控目标（仅移动运行时） */
@@ -1033,7 +1028,6 @@
   .mobile-layout .m-search,
   .mobile-layout .m-state-pill,
   .mobile-layout .m-round-btn,
-  .mobile-layout .vault-toolbar-actions button,
   .mobile-layout .sftp-mobile-actions button { backdrop-filter: none; -webkit-backdrop-filter: none; }
   :root[data-eizhu-mobile] .m-sheet {
     background: var(--surface-overlay);

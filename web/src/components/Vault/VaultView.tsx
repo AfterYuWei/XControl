@@ -89,11 +89,13 @@ export function VaultView() {
           onChange={(e) => setSearchQuery(e.target.value)}
         />
         <div className="vault-toolbar-actions">
-          <Button type="button" variant="outline" size="sm" onClick={() => setGenOpen(true)}>
-            生成密钥对
+          <Button type="button" variant="outline" size="sm" onClick={() => setGenOpen(true)} aria-label="生成密钥对" title="生成密钥对">
+            <KeyRound size={14} />
+            <span className="vault-btn-label">生成密钥对</span>
           </Button>
-          <Button type="button" size="sm" onClick={handleCreate} className="pf-btn-submit">
-            <Plus size={14} /> 新建凭据
+          <Button type="button" size="sm" onClick={handleCreate} className="pf-btn-submit" aria-label="新建凭据" title="新建凭据">
+            <Plus size={14} />
+            <span className="vault-btn-label">新建凭据</span>
           </Button>
         </div>
       </div>

@@ -86,7 +86,7 @@ export function TransferQueue() {
               }}
             >
               <Trash2 size={12} />
-              清除
+              <span className="sftp-tx-clear-label">清除</span>
             </Button>
           )}
         </div>

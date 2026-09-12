@@ -167,13 +167,13 @@ export function MobileLayout() {
 
   const pageMeta = useMemo(() => {
     if (section === 'files') {
-      return { title: '文件', subtitle: 'SFTP 文件管理' }
+      return { title: '文件' }
     }
     return {
       title: activeTab?.kind === 'terminal' ? activeTab.profileName : '终端',
       subtitle: terminalTabs.length
         ? `${connectedTabs}/${terminalTabs.length} 个会话在线`
-        : '安全远程终端',
+        : undefined,
     }
   }, [activeTab, connectedTabs, section, terminalTabs.length])
 
@@ -198,7 +198,7 @@ export function MobileLayout() {
               <div className="m-host-master">
                 <MobileHostList />
                 <div className="m-host-detail">
-                  {terminalTabs.length ? <TerminalView /> : <MobileEmpty title="选择主机开始连接" />}
+                  {terminalTabs.length ? <TerminalView /> : <MobileEmpty title="选择一台主机" />}
                 </div>
               </div>
             )}
@@ -248,7 +248,7 @@ export function MobileLayout() {
                     : <MobileEmpty
                         icon={MonitorSmartphone}
                         title="暂无终端会话"
-                        description="从连接页选择一台主机，即可开始安全会话。"
+                        description="从主机页选择一台服务器连接。"
                         action={<button type="button" className="m-empty-action" onClick={() => setSection('hosts')}>选择主机</button>}
                       />}
                 </div>
@@ -264,7 +264,7 @@ export function MobileLayout() {
 
             {section === 'vault' && (
               <div className="m-page-stack">
-                <MobileHeader variant="compact" title="密码库" subtitle="密码、密钥与安全存储" />
+                <MobileHeader variant="compact" title="密码库" />
                 <div className="m-page-fill"><TerminalView /></div>
               </div>
             )}

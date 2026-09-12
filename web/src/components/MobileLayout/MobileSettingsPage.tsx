@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import {
   Activity, ChevronLeft, ChevronRight, CloudSync, DatabaseBackup,
-  Info, Palette, ShieldCheck, SquareTerminal, Wifi,
+  Info, Palette, SquareTerminal, Wifi,
 } from 'lucide-react'
 import type { ComponentType } from 'react'
 import { MobileHeader } from './MobileHeader'
@@ -135,15 +135,6 @@ export function MobileSettingsPage({
       />
       <div className="m-page-scroll" ref={scrollRef}>
         <div className="m-page-body m-settings-flow">
-          <section className="m-status-card" aria-label="运行状态">
-            <span className="m-status-card-icon"><ShieldCheck size={19} /></span>
-            <div className="m-status-card-copy">
-              <strong>本地安全空间</strong>
-              <span>凭据加密保存在此设备</span>
-            </div>
-            <span className="m-status-badge">正常</span>
-          </section>
-
           <h2 className="m-eyebrow"><span>设置</span></h2>
           <div className="m-card">
             {MENU_ITEMS.map((item) => {
@@ -172,7 +163,7 @@ export function MobileSettingsPage({
               <span className="m-set-row-icon is-settings"><Wifi size={17} /></span>
               <span className="m-set-row-copy">
                 <strong>{connectedTabs ? `${connectedTabs} 个会话在线` : '暂无在线会话'}</strong>
-                <span>返回前台后自动检查并恢复连接</span>
+                <span>凭据加密保存在此设备，返回前台后自动恢复连接</span>
               </span>
             </div>
           </div>

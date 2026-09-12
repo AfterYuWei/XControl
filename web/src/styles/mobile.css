@@ -19,14 +19,20 @@
   --m-header-compact-h: 44px;
   --m-tabbar-h: 60px;
   --m-tabbar-inset: calc(16px + var(--safe-inset-bottom));
+  /* 同心圆角体系：内容卡 16，卡内控件同轴，Sheet 28 */
   --m-radius-card: 16px;
+  --m-radius-control: 12px;
+  --m-radius-sheet: 28px;
   --m-radius-row-icon: 10px;
+  /* 材质分级：导航层玻璃（轻）/ 浮层玻璃（重）/ 内容层实体 */
   --m-glass-bar: color-mix(in srgb, var(--surface-chrome) 72%, transparent);
+  --m-glass-heavy: color-mix(in srgb, var(--surface-chrome) 86%, transparent);
   --m-glass-blur: blur(24px) saturate(1.5);
-  --m-float-shadow:
-    inset 0 1px 0 var(--edge-highlight),
-    0 0 0 1px var(--edge-soft),
-    0 12px 36px -12px rgba(20, 24, 31, 0.35);
+  --m-specular: inset 0 1px 0 var(--edge-highlight);
+  /* 内容层令牌 */
+  --m-fill: var(--bg-elevated);
+  --m-tint: var(--accent);
+  --m-separator: var(--border-subtle);
 
   position: relative;
   height: var(--mobile-viewport-height, 100dvh);
@@ -119,7 +125,7 @@
 
 .mobile-layout .m-large-trailing { flex: none; display: flex; gap: 8px; }
 
-/* 大标题右侧圆形操作按钮（+） */
+/* 大标题右侧圆形玻璃控件（+） */
 .mobile-layout .m-round-btn {
   width: 36px;
   height: 36px;
@@ -127,9 +133,9 @@
   display: grid;
   place-items: center;
   padding: 0;
-  border: 1px solid var(--edge-panel-strong);
   border-radius: 50%;
-  background: var(--surface-panel);
+  background: var(--m-glass-heavy);
+  box-shadow: var(--m-specular);
   color: var(--fg-2);
   cursor: pointer;
   touch-action: manipulation;
@@ -194,15 +200,16 @@
 }
 .mobile-layout .m-compactbar-side.is-right { justify-content: flex-end; }
 
-/* 会话状态胶囊（会话页 header） */
+/* 会话状态胶囊（会话页 header）：玻璃浮层控件 */
 .mobile-layout .m-state-pill {
   height: 28px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 0 10px;
-  border: 1px solid var(--border-subtle);
   border-radius: var(--r-pill);
+  background: var(--m-glass-heavy);
+  box-shadow: var(--m-specular);
   color: var(--fg-3);
   font: 550 0.6875rem/1 var(--sans);
   white-space: nowrap;
@@ -235,7 +242,10 @@
   background: var(--m-glass-bar);
   backdrop-filter: var(--m-glass-blur);
   -webkit-backdrop-filter: var(--m-glass-blur);
-  box-shadow: var(--m-float-shadow);
+  box-shadow:
+    inset 0 1px 0 var(--edge-highlight),
+    0 0 0 1px var(--edge-soft),
+    0 12px 36px -12px rgba(20, 24, 31, 0.35);
 }
 
 .mobile-layout .m-tab {
@@ -311,15 +321,16 @@
   margin-top: 14px;
   /* 与下方第一张卡片/分组保持呼吸间距（无分组眉题时是唯一间隔） */
   margin-bottom: 12px;
-  padding: 0 10px;
-  border-radius: 10px;
-  background: var(--bg-elevated);
+  padding: 0 14px;
+  /* 胶囊形玻璃搜索框（iOS 26 search 形态） */
+  border-radius: 999px;
+  background: var(--m-glass-heavy);
+  box-shadow: var(--m-specular);
   color: var(--fg-4);
-  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+  transition: background-color 0.15s ease;
 }
 .mobile-layout .m-search:focus-within {
-  background: var(--surface-panel);
-  box-shadow: 0 0 0 3px var(--accent-bg);
+  background: var(--bg-active);
 }
 .mobile-layout .m-search svg { width: 16px; height: 16px; flex: none; }
 .mobile-layout .m-search input {
@@ -347,25 +358,22 @@
 }
 .mobile-layout .m-search-clear svg { width: 14px; height: 14px; }
 
-/* 分组 eyebrow（Geist mono 大写标签） */
+/* 分组小节标题（iOS grouped header：灰色常规 sans，中文不用大写字距） */
 .mobile-layout .m-eyebrow {
-  margin: 20px 4px 8px;
+  margin: 24px 4px 8px;
   color: var(--fg-4);
-  font: 500 0.6875rem/1 var(--mono);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font: 400 0.8125rem/1 var(--sans);
   display: flex;
   align-items: center;
   gap: 6px;
 }
 .mobile-layout .m-eyebrow-count { color: var(--fg-5); }
 
-/* 内嵌分组卡片 */
+/* 内嵌分组卡片：内容层实体材质，不用浮层阴影 */
 .mobile-layout .m-card {
   overflow: hidden;
   border-radius: var(--m-radius-card);
   background: var(--surface-panel);
-  box-shadow: var(--shadow-surface);
 }
 
 /* 主机行 */
@@ -387,8 +395,16 @@
   user-select: none;
   -webkit-user-select: none;
 }
-/* 行间 hairline */
-.mobile-layout .m-row + .m-row .m-row-fg { border-top: 1px solid var(--border-subtle); }
+/* 行间 hairline：iOS 风格从文案起始缘缩进 */
+.mobile-layout .m-row + .m-row .m-row-fg::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 60px;
+  right: 0;
+  height: 1px;
+  background: var(--m-separator);
+}
 .mobile-layout .m-row-fg[data-pressed='true'] {
   background: var(--bg-active);
 }
@@ -400,8 +416,7 @@
   display: grid;
   place-items: center;
   border-radius: var(--m-radius-row-icon);
-  background: var(--bg-elevated);
-  box-shadow: inset 0 0 0 1px var(--edge-soft);
+  background: var(--m-fill);
   color: var(--fg-3);
 }
 .mobile-layout .m-row-icon svg { width: 17px; height: 17px; }
@@ -489,7 +504,6 @@
   align-items: center;
   gap: 7px;
   overflow: hidden;
-  border: 1px solid var(--border-subtle);
   border-radius: 999px;
   padding: 0 6px 0 12px;
   background: var(--surface-panel);
@@ -497,9 +511,8 @@
   cursor: pointer;
 }
 .mobile-layout .m-chip.is-active {
-  border-color: color-mix(in srgb, var(--accent) 26%, var(--border));
-  background: var(--accent-bg);
-  color: var(--accent);
+  background: var(--m-fill);
+  color: var(--m-tint);
 }
 .mobile-layout .m-chip-name {
   max-width: 140px;
@@ -542,49 +555,7 @@
   overflow: hidden;
 }
 
-/* ─────────────── 「我的」页 ─────────────── */
-
-.mobile-layout .m-status-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 14px;
-  padding: 14px;
-  border-radius: var(--m-radius-card);
-  background: var(--surface-panel);
-  box-shadow: var(--shadow-surface);
-}
-.mobile-layout .m-status-card-icon {
-  width: 40px;
-  height: 40px;
-  flex: none;
-  display: grid;
-  place-items: center;
-  border-radius: 12px;
-  background: var(--green-bg);
-  color: var(--green);
-}
-.mobile-layout .m-status-card-icon svg { width: 19px; height: 19px; }
-.mobile-layout .m-status-card-copy {
-  min-width: 0;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.mobile-layout .m-status-card-copy strong { color: var(--fg); font: 600 0.9375rem/1.25 var(--sans); letter-spacing: -0.01em; }
-.mobile-layout .m-status-card-copy span { color: var(--fg-4); font: 400 0.75rem/1.3 var(--sans); }
-.mobile-layout .m-status-badge {
-  flex: none;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  padding: 0 9px;
-  border-radius: var(--r-pill);
-  background: var(--green-bg);
-  color: var(--green);
-  font: 600 0.6875rem/1 var(--sans);
-}
+/* ─────────────── 设置页（连接状态分组，无浮层材质） ─────────────── */
 
 /* 设置分组行 */
 .mobile-layout .m-set-row {
@@ -602,7 +573,16 @@
   touch-action: manipulation;
 }
 .mobile-layout .m-set-row:active { background: var(--bg-active); }
-.mobile-layout .m-set-row + .m-set-row { border-top: 1px solid var(--border-subtle); }
+.mobile-layout .m-set-row { position: relative; }
+.mobile-layout .m-set-row + .m-set-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 60px;
+  right: 0;
+  height: 1px;
+  background: var(--m-separator);
+}
 .mobile-layout .m-set-row-icon {
   width: 36px;
   height: 36px;
@@ -612,7 +592,7 @@
   border-radius: var(--m-radius-row-icon);
 }
 .mobile-layout .m-set-row-icon svg { width: 17px; height: 17px; }
-.mobile-layout .m-set-row-icon.is-settings { background: var(--accent-bg); color: var(--accent); }
+.mobile-layout .m-set-row-icon.is-settings { color: var(--m-tint); }
 .mobile-layout .m-set-row-copy {
   min-width: 0;
   flex: 1;
@@ -648,11 +628,25 @@
   flex: 1 1 100%;
   max-width: none;
   height: 36px;
-  border-radius: 10px;
+  border-radius: 999px;
   font-size: 0.9375rem;
 }
-.mobile-layout .vault-toolbar-actions { margin-left: auto; }
-.mobile-layout .vault-toolbar-actions button { min-height: 34px; }
+.mobile-layout .vault-toolbar-actions { margin-left: auto; gap: 10px; }
+/* 操作收窄为圆形玻璃图标按钮，与主页新增按钮（m-round-btn）同一语言 */
+.mobile-layout .vault-toolbar-actions button {
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--m-glass-heavy);
+  box-shadow: var(--m-specular);
+}
+.mobile-layout .vault-toolbar-actions button svg { width: 18px; height: 18px; }
+.mobile-layout .vault-toolbar-actions .vault-btn-label { display: none; }
+.mobile-layout .vault-toolbar-actions button:active { transform: scale(0.92); }
 
 /* 卡片单列，滚动区为悬浮 TabBar 预留底部空间 */
 .mobile-layout .vault-grid {
@@ -735,7 +729,16 @@
   gap: 12px;
   padding: 8px 12px;
 }
-.mobile-layout .m-field + .m-field { border-top: 1px solid var(--border-subtle); }
+.mobile-layout .m-field { position: relative; }
+.mobile-layout .m-field + .m-field::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 12px;
+  right: 0;
+  height: 1px;
+  background: var(--m-separator);
+}
 .mobile-layout .m-field-copy {
   min-width: 0;
   flex: 1;
@@ -810,17 +813,12 @@
   text-align: center;
 }
 .mobile-layout .m-empty-icon {
-  width: 56px;
-  height: 56px;
   display: grid;
   place-items: center;
   margin-bottom: 13px;
-  border-radius: 17px;
-  background: var(--surface-panel);
-  box-shadow: var(--shadow-surface);
-  color: var(--accent);
+  color: var(--fg-5);
 }
-.mobile-layout .m-empty-icon svg { width: 22px; height: 22px; }
+.mobile-layout .m-empty-icon svg { width: 30px; height: 30px; }
 .mobile-layout .m-empty strong { color: var(--fg-2); font: 600 0.9375rem/1.3 var(--sans); }
 .mobile-layout .m-empty p {
   max-width: 260px;
@@ -856,11 +854,13 @@
   right: 8px;
   bottom: calc(8px + var(--safe-inset-bottom));
   z-index: 51;
-  border-radius: 20px;
-  background: color-mix(in srgb, var(--surface-chrome) 80%, transparent);
-  backdrop-filter: blur(28px) saturate(1.6);
-  -webkit-backdrop-filter: blur(28px) saturate(1.6);
-  box-shadow: var(--shadow-floating);
+  border-radius: var(--m-radius-sheet);
+  background: var(--m-glass-heavy);
+  backdrop-filter: blur(40px) saturate(1.8);
+  -webkit-backdrop-filter: blur(40px) saturate(1.8);
+  box-shadow:
+    var(--m-specular),
+    var(--shadow-floating);
   outline: none;
   touch-action: none;
 }
@@ -877,9 +877,7 @@
 :root[data-eizhu-mobile] .m-sheet-title {
   margin: 4px 16px 2px;
   color: var(--fg-4);
-  font: 500 0.6875rem/1 var(--mono);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font: 400 0.8125rem/1 var(--sans);
   text-align: center;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -930,12 +928,26 @@
   scrollbar-width: none;
 }
 .mobile-layout .sftp-mobile-actions::-webkit-scrollbar { display: none; }
+/* 图标按钮条：与主页新增按钮（m-round-btn）同一玻璃语言 */
 .mobile-layout .sftp-mobile-actions button {
   flex: 0 0 auto;
-  min-width: 84px;
-  min-height: 40px;
-  border-radius: 10px;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--m-glass-heavy);
+  box-shadow: var(--m-specular);
 }
+.mobile-layout .sftp-mobile-actions button svg { width: 18px; height: 18px; }
+.mobile-layout .sftp-mobile-actions .sftp-m-action-label { display: none; }
+.mobile-layout .sftp-mobile-actions button:active { transform: scale(0.92); }
+/* 传输队列「清除」收为纯图标按钮（title/aria 保留） */
+.mobile-layout .sftp-tx-clear { padding: 6px; }
+.mobile-layout .sftp-tx-clear .sftp-tx-clear-label { display: none; }
 
 /* 终端快捷键条（仅移动运行时渲染） */
 .mobile-terminal-toolbar {
@@ -1007,10 +1019,16 @@
 @media (prefers-reduced-transparency: reduce) {
   .mobile-layout {
     --m-glass-bar: var(--surface-chrome);
+    --m-glass-heavy: var(--surface-chrome);
     --m-glass-blur: none;
   }
   .mobile-layout .m-compactbar-fixed,
   .mobile-layout .m-tabbar { backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .mobile-layout .m-search,
+  .mobile-layout .m-state-pill,
+  .mobile-layout .m-round-btn,
+  .mobile-layout .vault-toolbar-actions button,
+  .mobile-layout .sftp-mobile-actions button { backdrop-filter: none; -webkit-backdrop-filter: none; }
   :root[data-eizhu-mobile] .m-sheet {
     background: var(--surface-overlay);
     backdrop-filter: none;
@@ -1020,8 +1038,7 @@
 
 @media (prefers-contrast: more) {
   .mobile-layout .m-tabbar { box-shadow: 0 0 0 1px var(--border); }
-  .mobile-layout .m-card,
-  .mobile-layout .m-status-card { box-shadow: 0 0 0 1px var(--border); }
+  .mobile-layout .m-card { box-shadow: 0 0 0 1px var(--border); }
 }
 
 /* ─────────────── 页面余韵动画（切换位移由 motion 负责） ─────────────── */

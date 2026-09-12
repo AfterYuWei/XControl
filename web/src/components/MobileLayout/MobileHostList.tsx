@@ -132,7 +132,7 @@ export function MobileHostList() {
 
   return (
     <div className="m-page">
-      <MobileHeader variant="large" title="主机" subtitle={subtitleText(profiles.length)} collapsed={collapsed} trailing={
+      <MobileHeader variant="large" title="主机" collapsed={collapsed} trailing={
         <button
           type="button"
           className="m-round-btn"
@@ -166,7 +166,7 @@ export function MobileHostList() {
             <MobileEmpty
               icon={Server}
               title="暂无连接"
-              description="新建一台服务器，即可开始安全会话。"
+              description="添加一台服务器开始连接。"
               action={(
                 <button type="button" className="m-empty-action" onClick={() => openEditForm(null)}>
                   新建服务器
@@ -176,7 +176,7 @@ export function MobileHostList() {
           ) : visibleProfiles.length === 0 ? (
             <MobileEmpty
               icon={Search}
-              title={`没有匹配 "${hostQuery}" 的服务器`}
+              title="未找到相关服务器"
               description="试试其他名称、地址或标签。"
             />
           ) : (
@@ -243,8 +243,4 @@ export function MobileHostList() {
       </AlertDialog>
     </div>
   )
-}
-
-function subtitleText(count: number): string {
-  return count > 0 ? `${count} 台主机` : '安全远程连接'
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { onBackButtonPress } from '@tauri-apps/api/app'
 import { MonitorSmartphone, X } from 'lucide-react'
@@ -32,6 +32,9 @@ const PAGE_SPRING = { type: 'spring', bounce: 0, duration: 0.3 } as const
 /** reduced-motion：仅保留透明度淡入淡出，去除位移动画（skill §14）。 */
 const PAGE_FADE = { duration: 0.2, ease: 'easeOut' } as const
 
+/** TabBar 从左到右的空间顺序，用于推导页面平移方向（与选择轨迹一致）。 */
+const SECTION_ORDER: readonly MobileSection[] = ['hosts', 'sessions', 'files', 'vault', 'settings']
+
 export function MobileLayout() {
   const reducedMotion = useReducedMotion()
   const [section, setSection] = useState<MobileSection>('hosts')
@@ -45,6 +48,15 @@ export function MobileLayout() {
   const terminalTabs = tabs.filter((tab) => tab.kind === 'terminal')
   const connectedTabs = terminalTabs.filter((tab) => tab.status === 'connected').length
   const platform = getPlatformCapabilities().platform
+
+  // 平移方向跟随 TabBar 轨迹：目标 tab 在右侧 → 新页从右滑入、旧页向左滑出；往左切则镜像。
+  // 前一个 index 存在 state 里，用函数式更新推导方向（不在渲染期读 ref）。
+  const [slide, setSlide] = useState({ dir: 1, index: SECTION_ORDER.indexOf('hosts') })
+  const go = useCallback((next: MobileSection) => {
+    const nextIndex = SECTION_ORDER.indexOf(next)
+    setSlide((prev) => ({ dir: nextIndex >= prev.index ? 1 : -1, index: nextIndex }))
+    setSection(next)
+  }, [])
 
   // 安全区：原生插件把状态栏/导航栏内边距写入 --safe-inset-*（Android WebView env() 恒为 0）
   useSafeAreaInsets()
@@ -109,10 +121,10 @@ export function MobileLayout() {
   }, [])
 
   useEffect(() => {
-    if (activeTab?.kind === 'terminal') setSection('sessions')
-    if (activeTab?.kind === 'sftp') setSection('files')
-    if (activeTab?.kind === 'vault') setSection('vault')
-  }, [activeTab?.id, activeTab?.kind])
+    if (activeTab?.kind === 'terminal') go('sessions')
+    if (activeTab?.kind === 'sftp') go('files')
+    if (activeTab?.kind === 'vault') go('vault')
+  }, [activeTab?.id, activeTab?.kind, go])
 
   useEffect(() => {
     if (getPlatformCapabilities().platform !== 'android') return
@@ -128,20 +140,20 @@ export function MobileLayout() {
           const now = Date.now()
           if (now - lastBackAt.current < 2_000) {
             closeTab(activeTab.id)
-            setSection('hosts')
+            go('hosts')
           } else {
             lastBackAt.current = now
             toast('再次返回将断开当前终端')
           }
           return
         }
-        setSection('hosts')
+        go('hosts')
       }
     }).then((listener) => {
       unlisten = () => listener.unregister()
     })
     return () => void unlisten?.()
-  }, [activeTab, closeTab, section, settingsSub])
+  }, [activeTab, closeTab, go, section, settingsSub])
 
   const navigate = (next: MobileSection) => {
     if (next === 'files') {
@@ -155,9 +167,9 @@ export function MobileLayout() {
     } else if (next === 'sessions') {
       const tab = activeTab?.kind === 'terminal' ? activeTab : terminalTabs.at(-1)
       if (tab) setActiveTab(tab.id)
-      setSection(next)
+      go(next)
     } else {
-      setSection(next)
+      go(next)
     }
   }
 
@@ -169,7 +181,7 @@ export function MobileLayout() {
     if (remainingTabs.length) {
       setActiveTab(remainingTabs.at(-1)!.id)
     } else if (tabs.length === 1) {
-      setSection('hosts')
+      go('hosts')
     }
   }
 
@@ -192,14 +204,22 @@ export function MobileLayout() {
       aria-label="eizhu 移动端"
     >
       <main className="mobile-main">
-        {/* 并发交叉过渡：可随时打断，不锁定输入 */}
-        <AnimatePresence initial={false}>
+        {/* 平移跟随 TabBar 轨迹：custom 让离场页也按最新方向滑出（可随时打断） */}
+        <AnimatePresence initial={false} custom={slide.dir}>
           <motion.div
             key={section}
             className="m-page"
-            initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
+            custom={slide.dir}
+            variants={{
+              enter: (dir: number) =>
+                reducedMotion ? { opacity: 0 } : { opacity: 0, x: `${dir * 24}%` },
+              center: { opacity: 1, x: 0 },
+              exit: (dir: number) =>
+                reducedMotion ? { opacity: 0 } : { opacity: 0, x: `${dir * -24}%` },
+            }}
+            initial="enter"
+            animate="center"
+            exit="exit"
             transition={reducedMotion ? PAGE_FADE : PAGE_SPRING}
           >
             {section === 'hosts' && (
@@ -257,7 +277,7 @@ export function MobileLayout() {
                         icon={MonitorSmartphone}
                         title="暂无终端会话"
                         description="从主机页选择一台服务器连接。"
-                        action={<button type="button" className="m-empty-action" onClick={() => setSection('hosts')}>选择主机</button>}
+                        action={<button type="button" className="m-empty-action" onClick={() => go('hosts')}>选择主机</button>}
                       />}
                 </div>
               </div>

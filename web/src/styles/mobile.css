@@ -57,6 +57,8 @@
   position: absolute;
   inset: 0;
   min-height: 0;
+  /* 整页平移时两页瞬时并存，必须不透明才能遮住彼此 */
+  background: var(--surface-app);
 }
 
 .mobile-layout .m-page-stack {

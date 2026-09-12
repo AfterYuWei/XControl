@@ -204,7 +204,7 @@ export function MobileLayout() {
       aria-label="eizhu 移动端"
     >
       <main className="mobile-main">
-        {/* 平移跟随 TabBar 轨迹：custom 让离场页也按最新方向滑出（可随时打断） */}
+        {/* 整页平移跟随 TabBar 轨迹：新页与旧页同向滑动，无淡入淡出（custom 让离场页按最新方向滑出） */}
         <AnimatePresence initial={false} custom={slide.dir}>
           <motion.div
             key={section}
@@ -212,10 +212,10 @@ export function MobileLayout() {
             custom={slide.dir}
             variants={{
               enter: (dir: number) =>
-                reducedMotion ? { opacity: 0 } : { opacity: 0, x: `${dir * 24}%` },
-              center: { opacity: 1, x: 0 },
+                reducedMotion ? { opacity: 0 } : { x: `${dir * 100}%` },
+              center: { x: 0 },
               exit: (dir: number) =>
-                reducedMotion ? { opacity: 0 } : { opacity: 0, x: `${dir * -24}%` },
+                reducedMotion ? { opacity: 0 } : { x: `${dir * -100}%` },
             }}
             initial="enter"
             animate="center"

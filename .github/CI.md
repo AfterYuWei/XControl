@@ -10,10 +10,14 @@ eizhu 采用 `dev` / `main` 双分支晋级模型：`dev` 是测试通道，`mai
 
 | 推送分支 | 类型 | 版本号 | GitHub Release |
 |----------|------|--------|----------------|
-| `dev`（桌面） | 测试版 | `<VERSION>-test.<提交计数>.<短SHA>` | Prerelease（`test-v*`） |
-| `main`（桌面） | 正式版 | `<VERSION>` | 正式 Release（`v*`） |
-| `dev`（移动端） | 测试版 | `<VERSION_MOBILE>-test.<提交计数>.<短SHA>` | Prerelease（`test-android-v*`） |
-| `main`（移动端） | 正式版 | `<VERSION_MOBILE>` | 正式 Release（`v<VERSION_MOBILE>`） |
+| `dev`（桌面） | 测试版 | `<VERSION>-test.<提交计数>.<短SHA>` | Prerelease（`test-v*`，全平台共用） |
+| `main`（桌面） | 正式版 | `<VERSION>` | 正式 Release（`v*`，全平台共用） |
+| `dev`（移动端） | 测试版 | `<VERSION_MOBILE>-test.<提交计数>.<短SHA>` | 同上（资产文件名带移动端版本） |
+| `main`（移动端） | 正式版 | `<VERSION_MOBILE>` | 同上（资产文件名带移动端版本） |
+
+**一次提交一个 Release**：Release 标签跟随桌面端 `VERSION`（`test-v<…>` / `v<…>`），
+桌面与移动端流水线把各自产物上传到同一个 Release；资产文件名携带各端版本号
+（移动端使用 `VERSION_MOBILE`），两条版本线各自独立管理。
 
 桌面端与移动端版本分开管理：`VERSION` 是桌面端发版版本源，`VERSION_MOBILE` 是移动端
 （Android / iOS）版本源，格式都必须为 `x.y.z`。两个私有 npm 包与
@@ -21,7 +25,7 @@ eizhu 采用 `dev` / `main` 双分支晋级模型：`dev` 是测试通道，`mai
 （`scripts/run-tauri.mjs` 按命令选择版本文件，可用 `EIZHU_APP_VERSION` /
 `EIZHU_MOBILE_VERSION` 覆盖）。
 Cargo manifest 受格式约束必须声明版本，`build.rs` 会读取 `VERSION` 并强制校验两者一致。
-正式版已存在时，对应发布工作流会拒绝复用该版本号。
+正式版已存在同名资产时，对应发布工作流会拒绝复用该版本号。
 
 test 版本号由「提交计数 + 短 SHA」组成（如 `0.4.2-test.486.1a2b3c4`）：提交计数用
 `git rev-list --count HEAD` 计算（同一提交两条流水线得到相同数值），随提交历史单调
@@ -51,12 +55,14 @@ test 版本号由「提交计数 + 短 SHA」组成（如 `0.4.2-test.486.1a2b3c
 | Linux (Debian/Ubuntu) | `.deb` | ❌（手动覆盖安装） |
 | Linux (Fedora/RHEL) | `.rpm` | ❌（手动覆盖安装） |
 | Linux (通用) | `.AppImage` | ✅ |
-| Android (arm64) | debug `.apk`（独立 Android Prerelease） | ❌（手动下载安装，见下方签名说明） |
+| Android (arm64) | `.apk`（测试版为 debug 优化构建） | ❌（手动下载安装，见下方签名说明） |
+| iOS (arm64) | 未签名 `.ipa`（侧载用） | ❌（需自行签名，App Store 上架包走单独构建） |
 
 稳定版与测试版的 updater 清单分别为 `latest-stable-*` 和 `latest-test-*`，
 由固定的 `tauri-update-channel` Release 保存最新指针。
-Android 测试包使用独立的 `test-android-v<VERSION_MOBILE>-test.<提交计数>` 标签发布，
-避免与桌面 Release 及 updater 固定标签冲突。
+移动端产物（APK / IPA）上传到与桌面相同的版本 Release，资产文件名以
+`eizhu-<VERSION_MOBILE>…` 标识移动端版本；iOS 测试 IPA 通过
+`tauri ios build --no-sign` 产出，需自行签名后侧载。
 
 ## Secrets（可选）
 

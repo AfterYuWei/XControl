@@ -292,14 +292,19 @@ jobs:
             | Linux (Debian/Ubuntu) | `.deb` | `sudo dpkg -i eizhu*.deb` |
             | Linux (Fedora/RHEL) | `.rpm` | `sudo rpm -i eizhu*.rpm` |
             | Linux (通用) | `.AppImage` | 免安装，直接运行 |
+            | Android (arm64) | `.apk` | 移动端独立版本（`VERSION_MOBILE`），见文件名 |
+            | iOS (arm64) | 未签名 `.ipa` | 需自行签名后侧载（AltStore / Sideloadly 等） |
 
             ### 说明
 
-            - 本 Release 由 **${{ inputs.channel == 'stable' && 'main' || 'dev' }} 分支**的 Tauri 2 构建管线产出
+            - 本 Release 由 **${{ inputs.channel == 'stable' && 'main' || 'dev' }} 分支**的 Tauri 2 构建管线产出，
+              同一次提交聚合全平台安装包（桌面与移动端流水线各自上传）
             - 从 Electron 版升级：连接配置、密钥、UI 偏好会被自动继承，无需手动迁移
             - Windows 新版安装程序支持直接覆盖升级，无需先卸载
             - **应用内更新**（设置 → 关于 → 检查更新）：Windows / macOS / Linux AppImage 支持；
               deb / rpm 用户需手动下载新包覆盖安装（`.app.tar.gz` 为应用内更新用的增量资产，无需手动下载）
+            - Android 测试包需配置固定上传密钥签名后方可覆盖升级（见 `docs/ANDROID_APK_GITHUB.md`）；
+              iOS 未签名 IPA 需侧载，正式上架 IPA 由发布流水线的 App Store 构建产出
           files: |
             release-assets/*
           fail_on_unmatched_files: true

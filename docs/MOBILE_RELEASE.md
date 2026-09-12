@@ -10,13 +10,14 @@
 | 平台 | 无签名门禁 | 有签名发布产物 | 当前 ABI / 目标 |
 | --- | --- | --- | --- |
 | Android | debug APK、release AAB、R8 mapping | upload key 签名的 release AAB | `arm64-v8a` / API 24+ |
-| iOS | arm64 Simulator `.app` | App Store Connect Archive / IPA | arm64 / iOS 15+ |
+| iOS | arm64 真机未签名 IPA | App Store Connect Archive / IPA | arm64 / iOS 15+ |
 
-`dev` 的 Android debug APK 会同时保存为 Actions Artifact，并发布到独立的 GitHub
-Prerelease：`test-android-v<VERSION_MOBILE>-test.<提交计数>.<短SHA>`。APK 文件名包含相同
-测试版本和 `android-arm64-debug`，可直接下载到 Android 设备安装。CI 会对 Rust dev profile
-使用 `opt-level=s` 并剥离调试符号，以避免测试 APK 因 Rust 符号膨胀到数百 MB；该包不用于
-商店发布，也不用于原生崩溃符号调试。
+`dev` 的 Android debug APK 与 iOS 未签名真机 IPA 会同时保存为 Actions Artifact，并上传到
+与桌面端相同的 GitHub Prerelease（一次提交一个全平台 Release，标签跟随桌面端
+`VERSION`）。资产文件名使用移动端版本：`eizhu-<VERSION_MOBILE>-test.<提交计数>.<短SHA>…`，
+可直接下载安装（IPA 需自行签名后侧载）。CI 会对 Rust dev profile 使用 `opt-level=s` 并
+剥离调试符号，以避免测试包因 Rust 符号膨胀到数百 MB；测试包不用于商店发布，也不用于
+原生崩溃符号调试。
 
 Android 首版正式支持 arm64。需要增加 ABI 时，先在真机矩阵验证，再把 `android build` 的
 `--target` 扩展为 `armv7`、`i686` 或 `x86_64`；不得只增加产物而跳过对应设备验收。
@@ -50,7 +51,8 @@ CI 仅在非 pull request 构建中解码密钥，并生成不入库的
 - `APPLE_API_ISSUER`：Issuer ID。
 
 CI 将私钥写入 runner 临时目录并设置 `APPLE_API_KEY_PATH`。签名变量齐全时执行
-`ios build --export-method app-store-connect`，生成 Archive/IPA；pull request 只构建模拟器版本。
+`ios build --export-method app-store-connect`，生成上架用 Archive/IPA；
+pull request 与测试通道通过 `ios build --no-sign` 产出真机未签名 IPA（需自行签名后侧载）。
 
 ## 商店声明
 

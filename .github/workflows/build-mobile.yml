@@ -149,20 +149,21 @@ jobs:
         if: github.ref == 'refs/heads/dev'
         shell: bash
         run: |
-          BASE_VERSION="$(tr -d '[:space:]' < VERSION_MOBILE)"
-          if [[ ! "$BASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "VERSION_MOBILE 必须是 SemVer（x.y.z），当前值: $BASE_VERSION" >&2
+          DESKTOP_VERSION="$(tr -d '[:space:]' < VERSION)"
+          MOBILE_VERSION="$(tr -d '[:space:]' < VERSION_MOBILE)"
+          if [[ ! "$MOBILE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "VERSION_MOBILE 必须是 SemVer（x.y.z），当前值: $MOBILE_VERSION" >&2
             exit 1
           fi
-          # 移动端版本独立于桌面端（VERSION_MOBILE）。测试版本号 = 基础版本
-          # + 提交计数 + 短 SHA：提交计数随历史单调递增，保证版本顺序可比较，
-          # 桌面流水线同提交也得到相同版本号便于对照；短 SHA 提供可追溯性。
+          # 一次提交一个 Release：标签跟随桌面端 VERSION（与 Build Desktop Test
+          # 相同的 test-v* 标签），移动端资产文件名使用 VERSION_MOBILE 版本，
+          # 两条版本线各自独立管理。test 构建号 = 提交计数 + 短 SHA，两条
+          # 流水线同提交得到相同结果；提交计数随历史单调递增，保证覆盖安装
+          # 与应用内更新始终判定为“升级”。
           TEST_BUILD="$(git rev-list --count HEAD)"
           SHORT_SHA="${GITHUB_SHA::7}"
-          TEST_VERSION="${BASE_VERSION}-test.${TEST_BUILD}.${SHORT_SHA}"
-          # 移动端使用独立的测试 Release（test-android-v*），与桌面测试
-          # Release（test-v*）分离：两条版本线各自独立管理。
-          RELEASE_TAG="test-android-v${TEST_VERSION}"
+          TEST_VERSION="${MOBILE_VERSION}-test.${TEST_BUILD}.${SHORT_SHA}"
+          RELEASE_TAG="test-v${DESKTOP_VERSION}-test.${TEST_BUILD}.${SHORT_SHA}"
           APK_PATH="$(find src-tauri/gen/android/app/build/outputs/apk \
             -type f -name '*debug*.apk' -print -quit)"
           test -n "$APK_PATH"
@@ -182,12 +183,14 @@ jobs:
           TAG="${{ steps.android-release.outputs.tag }}"
           ASSET="${{ steps.android-release.outputs.asset }}"
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # 桌面流水线可能尚未创建该 Release；先建占位，桌面侧发布时会
+            # 覆盖标题与完整的多平台说明表格。
             gh release create "$TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --prerelease \
               --target "${GITHUB_SHA}" \
-              --title "eizhu Android ${{ steps.android-release.outputs.version }}" \
-              --notes "eizhu Android 测试版（dev 分支自动构建，覆盖安装需固定签名，见 docs/ANDROID_APK_GITHUB.md）。" \
+              --title "eizhu ${{ steps.android-release.outputs.version }}" \
+              --notes "eizhu 测试版（移动端资产先行上传，桌面安装包随后补充）。" \
               || true
           fi
           gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" "$ASSET" --clobber
@@ -208,34 +211,21 @@ jobs:
         if: github.ref == 'refs/heads/main'
         shell: bash
         run: |
-          VERSION="$(tr -d '[:space:]' < VERSION_MOBILE)"
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "VERSION_MOBILE 必须是稳定版 SemVer（x.y.z），当前值: $VERSION" >&2
+          MOBILE_VERSION="$(tr -d '[:space:]' < VERSION_MOBILE)"
+          if [[ ! "$MOBILE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "VERSION_MOBILE 必须是稳定版 SemVer（x.y.z），当前值: $MOBILE_VERSION" >&2
             exit 1
           fi
           APK_PATH="$(find src-tauri/gen/android/app/build/outputs/apk \
             -type f -name '*.apk' ! -name '*debug*' -print -quit)"
           test -n "$APK_PATH"
-          # 与 Build Desktop Stable 发布到同一个 v<VERSION> 正式 Release：
-          # 当桌面 VERSION 与移动端 VERSION_MOBILE 相同时两条流水线共用
-          # 同一正式 Release；版本不同时移动端使用自己的 v<VERSION_MOBILE>
-          # Release。同一原则：main 上的每次合并都是一次正式发版，必须先
-          # 提升对应 VERSION 文件，防止复用 tag 覆盖已有 Release。
-          TAG="v${VERSION}"
-          set +e
-          git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null
-          STATUS=$?
-          set -e
-          if [ "$STATUS" -eq 0 ]; then
-            echo "正式版 ${TAG} 已存在；合并到 main 前请先提升 VERSION_MOBILE" >&2
-            exit 1
-          elif [ "$STATUS" -ne 2 ]; then
-            echo "无法检查远端版本标记（git ls-remote 退出码 $STATUS）" >&2
-            exit "$STATUS"
-          fi
-          RELEASE_ASSET="$RUNNER_TEMP/eizhu-${VERSION}-android-arm64-release.apk"
+          # 一次提交一个 Release：与 Build Desktop Stable 共用 v<VERSION>
+          # 正式 Release（标签跟随桌面端 VERSION），资产文件名使用
+          # VERSION_MOBILE。版本复用检查在发布步骤执行（若该 Release 已含
+          # Android APK 则失败），避免与桌面流水线的并发竞争。
+          RELEASE_ASSET="$RUNNER_TEMP/eizhu-${MOBILE_VERSION}-android-arm64-release.apk"
           cp "$APK_PATH" "$RELEASE_ASSET"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "tag=v$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
           echo "asset=$RELEASE_ASSET" >> "$GITHUB_OUTPUT"
       - name: Publish release APK to the stable Release
         if: github.ref == 'refs/heads/main'
@@ -245,13 +235,21 @@ jobs:
         run: |
           TAG="${{ steps.android-formal-release.outputs.tag }}"
           ASSET="${{ steps.android-formal-release.outputs.asset }}"
-          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            # 桌面流水线可能尚未创建该 Release；先建占位，桌面侧会补全标题与说明。
+          ASSET_NAME="$(basename "$ASSET")"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            if gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.assets[].name' \
+              | grep -Fx "$ASSET_NAME" >/dev/null; then
+              echo "正式版 ${TAG} 已包含 ${ASSET_NAME}；合并到 main 前请先提升 VERSION / VERSION_MOBILE" >&2
+              exit 1
+            fi
+          else
+            # 桌面流水线可能尚未创建该 Release；先建占位，桌面侧发布时会
+            # 覆盖标题与完整的多平台说明表格。
             gh release create "$TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --target "${GITHUB_SHA}" \
               --title "eizhu $(tr -d '[:space:]' < VERSION_MOBILE)" \
-              --notes "eizhu 正式版（Android 资产先行上传，桌面安装包随后补充）。" \
+              --notes "eizhu 正式版（移动端资产先行上传，桌面安装包随后补充）。" \
               || true
           fi
           gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" "$ASSET" --clobber
@@ -270,6 +268,9 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
+        with:
+          # 需要完整历史计算提交计数，作为单调递增的 test 构建号。
+          fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
@@ -297,29 +298,29 @@ jobs:
       - run: npm --prefix web ci
       - name: Initialize iOS project when absent
         run: test -d src-tauri/gen/apple || npm run ios:init -- --ci
-      - name: Build iOS simulator app
+      - name: Build unsigned iOS device IPA
         shell: bash
         run: |
           set -o pipefail
-          npm run ios:build -- --target aarch64-sim --ci 2>&1 \
-            | tee "$RUNNER_TEMP/ios-simulator.log"
+          npm run ios:build -- --target aarch64 --no-sign --ci 2>&1 \
+            | tee "$RUNNER_TEMP/ios-device.log"
       - name: Publish iOS failure summary
         if: failure()
         shell: bash
         run: |
-          test -f "$RUNNER_TEMP/ios-simulator.log" || exit 0
+          test -f "$RUNNER_TEMP/ios-device.log" || exit 0
           {
             echo "## iOS build failure"
             echo
             echo "### Detected error lines"
             echo '```text'
             grep -nE 'error(\[[^]]+\])?:|fatal error:|BUILD FAILED|PhaseScriptExecution' \
-              "$RUNNER_TEMP/ios-simulator.log" | tail -n 100 || true
+              "$RUNNER_TEMP/ios-device.log" | tail -n 100 || true
             echo '```'
             echo
             echo "### Last 200 log lines"
             echo '```text'
-            tail -n 200 "$RUNNER_TEMP/ios-simulator.log"
+            tail -n 200 "$RUNNER_TEMP/ios-device.log"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload iOS diagnostic log
@@ -327,7 +328,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: eizhu-ios-log-${{ github.sha }}
-          path: ${{ runner.temp }}/ios-simulator.log
+          path: ${{ runner.temp }}/ios-device.log
           if-no-files-found: warn
           retention-days: 14
       - name: Upload generated iOS project on failure
@@ -340,6 +341,65 @@ jobs:
             !src-tauri/gen/apple/build/**
           if-no-files-found: warn
           retention-days: 14
+      - name: Prepare iOS release metadata
+        id: ios-release
+        if: github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          DESKTOP_VERSION="$(tr -d '[:space:]' < VERSION)"
+          MOBILE_VERSION="$(tr -d '[:space:]' < VERSION_MOBILE)"
+          if [[ ! "$MOBILE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "VERSION_MOBILE 必须是 SemVer（x.y.z），当前值: $MOBILE_VERSION" >&2
+            exit 1
+          fi
+          # 一次提交一个 Release：标签跟随桌面端 VERSION，资产文件名使用
+          # VERSION_MOBILE。先复制到 RUNNER_TEMP，避免后续 App Store 签名
+          # 构建的同名 IPA 干扰。
+          IPA_PATH="$(find src-tauri/gen/apple/build -type f -name '*.ipa' -print -quit)"
+          test -n "$IPA_PATH"
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            TAG="v${DESKTOP_VERSION}"
+            SUFFIX=""
+          else
+            TEST_BUILD="$(git rev-list --count HEAD)"
+            SHORT_SHA="${GITHUB_SHA::7}"
+            TAG="test-v${DESKTOP_VERSION}-test.${TEST_BUILD}.${SHORT_SHA}"
+            SUFFIX="-test.${TEST_BUILD}.${SHORT_SHA}"
+          fi
+          RELEASE_ASSET="$RUNNER_TEMP/eizhu-${MOBILE_VERSION}${SUFFIX}-ios-arm64-unsigned.ipa"
+          cp "$IPA_PATH" "$RELEASE_ASSET"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "asset=$RELEASE_ASSET" >> "$GITHUB_OUTPUT"
+      - name: Publish iOS IPA to the Release
+        if: github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.ios-release.outputs.tag }}"
+          ASSET="${{ steps.ios-release.outputs.asset }}"
+          ASSET_NAME="$(basename "$ASSET")"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            if [ "${GITHUB_REF_NAME}" = "main" ] \
+              && gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.assets[].name' \
+                | grep -Fx "$ASSET_NAME" >/dev/null; then
+              echo "正式版 ${TAG} 已包含 ${ASSET_NAME}；合并到 main 前请先提升 VERSION / VERSION_MOBILE" >&2
+              exit 1
+            fi
+          else
+            # 桌面流水线可能尚未创建该 Release；先建占位，桌面侧发布时会
+            # 覆盖标题与完整的多平台说明表格。
+            PRERELEASE_FLAG=""
+            [ "${GITHUB_REF_NAME}" != "main" ] && PRERELEASE_FLAG="--prerelease"
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              $PRERELEASE_FLAG \
+              --target "${GITHUB_SHA}" \
+              --title "eizhu $(tr -d '[:space:]' < VERSION_MOBILE)" \
+              --notes "eizhu（移动端资产先行上传，桌面安装包随后补充）。" \
+              || true
+          fi
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" "$ASSET" --clobber
       - name: Require App Store signing secrets on main
         if: github.ref == 'refs/heads/main'
         env:

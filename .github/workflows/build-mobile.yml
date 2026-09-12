@@ -264,6 +264,8 @@ jobs:
           if-no-files-found: error
 
   ios:
+    permissions:
+      contents: write
     runs-on: macos-15
     timeout-minutes: 60
     steps:

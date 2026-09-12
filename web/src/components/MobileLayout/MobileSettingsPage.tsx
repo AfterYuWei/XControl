@@ -87,7 +87,7 @@ export function MobileSettingsPage({
 
   const menuSubtitle: Record<'appearance' | 'terminal', string> = {
     appearance: THEME_LABELS[theme],
-    terminal: terminalThemes.find((t) => t.id === terminalTheme)?.label ?? '默认深色',
+    terminal: terminalThemes.find((t) => t.id === terminalTheme)?.label ?? '跟随应用',
   }
 
   if (subPage) {

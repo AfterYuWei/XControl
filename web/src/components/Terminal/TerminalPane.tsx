@@ -3,13 +3,23 @@ import { useTerminal } from '@/hooks/useTerminal'
 import { useSessionChannel } from '@/hooks/useSessionChannel'
 import { useSessionStore } from '@/store/session'
 import { useProfileStore } from '@/store/profile'
-import { useSettingsStore } from '@/store/settings'
+import { useSettingsStore, useResolvedTheme } from '@/store/settings'
+import { resolveTerminalThemeId } from '@/lib/terminalThemes'
 import { sessionApi } from '@/api/session'
 import { ConnectionDialog } from '@/components/ConnectionDialog'
 import { useCompletion } from '@/hooks/useCompletion'
+import { useMobileTerminalGestures } from '@/hooks/useMobileTerminalGestures'
+import { IME_OPEN_THRESHOLD_PX, useImeInset } from '@/hooks/useMobileIme'
 import { CompletionPanel } from '@/components/Terminal/CompletionPanel'
 import { AuthPromptDialog } from '@/components/Terminal/AuthPromptDialog'
 import { MobileTerminalToolbar } from '@/components/Terminal/MobileTerminalToolbar'
+import { TerminalActionMenu, type TerminalActionMenuItem } from '@/components/Terminal/TerminalActionMenu'
+import { TerminalSelectionHandles } from '@/components/Terminal/TerminalSelectionHandles'
+import { isMobileKeyboardOpen } from '@/lib/mobileViewport'
+import { isMobileRuntime } from '@/lib/platform'
+import { writeClipboardText, readClipboardText } from '@/lib/clipboard'
+import { toast } from 'sonner'
+import { ClipboardPaste, Copy, TextSelect } from 'lucide-react'
 import type {
   AuthenticationRequestPayload,
   CompleteResponsePayload,
@@ -61,7 +71,11 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   const { fontSize, fontFamily, fontFamilyCN, terminalTheme, terminalPopupMenu, setFontSize } = useSettingsStore()
 
   // 默认字体大小（用于显示相对变化）
-  const DEFAULT_FONT_SIZE = 13
+  const DEFAULT_FONT_SIZE = 7
+
+  // 'default' 终端主题跟随应用深浅色（浅色切 one-light），显式选择的主题固定
+  const resolvedAppTheme = useResolvedTheme()
+  const effectiveTerminalTheme = resolveTerminalThemeId(terminalTheme, resolvedAppTheme)
 
   const [showDialog, setShowDialog] = useState(false)
   const [connectionError, setConnectionError] = useState('')
@@ -123,7 +137,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   )
 
   const handleFontSizeChange = useCallback((delta: number) => {
-    const newSize = Math.min(32, Math.max(8, fontSize + delta))
+    const newSize = Math.min(32, Math.max(6, fontSize + delta))
     setFontSize(newSize)
 
     // 显示字体大小提示
@@ -150,12 +164,12 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     sendResizeRef.current(cols, rows)
   }, [tab.sessionId])
 
-  const { write, writeln, clear, reset, fit, getSize, getTerminal } = useTerminal({
+  const { write, writeln, clear, reset, fit, getSize, getTerminal, selectWordAt } = useTerminal({
     containerRef,
     fontSize,
     fontFamily,
     fontFamilyCN,
-    terminalTheme,
+    terminalTheme: effectiveTerminalTheme,
     onData: (data) => {
       if (tab.sessionId && tab.status === 'connected' && channelStatusRef.current === 'connected') {
         const consumed = handleDataRef.current(data)
@@ -165,6 +179,134 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     onFontSizeChange: handleFontSizeChange,
     onResize: handleTerminalResize,
   })
+
+  // ── 移动端键盘门控与手势 ──────────────────────────────────────
+  // 点按终端不再唤起软键盘：默认把 xterm 隐藏 textarea 置为 readOnly
+  // （readOnly 聚焦不弹键盘），只有工具栏键盘开关显式放开才能呼出。
+  const isMobile = isMobileRuntime()
+  const [keyboardVisible, setKeyboardVisible] = useState(false)
+  const [actionMenu, setActionMenu] = useState<{
+    open: boolean
+    position: { x: number; y: number }
+    items: TerminalActionMenuItem[]
+  }>({ open: false, position: { x: 0, y: 0 }, items: [] })
+
+  useEffect(() => {
+    if (!isMobile) return
+    const textarea = getTerminal()?.textarea
+    if (!textarea) return
+    textarea.readOnly = !keyboardVisible
+    if (!keyboardVisible && document.activeElement === textarea) textarea.blur()
+  }, [isMobile, keyboardVisible, getTerminal])
+
+  // Android 返回键等系统行为收起键盘时，同步回开关状态：
+  // 原生 IME insets 为准（adjustPan 下 visualViewport 不收缩）；
+  // iOS/无插件环境回退 visualViewport 高度差判断。
+  const imeInset = useImeInset()
+  const imeSeenRef = useRef(false)
+  const imeWasOpenRef = useRef(false)
+  const toggleAtRef = useRef(0)
+  useEffect(() => {
+    if (imeInset > IME_OPEN_THRESHOLD_PX) {
+      imeSeenRef.current = true
+      imeWasOpenRef.current = true
+    }
+    if (imeInset === 0 && imeWasOpenRef.current) {
+      imeWasOpenRef.current = false
+      setKeyboardVisible(false)
+    }
+  }, [imeInset])
+  useEffect(() => {
+    if (!isMobile) return
+    const viewport = window.visualViewport
+    const sync = () => {
+      // 插件在报 IME 时完全交由上方 insets 逻辑；开关呼出后的 IME 动画
+      // 初期视口尚未收缩，避免被误判为关闭而立刻翻回
+      if (imeSeenRef.current) return
+      if (Date.now() - toggleAtRef.current < 800) return
+      if (viewport && !isMobileKeyboardOpen(viewport.height, window.innerHeight)) {
+        setKeyboardVisible(false)
+      }
+    }
+    viewport?.addEventListener('resize', sync)
+    viewport?.addEventListener('scroll', sync)
+    return () => {
+      viewport?.removeEventListener('resize', sync)
+      viewport?.removeEventListener('scroll', sync)
+    }
+  }, [isMobile])
+
+  const toggleKeyboard = useCallback(() => {
+    const terminal = getTerminal()
+    const textarea = terminal?.textarea
+    if (!textarea) return
+    toggleAtRef.current = Date.now()
+    if (keyboardVisible) {
+      textarea.readOnly = true
+      terminal.blur()
+      setKeyboardVisible(false)
+    } else {
+      textarea.readOnly = false
+      terminal.focus()
+      setKeyboardVisible(true)
+    }
+  }, [getTerminal, keyboardVisible])
+
+  // 单击清除选区（不唤起键盘）、双击选词+手柄、长按在按压处呼出悬浮菜单
+  useMobileTerminalGestures(
+    containerRef,
+    {
+      onSingleTap: () => {
+        const terminal = getTerminal()
+        if (terminal?.hasSelection()) terminal.clearSelection()
+      },
+      onDoubleTap: (position) => {
+        selectWordAt(position.x, position.y)
+      },
+      onLongPress: (position) => {
+        const terminal = getTerminal()
+        const items: TerminalActionMenuItem[] = []
+        if (terminal?.hasSelection()) {
+          items.push({
+            id: 'copy',
+            label: '复制',
+            icon: Copy,
+            onSelect: () => {
+              const selection = getTerminal()?.getSelection() ?? ''
+              if (!selection) return
+              void writeClipboardText(selection)
+                .then(() => toast('已复制'))
+                .catch(() => toast.error('复制失败，请重试'))
+            },
+          })
+        }
+        items.push({
+          id: 'select-all',
+          label: '全选',
+          icon: TextSelect,
+          onSelect: () => getTerminal()?.selectAll(),
+        })
+        items.push({
+          id: 'paste',
+          label: '粘贴',
+          icon: ClipboardPaste,
+          onSelect: () => {
+            void readClipboardText()
+              .then((text) => {
+                if (text) sendInputRef.current(text)
+              })
+              .catch(() => toast.error('无法读取剪贴板'))
+          },
+        })
+        setActionMenu({ open: true, position, items })
+      },
+    },
+    isMobile,
+  )
+
+  const closeActionMenu = useCallback(() => {
+    setActionMenu((state) => ({ ...state, open: false }))
+  }, [])
 
   const resetReconnectState = useCallback(() => {
     isReconnectingRef.current = false
@@ -500,11 +642,24 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
 
   return (
     <div className="terminal-pane-root relative flex h-full w-full flex-col" style={{ background: 'var(--term-bg)' }}>
-      <div ref={containerRef} className="term-host min-h-0 flex-1" />
+      <div ref={containerRef} className="term-host relative min-h-0 flex-1">
+        {isMobile && <TerminalSelectionHandles getTerminal={getTerminal} hostRef={containerRef} />}
+      </div>
       <MobileTerminalToolbar
         onInput={(data) => sendInputRef.current(data)}
-        onHideKeyboard={() => getTerminal()?.blur()}
+        keyboardVisible={keyboardVisible}
+        onToggleKeyboard={toggleKeyboard}
       />
+
+      {isMobile && (
+        <TerminalActionMenu
+          open={actionMenu.open}
+          position={actionMenu.position}
+          containerRef={containerRef}
+          items={actionMenu.items}
+          onClose={closeActionMenu}
+        />
+      )}
 
       <CompletionPanel
         popup={popup}

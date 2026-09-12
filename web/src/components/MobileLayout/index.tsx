@@ -9,6 +9,7 @@ import { useSettingsStore } from '@/store/settings'
 import { getPlatformCapabilities } from '@/lib/platform'
 import { consumeMobileBackNavigation } from '@/lib/mobileBack'
 import { isMobileKeyboardOpen } from '@/lib/mobileViewport'
+import { IME_OPEN_THRESHOLD_PX, useImeInset } from '@/hooks/useMobileIme'
 import { scheduleSilentMobileUpdateCheck } from '@/lib/mobileUpdate'
 import { toast } from 'sonner'
 import { MobileHeader } from './MobileHeader'
@@ -93,6 +94,18 @@ export function MobileLayout() {
     return () => window.removeEventListener('eizhu:notification-limited', notificationLimited)
   }, [])
 
+  // 键盘检测：原生 IME insets 优先（adjustPan 下视口不收缩，visualViewport
+  // 不可靠），插件不可用（iOS/浏览器预览）时回退视口高度差判断。
+  const imeInset = useImeInset()
+  const [imeSeen, setImeSeen] = useState(false)
+  useEffect(() => {
+    if (imeInset > 0) setImeSeen(true)
+  }, [imeInset])
+  // 一旦确认插件在报 IME（出现过非零值），键盘开合完全以原生 insets 为准
+  useEffect(() => {
+    if (imeSeen) setKeyboardOpen(imeInset > IME_OPEN_THRESHOLD_PX)
+  }, [imeSeen, imeInset])
+
   useEffect(() => {
     const viewport = window.visualViewport
     const updateViewport = () => {
@@ -101,7 +114,7 @@ export function MobileLayout() {
         '--mobile-viewport-height',
         `${viewportHeight}px`,
       )
-      setKeyboardOpen(isMobileKeyboardOpen(viewportHeight, window.innerHeight))
+      if (!imeSeen) setKeyboardOpen(isMobileKeyboardOpen(viewportHeight, window.innerHeight))
     }
     updateViewport()
     viewport?.addEventListener('resize', updateViewport)
@@ -111,7 +124,7 @@ export function MobileLayout() {
       viewport?.removeEventListener('scroll', updateViewport)
       document.documentElement.style.removeProperty('--mobile-viewport-height')
     }
-  }, [])
+  }, [imeSeen])
 
   // 新建终端 tab（发起新连接）时自动进入会话终端页；切换/关闭已有 tab 不打扰当前层级。
   // 只对「首次激活」的 tab id 生效，避免关卡回退、pill 切换误触发。
@@ -151,12 +164,22 @@ export function MobileLayout() {
   const navigate = (next: MobileSection) => {
     if (next === 'files') {
       const tab = tabs.find((candidate) => candidate.kind === 'sftp')
-      if (tab) setActiveTab(tab.id)
-      else openSftpTab()
+      if (tab) {
+        setActiveTab(tab.id)
+        // 已是激活 tab 时 kind 未变化、下方 effect 不会重跑，必须直接导航，
+        // 否则「离开后再点回来」会出现点击无反应。
+        if (tab.id === activeTabId) go(next)
+      } else {
+        openSftpTab()
+      }
     } else if (next === 'vault') {
       const tab = tabs.find((candidate) => candidate.kind === 'vault')
-      if (tab) setActiveTab(tab.id)
-      else openVaultTab()
+      if (tab) {
+        setActiveTab(tab.id)
+        if (tab.id === activeTabId) go(next)
+      } else {
+        openVaultTab()
+      }
     } else if (next === 'sessions') {
       // 会话 tab 固定回到一级列表，可预测
       setSessionsLevel('list')
@@ -187,7 +210,9 @@ export function MobileLayout() {
 
   return (
     <div
-      className={`mobile-layout mobile-current-${section} ${keyboardOpen ? 'is-keyboard-open' : ''}`}
+      className={`mobile-layout mobile-current-${section} ${
+        section === 'sessions' && sessionsLevel === 'terminal' ? 'is-terminal-level' : ''
+      } ${keyboardOpen ? 'is-keyboard-open' : ''}`}
       role="application"
       aria-label="eizhu 移动端"
     >

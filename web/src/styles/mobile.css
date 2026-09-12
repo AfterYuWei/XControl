@@ -1046,19 +1046,29 @@
 .mobile-layout .sftp-tx-clear { padding: 6px; }
 .mobile-layout .sftp-tx-clear .sftp-tx-clear-label { display: none; }
 
-/* 终端快捷键条（仅移动运行时渲染）：跟随终端主题底色，按键走令牌体系 */
+/* 终端快捷键条（仅移动运行时渲染）：跟随终端主题底色，按键走令牌体系。
+   布局 = [按键区可横滑] + [分隔线] + [键盘开关固定最右]。 */
 .mobile-terminal-toolbar {
   flex: none;
   display: flex;
   align-items: center;
   gap: 6px;
-  overflow-x: auto;
   padding: 6px max(8px, var(--safe-inset-left));
   border-top: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--term-bg) 86%, var(--surface-chrome));
+  /* 键盘弹出时工具栏抬升到 IME 上方（高度由原生 system-insets 提供） */
+  transform: translateY(calc(-1 * var(--m-keyboard-inset, 0px)));
+}
+.mobile-terminal-toolbar .m-termkeys-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
   scrollbar-width: none;
 }
-.mobile-terminal-toolbar::-webkit-scrollbar { display: none; }
+.mobile-terminal-toolbar .m-termkeys-scroll::-webkit-scrollbar { display: none; }
 .mobile-terminal-toolbar button {
   min-width: 36px;
   min-height: 32px;
@@ -1081,12 +1091,94 @@
   background: color-mix(in srgb, var(--m-tint) 24%, transparent);
   color: var(--m-tint);
 }
+/* 键盘开关固定右侧：状态跟随实际键盘（aria-pressed），仅在键盘打开时着色 */
+.mobile-terminal-toolbar .m-termkeys-keyboard {
+  min-width: 40px;
+  min-height: 36px;
+  color: var(--fg-2);
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+.mobile-terminal-toolbar .m-termkeys-keyboard[aria-pressed='true'] {
+  color: var(--m-tint);
+  background: color-mix(in srgb, var(--m-tint) 18%, transparent);
+}
 .mobile-terminal-toolbar .m-termkeys-sep {
   flex: 0 0 auto;
   width: 1px;
   height: 18px;
   background: color-mix(in srgb, var(--fg) 14%, transparent);
 }
+.mobile-terminal-toolbar .m-termkeys-sep.is-fixed { margin: 0 2px; }
+
+/* 长按悬浮操作菜单：横向紧凑条，锚定手指上方，仿系统 context menu */
+.m-term-menu-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 70;
+}
+.m-term-menu-backdrop {
+  position: absolute;
+  inset: 0;
+  background: transparent;
+}
+.m-term-menu {
+  position: absolute;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  padding: 3px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-panel) 92%, transparent);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 22%), 0 2px 8px rgb(0 0 0 / 14%);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  transform-origin: bottom center;
+}
+.m-term-menu.is-swallowed { pointer-events: none; }
+.m-term-menu-item {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--fg-1);
+  font: 500 0.8125rem/1.2 var(--sans);
+  white-space: nowrap;
+  touch-action: manipulation;
+}
+.m-term-menu-item + .m-term-menu-item {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.m-term-menu-item:active {
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+}
+.m-term-menu-item.is-danger { color: var(--danger, #e5484d); }
+.m-term-menu-item svg { flex: none; opacity: 0.9; }
+
+/* 双击选词的自定义选择手柄（仿系统文本选择器，canvas 终端无法用系统 UI） */
+.m-term-select-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+}
+.m-term-handle {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-radius: 50% 50% 50% 4px;
+  background: var(--m-tint);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
+  pointer-events: auto;
+  touch-action: none;
+}
+.m-term-handle.is-start { transform: rotate(-90deg); }
+.m-term-handle.is-end { transform: rotate(180deg); }
 
 @media (prefers-reduced-motion: reduce) {
   .mobile-terminal-toolbar button:active { transform: none; }
@@ -1101,6 +1193,10 @@
 .mobile-layout.is-keyboard-open .m-termbar,
 .mobile-layout.is-keyboard-open.mobile-current-files .m-compactbar,
 .mobile-layout.is-keyboard-open .m-tabbar { display: none; }
+
+/* 二级终端页隐藏悬浮 TabBar：最大化 SSH 内容可视区（返回会话列表即恢复）。
+   终端内容本就延伸到 TabBar 之下，无需调整布局。 */
+.mobile-layout.is-terminal-level .m-tabbar { display: none; }
 
 /* ─────────────── 平板 ≥768px ─────────────── */
 

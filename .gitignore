@@ -25,6 +25,13 @@ skills-lock.json
 **/android/.gradle/
 **/android/build/
 
+# Tauri android init 生成的插件脚手架
+src-tauri/plugins/*/android/.tauri/
+
+# tauri android init 生成的 Android 工程（含签名配置，可用 android:init 重建）
+src-tauri/gen/android/
+
 # Android signing keys
 *.jks
 *.keystore
+keystore.properties

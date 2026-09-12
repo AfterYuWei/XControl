@@ -14,7 +14,7 @@ export interface TerminalTheme {
 export const terminalThemes: TerminalTheme[] = [
   {
     id: 'default',
-    label: '默认深色',
+    label: '跟随应用',
     category: 'dark',
     theme: {
       background: '#0A0A0A',
@@ -359,4 +359,13 @@ export function getTerminalTheme(id: string): ITheme {
 /** 获取主题元信息（包含背景色与分类） */
 export function getTerminalThemeMeta(id: string): TerminalTheme {
   return terminalThemes.find((t) => t.id === id) ?? terminalThemes[0]
+}
+
+/**
+ * 'default' 主题跟随应用深浅色：深色用默认深色盘，浅色自动切 one-light
+ * （与应用浅色 chrome 同源的极简浅色盘）。显式选择的主题保持固定。
+ */
+export function resolveTerminalThemeId(id: string, appTheme: 'light' | 'dark'): string {
+  if (id !== 'default') return id
+  return appTheme === 'light' ? 'one-light' : 'default'
 }

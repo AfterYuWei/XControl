@@ -42,6 +42,9 @@ sha2 = "0.10"
 hmac = "0.12"
 percent-encoding = "2"
 reqwest = { version = "0.13", default-features = false, features = ["json", "form", "multipart", "rustls-no-provider", "system-proxy"] }
+# reqwest 的 rustls-no-provider 要求应用自行安装加密提供者；桌面依赖图经
+# tauri-plugin-updater 间接携带 provider，移动端没有，故显式依赖 ring 版本。
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 ssh-key = { version = "0.6", features = ["ed25519", "encryption", "getrandom", "rsa"] }
 russh = { version = "0.63.2", default-features = false, features = ["ring", "rsa"] }
 russh-sftp = "3.0.0"
@@ -54,6 +57,9 @@ zeroize = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt", "sync", "time"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 url = "2"
+# 剪贴板读写：WebView 非安全上下文（dev 走 http）下 navigator.clipboard 不可用。
+# 桌面与移动端共用，必须放在通用 dependencies 段。
+tauri-plugin-clipboard-manager = "2"
 
 # Tauri 的 `desktop` 是 build-script cfg，Cargo target table 使用等价的 OS 排除条件。
 # 这些插件不会进入 Android/iOS 依赖图。

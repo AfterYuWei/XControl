@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 
 /** 与插件 SystemInsets 模型对应（camelCase，单位 CSS 像素）。 */
 interface SystemInsets {
@@ -7,6 +8,8 @@ interface SystemInsets {
   bottom: number
   left: number
   right: number
+  /** 软键盘可见高度（Android 原生 insets，键盘检测/工具栏抬升依据） */
+  ime?: number
 }
 
 function apply(insets: SystemInsets) {
@@ -15,6 +18,7 @@ function apply(insets: SystemInsets) {
   root.style.setProperty('--safe-inset-bottom', `${insets.bottom}px`)
   root.style.setProperty('--safe-inset-left', `${insets.left}px`)
   root.style.setProperty('--safe-inset-right', `${insets.right}px`)
+  root.style.setProperty('--m-keyboard-inset', `${insets.ime ?? 0}px`)
 }
 
 const GET_INSETS = 'plugin:system-insets|get_system_insets'
@@ -66,8 +70,19 @@ export function useSafeAreaInsets() {
     window.addEventListener('orientationchange', refresh)
     document.addEventListener('visibilitychange', refresh)
 
+    // 软键盘弹出/收起不一定伴随 window resize（adjustPan），原生 insets
+    //事件是唯一可靠的键盘实时信号
+    let unlisten: (() => void) | undefined
+    void listen<SystemInsets>('system-insets-changed', (event) => {
+      if (!disposed) apply(event.payload)
+    }).then((dispose) => {
+      if (disposed) dispose()
+      else unlisten = dispose
+    })
+
     return () => {
       disposed = true
+      unlisten?.()
       window.removeEventListener('resize', refresh)
       window.removeEventListener('orientationchange', refresh)
       document.removeEventListener('visibilitychange', refresh)

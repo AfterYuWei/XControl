@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { writeClipboardText } from '@/lib/clipboard'
 import {
   Server,
   FolderOpen,
@@ -296,7 +297,7 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
     { id: 'newFolder', label: '新建文件夹', icon: <FolderPlus size={13} />, onClick: () => store.openNewFolderDialog(pane) },
     { id: 'd2', label: '', divider: true },
     { id: 'rename', label: '重命名', icon: <Pencil size={13} />, onClick: () => store.openRenameDialog(pane, entry) },
-    { id: 'copy', label: '复制路径', icon: <Copy size={13} />, onClick: () => navigator.clipboard?.writeText(entry.path) },
+    { id: 'copy', label: '复制路径', icon: <Copy size={13} />, onClick: () => void writeClipboardText(entry.path) },
     { id: 'd3', label: '', divider: true },
     { id: 'del', label: '删除', icon: <Trash2 size={13} />, danger: true, onClick: () => store.openDeleteConfirm(pane, [entry]) },
   ]
@@ -580,7 +581,7 @@ export function FilePane({ pane, onPickServer }: FilePaneProps) {
           onDelete={() => store.openDeleteConfirm(pane)}
           onCopyPath={() => {
             const selectedPath = Array.from(selected)[0]
-            if (selectedPath) navigator.clipboard?.writeText(selectedPath)
+            if (selectedPath) void writeClipboardText(selectedPath)
           }}
         />
       </div>

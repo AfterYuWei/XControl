@@ -6,6 +6,11 @@ use crate::{backup, commands, profile, sftp, ssh, sync, vault};
 use crate::infrastructure::platform::desktop;
 
 pub(crate) fn run() {
+    // reqwest 以 `rustls-no-provider` 编译，首个 TLS Client 构建前必须显式安装
+    // 加密提供者；移动端依赖图不带任何 provider，同步调度器随 setup 启动即
+    // 构建 Client，缺失时会 panic 退出。ring 已存在于统一依赖图，重复安装无副作用。
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     #[cfg(desktop)]
     desktop_run();
 
@@ -14,6 +19,7 @@ pub(crate) fn run() {
     {
         tauri::Builder::default()
             .plugin(tauri_plugin_deep_link::init())
+            .plugin(tauri_plugin_clipboard_manager::init())
             .plugin(tauri_plugin_session_keepalive::init())
             .plugin(tauri_plugin_system_insets::init())
             .plugin(tauri_plugin_document_gateway::init())
@@ -213,6 +219,8 @@ fn desktop_run() {
         // 应用内更新（stable/test 双通道）+ 更新后重启
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        // 剪贴板读写（终端/凭据复制粘贴统一走插件，浏览器 API 仅作回退）
+        .plugin(tauri_plugin_clipboard_manager::init())
         .invoke_handler(tauri::generate_handler![
             commands::platform_capabilities,
             commands::app_lifecycle_status,

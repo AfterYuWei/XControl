@@ -1,7 +1,7 @@
 import { lazy, Suspense, type CSSProperties } from 'react'
 import { useSessionStore } from '@/store/session'
-import { useSettingsStore } from '@/store/settings'
-import { getTerminalThemeMeta } from '@/lib/terminalThemes'
+import { useSettingsStore, useResolvedTheme } from '@/store/settings'
+import { getTerminalThemeMeta, resolveTerminalThemeId } from '@/lib/terminalThemes'
 
 const TerminalPane = lazy(() =>
   import('./TerminalPane').then((module) => ({ default: module.TerminalPane })),
@@ -20,7 +20,9 @@ export function TerminalView() {
   const activeTab = tabs.find((t) => t.id === activeTabId)
   const isWide = activeTab?.kind === 'sftp' || activeTab?.kind === 'vault'
 
-  const themeMeta = getTerminalThemeMeta(terminalTheme)
+  // 与 TerminalPane 相同的解析：'default' 主题跟随应用深浅色
+  const resolvedAppTheme = useResolvedTheme()
+  const themeMeta = getTerminalThemeMeta(resolveTerminalThemeId(terminalTheme, resolvedAppTheme))
   const termBg = themeMeta.theme.background
   // The outer boundary follows the application chrome rather than the terminal
   // palette, so light terminal themes remain distinct from the surrounding UI.

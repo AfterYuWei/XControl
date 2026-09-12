@@ -1,6 +1,27 @@
+import { hasTauriRuntime } from '@/lib/platform'
+
 export type ClipboardCountdown = (remainingSeconds: number, cleared: boolean) => void
 
+/** Tauri clipboard 插件优先：非安全上下文（如 dev 走 http）下 navigator.clipboard 不可用。 */
+async function pluginWriteText(text: string): Promise<void> {
+  if (!hasTauriRuntime()) throw new Error('No Tauri runtime')
+  const { writeText } = await import('@tauri-apps/plugin-clipboard-manager')
+  await writeText(text)
+}
+
+async function pluginReadText(): Promise<string> {
+  if (!hasTauriRuntime()) throw new Error('No Tauri runtime')
+  const { readText } = await import('@tauri-apps/plugin-clipboard-manager')
+  return readText()
+}
+
 export async function writeClipboardText(text: string): Promise<void> {
+  try {
+    await pluginWriteText(text)
+    return
+  } catch {
+    // Tauri 插件不可用（浏览器预览）或调用被拒；继续尝试 Web API。
+  }
   if (navigator.clipboard) {
     try {
       await navigator.clipboard.writeText(text)
@@ -21,6 +42,17 @@ export async function writeClipboardText(text: string): Promise<void> {
   } finally {
     textarea.remove()
   }
+}
+
+/** 读取剪贴板文本：Tauri 插件优先，Web API 兜底，均不可用时抛错。 */
+export async function readClipboardText(): Promise<string> {
+  try {
+    return await pluginReadText()
+  } catch {
+    // 继续 Web API 兜底。
+  }
+  if (!navigator.clipboard?.readText) throw new Error('Clipboard read unavailable')
+  return navigator.clipboard.readText()
 }
 
 /**
@@ -47,10 +79,9 @@ export async function copySensitiveText(
 }
 
 async function clearIfUnchanged(expected: string): Promise<boolean> {
-  if (!navigator.clipboard?.readText) return false
   try {
-    if (await navigator.clipboard.readText() !== expected) return false
-    await navigator.clipboard.writeText('')
+    if (await readClipboardText() !== expected) return false
+    await writeClipboardText('')
     return true
   } catch {
     // Never overwrite clipboard content when equality cannot be established.

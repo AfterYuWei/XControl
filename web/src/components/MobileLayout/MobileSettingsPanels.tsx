@@ -107,7 +107,7 @@ export function MobileTerminalPanel() {
     terminalPopupMenu, setTerminalPopupMenu,
   } = useSettingsStore()
   const [pickerOpen, setPickerOpen] = useState(false)
-  const currentThemeLabel = terminalThemes.find((t) => t.id === terminalTheme)?.label ?? '默认深色'
+  const currentThemeLabel = terminalThemes.find((t) => t.id === terminalTheme)?.label ?? '跟随应用'
 
   return (
     <>

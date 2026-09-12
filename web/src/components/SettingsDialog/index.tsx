@@ -50,7 +50,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     terminalPopupMenu, setTerminalPopupMenu,
   } = useSettingsStore()
 
-  const currentThemeLabel = terminalThemes.find((t) => t.id === terminalTheme)?.label ?? '默认深色'
+  const currentThemeLabel = terminalThemes.find((t) => t.id === terminalTheme)?.label ?? '跟随应用'
   const tabs = isDesktopRuntime() && isTestBuild()
     ? [...baseTabs.slice(0, -1), { key: 'logs' as const, label: '日志', icon: FileText }, baseTabs.at(-1)!]
     : isMobileRuntime()

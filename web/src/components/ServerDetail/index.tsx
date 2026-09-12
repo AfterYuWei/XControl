@@ -15,6 +15,7 @@ import { EditorDialog } from '@/components/Editor/EditorDialog'
 import { SftpContextMenu, type MenuItem } from '@/components/Sftp/SftpContextMenu'
 import { InputDialog, validateSftpName } from '@/components/Sftp/InputDialog'
 import { DeleteConfirmDialog } from '@/components/Sftp/DeleteConfirmDialog'
+import { writeClipboardText } from '@/lib/clipboard'
 import type { FileTreeNode } from '@/store/serverDetail'
 import type { SftpEntry } from '@/types/sftp'
 
@@ -229,7 +230,7 @@ export function ServerDetail({
     { id: 'newFolder', label: '新建文件夹', icon: <FolderPlus size={13} />, onClick: () => setNewFolderDialog(true) },
     { id: 'd2', label: '', divider: true },
     { id: 'rename', label: '重命名', icon: <Pencil size={13} />, onClick: () => setRenameDialog({ path: node.path, currentName: node.name }) },
-    { id: 'copy', label: '复制路径', icon: <Copy size={13} />, onClick: () => navigator.clipboard?.writeText(node.path) },
+    { id: 'copy', label: '复制路径', icon: <Copy size={13} />, onClick: () => void writeClipboardText(node.path) },
     { id: 'd3', label: '', divider: true },
     { id: 'del', label: '删除', icon: <Trash2 size={13} />, danger: true, onClick: () => setDeleteConfirm({ entries: [node] }) },
   ]

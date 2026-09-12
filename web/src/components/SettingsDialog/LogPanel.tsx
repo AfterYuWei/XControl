@@ -4,6 +4,7 @@ import { Clipboard, FileText, RefreshCw, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from 'sonner'
+import { writeClipboardText } from '@/lib/clipboard'
 
 type LogKind = 'frontend' | 'backend'
 
@@ -46,7 +47,7 @@ export function LogPanel() {
   }
 
   const copy = async () => {
-    await navigator.clipboard.writeText(snapshot?.content ?? '')
+    await writeClipboardText(snapshot?.content ?? '')
     toast.success('日志已复制')
   }
 

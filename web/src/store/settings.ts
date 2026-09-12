@@ -100,7 +100,7 @@ export const useSettingsStore = create<SettingsStore>()(
   persist(
     (set, get) => ({
       theme: 'system',
-      fontSize: 13,
+      fontSize: 7,
       fontFamily: "'JetBrains Mono'",
       fontFamilyCN: "'Noto Sans SC'",
       sidebarWidth: 240,
@@ -148,7 +148,17 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: 'eizhu-settings',
+      version: 1,
       storage: createJSONStorage(() => localStorage),
+      // v0 → v1：终端默认字号减半（13 → 7）。对既有设备持久化的字号一次性折半，
+      // 否则旧值会覆盖新默认值导致改动不生效。
+      migrate: (persisted) => {
+        const state = persisted as Partial<SettingsStore>
+        if (typeof state.fontSize === 'number') {
+          state.fontSize = Math.min(32, Math.max(6, Math.round(state.fontSize / 2)))
+        }
+        return state
+      },
     }
   )
 )
@@ -160,4 +170,15 @@ export function initTheme() {
   applyAppFont(state.appFontSize, state.appFontFamily)
   applySidebarWidth(state.sidebarWidth)
   ensureSystemWatcher()
+}
+
+/** 解析当前生效主题（'system' 实时跟随系统深浅色，经 systemRevision 触发重渲染）。 */
+export function useResolvedTheme(): 'light' | 'dark' {
+  const theme = useSettingsStore((state) => state.theme)
+  // 订阅 revision：系统深浅切换时 store 自增，本组件随之重渲染重新求值
+  useSettingsStore((state) => state.systemRevision)
+  if (theme === 'system') {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  }
+  return theme
 }

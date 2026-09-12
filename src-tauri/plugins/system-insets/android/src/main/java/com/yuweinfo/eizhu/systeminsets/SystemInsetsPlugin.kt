@@ -57,12 +57,12 @@ class SystemInsetsPlugin(private val activity: Activity) : Plugin(activity) {
         val values = if (insets != null) insetValues(insets) else intArrayOf(0, 0, 0, 0)
         if (values[1] <= 0) values[1] = frameworkDimen("status_bar_height")
         if (values[3] <= 0) values[3] = frameworkDimen("navigation_bar_height")
-        return toPayload(values)
+        return toPayload(values, if (insets != null) imeValue(insets) else 0)
     }
 
     private fun publish(insets: WindowInsets) {
-        val payload = toPayload(insetValues(insets))
-        val signature = "${payload["top"]},${payload["bottom"]},${payload["left"]},${payload["right"]}"
+        val payload = toPayload(insetValues(insets), imeValue(insets))
+        val signature = "${payload["top"]},${payload["bottom"]},${payload["left"]},${payload["right"]},${payload["ime"]}"
         if (signature == lastSignature) return
         lastSignature = signature
         Log.d(TAG, "changed -> $signature")
@@ -86,6 +86,20 @@ class SystemInsetsPlugin(private val activity: Activity) : Plugin(activity) {
             )
         }
 
+    /**
+     * IME（软键盘）可见高度，CSS 像素。软键盘弹出/收起都会触发 insets 重分发，
+     * WebView 视口不一定收缩（adjustPan），因此键盘检测以原生 insets 为准。
+     */
+    private fun imeValue(insets: WindowInsets): Int =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            insets.getInsets(WindowInsets.Type.ime()).bottom
+        } else {
+            @Suppress("DEPRECATION")
+            val legacyBottom = insets.systemWindowInsetBottom
+            val nav = frameworkDimen("navigation_bar_height")
+            maxOf(0, legacyBottom - nav)
+        }
+
     /** 读取框架系统尺寸（如 status_bar_height），厂商 ROM 上普遍可用。 */
     private fun frameworkDimen(name: String): Int {
         val id = activity.resources.getIdentifier(name, "dimen", "android")
@@ -97,13 +111,14 @@ class SystemInsetsPlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
-    private fun toPayload(values: IntArray): JSObject {
+    private fun toPayload(values: IntArray, ime: Int): JSObject {
         val density = activity.resources.displayMetrics.density
         return JSObject().apply {
             put("top", values[1] / density)
             put("bottom", values[3] / density)
             put("left", values[0] / density)
             put("right", values[2] / density)
+            put("ime", ime / density)
         }
     }
 
@@ -112,6 +127,7 @@ class SystemInsetsPlugin(private val activity: Activity) : Plugin(activity) {
         put("bottom", 0.0)
         put("left", 0.0)
         put("right", 0.0)
+        put("ime", 0.0)
     }
 
     companion object {

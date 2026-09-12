@@ -9,6 +9,8 @@
     "core:app:default",
     "core:event:default",
     "deep-link:default",
-    "system-insets:default"
+    "system-insets:default",
+    "clipboard-manager:allow-read-text",
+    "clipboard-manager:allow-write-text"
   ]
 }

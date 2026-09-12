@@ -21,6 +21,8 @@ interface SettingsStore {
   terminalInlineSuggestion: boolean
   terminalPopupMenu: boolean
   updateChannel: UpdateChannel
+  // 移动端启动时自动检查新版本（GitHub Releases 引导下载；桌面端始终静默检查）
+  autoCheckUpdate: boolean
   // system 模式下系统主题变化时自增，用于触发组件重渲染（theme 仍为 'system'）
   systemRevision: number
 
@@ -37,6 +39,7 @@ interface SettingsStore {
   setTerminalInlineSuggestion: (enabled: boolean) => void
   setTerminalPopupMenu: (enabled: boolean) => void
   setUpdateChannel: (channel: UpdateChannel) => void
+  setAutoCheckUpdate: (enabled: boolean) => void
 }
 
 function resolveTheme(theme: Theme): 'light' | 'dark' {
@@ -108,6 +111,7 @@ export const useSettingsStore = create<SettingsStore>()(
       terminalInlineSuggestion: false,
       terminalPopupMenu: true,
       updateChannel: DEFAULT_UPDATE_CHANNEL,
+      autoCheckUpdate: true,
       systemRevision: 0,
 
       setTheme: (theme) => {
@@ -140,6 +144,7 @@ export const useSettingsStore = create<SettingsStore>()(
       setTerminalInlineSuggestion: (terminalInlineSuggestion) => set({ terminalInlineSuggestion }),
       setTerminalPopupMenu: (terminalPopupMenu) => set({ terminalPopupMenu }),
       setUpdateChannel: (updateChannel) => set({ updateChannel }),
+      setAutoCheckUpdate: (autoCheckUpdate) => set({ autoCheckUpdate }),
     }),
     {
       name: 'eizhu-settings',

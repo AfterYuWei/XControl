@@ -769,6 +769,12 @@
   touch-action: manipulation;
 }
 .mobile-layout .m-field-link svg { color: var(--fg-5); }
+/* 纯文本控件（如版本号） */
+.mobile-layout .m-field-value {
+  color: var(--fg-3);
+  font: 500 0.875rem/1.2 var(--sans);
+  font-variant-numeric: tabular-nums;
+}
 .mobile-layout .m-stepper {
   display: inline-flex;
   align-items: center;

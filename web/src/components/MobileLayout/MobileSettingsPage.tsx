@@ -2,12 +2,12 @@ import { useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import {
   Activity, ChevronLeft, ChevronRight, CloudSync, DatabaseBackup,
-  Info, Palette, SquareTerminal, Wifi,
+  Info, Palette, RefreshCw, SquareTerminal, Wifi,
 } from 'lucide-react'
 import type { ComponentType } from 'react'
 import { MobileHeader } from './MobileHeader'
 import { useHeaderCollapse } from './useHeaderCollapse'
-import { MobileAppearancePanel, MobileTerminalPanel } from './MobileSettingsPanels'
+import { MobileAppearancePanel, MobileTerminalPanel, MobileUpdatePanel } from './MobileSettingsPanels'
 import { BackupPanel } from '@/components/SettingsDialog/BackupPanel'
 import { SyncPanel } from '@/components/SettingsDialog/SyncPanel'
 import { AboutPanel } from '@/components/SettingsDialog/AboutPanel'
@@ -22,6 +22,7 @@ export type MobileSettingsSubPage =
   | 'backup'
   | 'sync'
   | 'diagnostics'
+  | 'update'
   | 'about'
 
 const THEME_LABELS = { light: '浅色', dark: '深色', system: '跟随系统' } as const
@@ -32,6 +33,7 @@ const SUB_TITLES: Record<MobileSettingsSubPage, string> = {
   backup: '数据备份',
   sync: '云同步',
   diagnostics: '诊断',
+  update: '软件更新',
   about: '关于',
 }
 
@@ -46,6 +48,7 @@ const MENU_ITEMS: Array<{
   { key: 'backup', label: '数据备份', desc: '导出与导入本地备份', icon: DatabaseBackup },
   { key: 'sync', label: '云同步', desc: '跨设备同步与版本控制', icon: CloudSync },
   { key: 'diagnostics', label: '诊断', desc: '网络与运行环境状态', icon: Activity },
+  { key: 'update', label: '软件更新', desc: '版本、更新通道与自动检查', icon: RefreshCw },
   { key: 'about', label: '关于', desc: '版本与项目信息', icon: Info },
 ]
 
@@ -116,6 +119,7 @@ export function MobileSettingsPage({
                 {subPage === 'backup' && <div className="m-subpanel"><BackupPanel /></div>}
                 {subPage === 'sync' && <div className="m-subpanel"><SyncPanel /></div>}
                 {subPage === 'diagnostics' && <div className="m-subpanel"><MobileDiagnosticsPanel /></div>}
+                {subPage === 'update' && <MobileUpdatePanel />}
                 {subPage === 'about' && <div className="m-subpanel"><AboutPanel /></div>}
               </div>
             </div>

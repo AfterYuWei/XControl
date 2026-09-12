@@ -10,6 +10,7 @@ import { useSettingsStore } from '@/store/settings'
 import { getPlatformCapabilities } from '@/lib/platform'
 import { consumeMobileBackNavigation } from '@/lib/mobileBack'
 import { isMobileKeyboardOpen } from '@/lib/mobileViewport'
+import { scheduleSilentMobileUpdateCheck } from '@/lib/mobileUpdate'
 import { toast } from 'sonner'
 import { MobileHeader } from './MobileHeader'
 import { MobileTabBar, type MobileSection } from './MobileTabBar'
@@ -51,6 +52,12 @@ export function MobileLayout() {
   useEffect(() => {
     document.documentElement.setAttribute('data-eizhu-mobile', '')
     return () => document.documentElement.removeAttribute('data-eizhu-mobile')
+  }, [])
+
+  // 启动静默检查更新（可开关设置控制；发现新版本 toast 引导下载）。
+  // 仅启动时检查一次，开关变化不重复触发。
+  useEffect(() => {
+    scheduleSilentMobileUpdateCheck(useSettingsStore.getState().autoCheckUpdate)
   }, [])
 
   useEffect(() => {

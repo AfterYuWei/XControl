@@ -1,16 +1,24 @@
-import { useState, type ReactNode } from 'react'
-import { ChevronRight, Minus, Plus } from 'lucide-react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { toast } from 'sonner'
+import { ChevronRight, Download, Minus, Plus, RefreshCw } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { useSettingsStore } from '@/store/settings'
+import { useSettingsStore, type UpdateChannel } from '@/store/settings'
 import { terminalThemes } from '@/lib/terminalThemes'
 import { TerminalThemePicker } from '@/components/SettingsDialog/TerminalThemePicker'
+import { appVersion, buildChannel } from '@/lib/updater'
+import { checkMobileUpdate, openMobileReleasePage, type MobileUpdateCheckResult } from '@/lib/mobileUpdate'
 import {
   themeOptions,
   appFontFamilyOptions,
   terminalFontFamilyOptions,
   terminalFontFamilyCNOptions,
 } from '@/components/SettingsDialog/options'
+
+const channelOptions = [
+  { value: 'stable', label: '正式版本通道' },
+  { value: 'test', label: '测试版本通道' },
+] as const
 
 /** Android 设置风格的字段行：左侧标签/描述，右侧控件。 */
 function FieldRow({ label, desc, children }: { label: string; desc?: string; children: ReactNode }) {
@@ -145,5 +153,94 @@ export function MobileTerminalPanel() {
         onChange={setTerminalTheme}
       />
     </>
+  )
+}
+
+/**
+ * 软件更新（移动端二级页）。
+ * Tauri updater 不支持 Android/iOS，这里做通道选择与 GitHub Releases 检查，
+ * 发现新版本后引导浏览器到发布页下载 APK。
+ */
+export function MobileUpdatePanel() {
+  const { updateChannel, setUpdateChannel, autoCheckUpdate, setAutoCheckUpdate } = useSettingsStore()
+  const [version, setVersion] = useState('')
+  const [checking, setChecking] = useState(false)
+  const [result, setResult] = useState<MobileUpdateCheckResult | null>(null)
+
+  useEffect(() => {
+    void appVersion().then(setVersion)
+  }, [])
+
+  const handleCheck = async () => {
+    setChecking(true)
+    setResult(null)
+    try {
+      const checkResult = await checkMobileUpdate(updateChannel)
+      setResult(checkResult)
+      if (checkResult.available) {
+        toast.info(`发现新版本 ${checkResult.newVersion}`, {
+          description: '点击开始下载安装包',
+          action: { label: '下载', onClick: () => openMobileReleasePage(checkResult.url) },
+        })
+      } else {
+        toast.success('已是最新版本')
+      }
+    } catch (err) {
+      toast.error('检查更新失败', {
+        description: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  return (
+    <div className="m-card m-field-card">
+      <FieldRow label="当前版本" desc="移动端版本独立于桌面端发布">
+        <span className="m-field-value">
+          {version ? `${version} · ${buildChannel === 'test' ? '测试版' : '正式版'}` : '—'}
+        </span>
+      </FieldRow>
+      <FieldRow label="更新通道" desc="正式版优先稳定性；测试版可提前获取最新修复">
+        <Select
+          value={updateChannel}
+          onValueChange={(value) => {
+            setUpdateChannel(value as UpdateChannel)
+            setResult(null)
+          }}
+          disabled={checking}
+        >
+          <SelectTrigger className="m-field-select" aria-label="更新通道">
+            <SelectValue placeholder="请选择" />
+          </SelectTrigger>
+          <SelectContent>
+            {channelOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </FieldRow>
+      <FieldRow label="自动检查更新" desc="启动时检查新版本并提示下载">
+        <Switch checked={autoCheckUpdate} onCheckedChange={setAutoCheckUpdate} />
+      </FieldRow>
+      <FieldRow
+        label="检查更新"
+        desc={checking
+          ? '正在检查…'
+          : result?.available
+            ? `发现新版本 ${result.newVersion}，点击右侧直接下载`
+            : result
+              ? '已是最新版本'
+              : undefined}
+      >
+        {result?.available ? (
+          <button type="button" className="m-field-link" onClick={() => openMobileReleasePage(result.url)}>
+            <Download size={15} />
+          </button>
+        ) : (
+          <button type="button" className="m-field-link" onClick={() => void handleCheck()} disabled={checking}>
+            <RefreshCw size={15} className={checking ? 'animate-spin' : ''} />
+          </button>
+        )}
+      </FieldRow>
+    </div>
   )
 }

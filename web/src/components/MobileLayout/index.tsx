@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { onBackButtonPress } from '@tauri-apps/api/app'
-import { MonitorSmartphone, X } from 'lucide-react'
 import { TerminalView } from '@/components/Terminal'
 import { Toaster } from '@/components/ui/sonner'
 import { useProfileStore } from '@/store/profile'
@@ -16,17 +15,10 @@ import { MobileHeader } from './MobileHeader'
 import { MobileTabBar, type MobileSection } from './MobileTabBar'
 import { MobileEmpty } from './MobileEmpty'
 import { MobileHostList } from './MobileHostList'
+import { MobileSessionsPage } from './MobileSessionsPage'
 import { MobileVaultPage } from './MobileVaultPage'
 import { MobileSettingsPage, type MobileSettingsSubPage } from './MobileSettingsPage'
 import { useSafeAreaInsets } from './useSafeArea'
-
-const STATUS_LABELS = {
-  connecting: '连接中',
-  connected: '已连接',
-  disconnected: '已断开',
-  error: '连接异常',
-  reconnecting: '重连中',
-} as const
 
 const PAGE_SPRING = { type: 'spring', bounce: 0, duration: 0.3 } as const
 /** reduced-motion：仅保留透明度淡入淡出，去除位移动画（skill §14）。 */
@@ -38,9 +30,10 @@ const SECTION_ORDER: readonly MobileSection[] = ['hosts', 'sessions', 'files', '
 export function MobileLayout() {
   const reducedMotion = useReducedMotion()
   const [section, setSection] = useState<MobileSection>('hosts')
+  // 会话 tab 的层级：list 卡片列表 / terminal 终端页（放这里供 Android back 先弹这一层）
+  const [sessionsLevel, setSessionsLevel] = useState<'list' | 'terminal'>('list')
   const [settingsSub, setSettingsSub] = useState<MobileSettingsSubPage | null>(null)
   const [keyboardOpen, setKeyboardOpen] = useState(false)
-  const lastBackAt = useRef(0)
   const { fetchProfiles, fetchGroups } = useProfileStore()
   const { tabs, activeTabId, setActiveTab, openSftpTab, openVaultTab, closeTab } = useSessionStore()
   const theme = useSettingsStore((state) => state.theme)
@@ -120,10 +113,17 @@ export function MobileLayout() {
     }
   }, [])
 
+  // 新建终端 tab（发起新连接）时自动进入会话终端页；切换/关闭已有 tab 不打扰当前层级。
+  // 只对「首次激活」的 tab id 生效，避免关卡回退、pill 切换误触发。
+  const knownTerminalIdsRef = useRef<Set<string>>(new Set())
   useEffect(() => {
-    if (activeTab?.kind === 'terminal') go('sessions')
     if (activeTab?.kind === 'sftp') go('files')
     if (activeTab?.kind === 'vault') go('vault')
+    if (activeTab?.kind !== 'terminal') return
+    if (knownTerminalIdsRef.current.has(activeTab.id)) return
+    knownTerminalIdsRef.current.add(activeTab.id)
+    go('sessions')
+    setSessionsLevel('terminal')
   }, [activeTab?.id, activeTab?.kind, go])
 
   useEffect(() => {
@@ -136,15 +136,8 @@ export function MobileLayout() {
         return
       }
       if (section !== 'hosts') {
-        if (section === 'sessions' && activeTab?.kind === 'terminal') {
-          const now = Date.now()
-          if (now - lastBackAt.current < 2_000) {
-            closeTab(activeTab.id)
-            go('hosts')
-          } else {
-            lastBackAt.current = now
-            toast('再次返回将断开当前终端')
-          }
+        if (section === 'sessions' && sessionsLevel === 'terminal') {
+          setSessionsLevel('list')
           return
         }
         go('hosts')
@@ -153,7 +146,7 @@ export function MobileLayout() {
       unlisten = () => listener.unregister()
     })
     return () => void unlisten?.()
-  }, [activeTab, closeTab, go, section, settingsSub])
+  }, [go, section, sessionsLevel, settingsSub])
 
   const navigate = (next: MobileSection) => {
     if (next === 'files') {
@@ -165,12 +158,17 @@ export function MobileLayout() {
       if (tab) setActiveTab(tab.id)
       else openVaultTab()
     } else if (next === 'sessions') {
-      const tab = activeTab?.kind === 'terminal' ? activeTab : terminalTabs.at(-1)
-      if (tab) setActiveTab(tab.id)
+      // 会话 tab 固定回到一级列表，可预测
+      setSessionsLevel('list')
       go(next)
     } else {
       go(next)
     }
+  }
+
+  const openSession = (tabId: string) => {
+    setActiveTab(tabId)
+    setSessionsLevel('terminal')
   }
 
   const closeTerminalTab = (tabId: string) => {
@@ -180,22 +178,12 @@ export function MobileLayout() {
     if (!closingActiveTab) return
     if (remainingTabs.length) {
       setActiveTab(remainingTabs.at(-1)!.id)
-    } else if (tabs.length === 1) {
-      go('hosts')
+    } else {
+      // 终端全部关闭：回到列表；若整个 tab 栈空了则回主机页
+      setSessionsLevel('list')
+      if (tabs.length === 1) go('hosts')
     }
   }
-
-  const pageMeta = useMemo(() => {
-    if (section === 'files') {
-      return { title: '文件' }
-    }
-    return {
-      title: activeTab?.kind === 'terminal' ? activeTab.profileName : '终端',
-      subtitle: terminalTabs.length
-        ? `${connectedTabs}/${terminalTabs.length} 个会话在线`
-        : undefined,
-    }
-  }, [activeTab, connectedTabs, section, terminalTabs.length])
 
   return (
     <div
@@ -232,60 +220,18 @@ export function MobileLayout() {
             )}
 
             {section === 'sessions' && (
-              <div className="m-page-stack">
-                <MobileHeader
-                  variant="compact"
-                  title={pageMeta.title}
-                  subtitle={pageMeta.subtitle}
-                  trailing={activeTab?.kind === 'terminal' && (
-                    <span className={`m-state-pill`}>
-                      <span className={`m-dot is-${activeTab.status}`} />
-                      {STATUS_LABELS[activeTab.status]}
-                    </span>
-                  )}
-                />
-                {terminalTabs.length > 0 && (
-                  <div className="m-chips" role="tablist">
-                    {terminalTabs.map((tab) => (
-                      <div key={tab.id} className={`m-chip ${tab.id === activeTabId ? 'is-active' : ''}`}>
-                        <button
-                          type="button"
-                          role="tab"
-                          aria-selected={tab.id === activeTabId}
-                          className="m-chip-select"
-                          onPointerDown={() => setActiveTab(tab.id)}
-                        >
-                          <span className={`m-dot m-chip-dot is-${tab.status}`} />
-                          <span className="m-chip-name">{tab.profileName}</span>
-                        </button>
-                        <button
-                          type="button"
-                          className="m-chip-close"
-                          aria-label={`关闭 ${tab.profileName}`}
-                          onPointerDown={() => closeTerminalTab(tab.id)}
-                        >
-                          <X size={13} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div className="m-session-content">
-                  {terminalTabs.length
-                    ? <TerminalView />
-                    : <MobileEmpty
-                        icon={MonitorSmartphone}
-                        title="暂无终端会话"
-                        description="从主机页选择一台服务器连接。"
-                        action={<button type="button" className="m-empty-action" onClick={() => go('hosts')}>选择主机</button>}
-                      />}
-                </div>
-              </div>
+              <MobileSessionsPage
+                level={sessionsLevel}
+                onOpenSession={openSession}
+                onBackToList={() => setSessionsLevel('list')}
+                onGoHosts={() => go('hosts')}
+                onCloseTab={closeTerminalTab}
+              />
             )}
 
             {section === 'files' && (
               <div className="m-page-stack">
-                <MobileHeader variant="compact" title={pageMeta.title} subtitle={pageMeta.subtitle} />
+                <MobileHeader variant="compact" title="文件" />
                 <div className="m-page-fill"><TerminalView /></div>
               </div>
             )}

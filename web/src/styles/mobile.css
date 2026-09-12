@@ -202,21 +202,6 @@
 }
 .mobile-layout .m-compactbar-side.is-right { justify-content: flex-end; }
 
-/* 会话状态胶囊（会话页 header）：玻璃浮层控件 */
-.mobile-layout .m-state-pill {
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 10px;
-  border-radius: var(--r-pill);
-  background: var(--m-glass-heavy);
-  box-shadow: var(--m-specular);
-  color: var(--fg-3);
-  font: 550 0.6875rem/1 var(--sans);
-  white-space: nowrap;
-}
-
 .mobile-layout .m-dot {
   width: 7px;
   height: 7px;
@@ -487,56 +472,156 @@
   font: 400 0.75rem/1 var(--sans);
 }
 
-/* ─────────────── 会话页 ─────────────── */
+/* ─────────────── 会话页（一级卡片列表 + 二级终端页） ─────────────── */
 
-.mobile-layout .m-chips {
+/* 一级：会话卡片列表 */
+.mobile-layout .m-sess-list {
   display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mobile-layout .m-sess-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: var(--m-radius-card);
+  background: var(--m-fill);
+  box-shadow: var(--m-specular);
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.mobile-layout .m-sess-card:active { transform: scale(0.97); }
+
+.mobile-layout .m-sess-icon {
+  width: 40px;
+  height: 40px;
   flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: var(--m-radius-row-icon);
+  background: var(--surface-panel);
+  color: var(--m-tint);
+}
+.mobile-layout .m-sess-icon svg { width: 18px; height: 18px; }
+
+.mobile-layout .m-sess-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mobile-layout .m-sess-name {
+  overflow: hidden;
+  color: var(--fg);
+  font: 600 0.9375rem/1.2 var(--sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-layout .m-sess-meta {
+  overflow: hidden;
+  color: var(--fg-4);
+  font: 400 0.75rem/1.2 var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-layout .m-sess-error {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--red);
+  font: 400 0.75rem/1.35 var(--sans);
+}
+
+.mobile-layout .m-sess-status {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-4);
+  font: 500 0.6875rem/1 var(--sans);
+  white-space: nowrap;
+}
+
+.mobile-layout .m-sess-close {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  padding: 0;
+  background: transparent;
+  color: var(--fg-4);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.mobile-layout .m-sess-close:active { background: var(--bg-active); color: var(--fg-2); }
+.mobile-layout .m-sess-close svg { width: 14px; height: 14px; }
+
+/* 二级：终端页顶条（返回 + 会话 pills + 操作） */
+.mobile-layout .m-termbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px var(--m-pad);
+}
+
+.mobile-layout .m-termbar-tabs {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
   gap: 8px;
   overflow-x: auto;
-  padding: 6px var(--m-pad);
   scrollbar-width: none;
 }
-.mobile-layout .m-chips::-webkit-scrollbar { display: none; }
+.mobile-layout .m-termbar-tabs::-webkit-scrollbar { display: none; }
 
-.mobile-layout .m-chip {
+.mobile-layout .m-term-pill {
   height: 34px;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 7px;
   overflow: hidden;
   border-radius: 999px;
-  padding: 0 6px 0 12px;
   background: var(--surface-panel);
   color: var(--fg-4);
-  cursor: pointer;
 }
-.mobile-layout .m-chip.is-active {
-  background: var(--m-fill);
+.mobile-layout .m-term-pill.is-active {
+  background: color-mix(in srgb, var(--m-tint) 16%, transparent);
   color: var(--m-tint);
 }
-.mobile-layout .m-chip-name {
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font: 500 0.8125rem/1 var(--sans);
-}
-.mobile-layout .m-chip-dot { width: 7px; height: 7px; }
-.mobile-layout .m-chip-select {
+.mobile-layout .m-term-pill-select {
   height: 100%;
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   border: 0;
-  padding: 0;
+  padding: 0 6px 0 12px;
   background: transparent;
   color: inherit;
   cursor: pointer;
   touch-action: manipulation;
 }
-.mobile-layout .m-chip-close {
+.mobile-layout .m-term-pill-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 500 0.8125rem/1 var(--sans);
+}
+.mobile-layout .m-term-pill-close {
   width: 28px;
   height: 28px;
   display: grid;
@@ -547,9 +632,17 @@
   color: inherit;
   opacity: 0.7;
   cursor: pointer;
+  touch-action: manipulation;
 }
-.mobile-layout .m-chip-close:active { opacity: 1; }
-.mobile-layout .m-chip-close svg { width: 13px; height: 13px; }
+.mobile-layout .m-term-pill-close:active { opacity: 1; }
+.mobile-layout .m-term-pill-close svg { width: 12px; height: 12px; }
+
+.mobile-layout .m-termbar-side {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 
 .mobile-layout .m-session-content {
   flex: 1;
@@ -953,38 +1046,59 @@
 .mobile-layout .sftp-tx-clear { padding: 6px; }
 .mobile-layout .sftp-tx-clear .sftp-tx-clear-label { display: none; }
 
-/* 终端快捷键条（仅移动运行时渲染） */
+/* 终端快捷键条（仅移动运行时渲染）：跟随终端主题底色，按键走令牌体系 */
 .mobile-terminal-toolbar {
   flex: none;
   display: flex;
-  gap: 5px;
+  align-items: center;
+  gap: 6px;
   overflow-x: auto;
   padding: 6px max(8px, var(--safe-inset-left));
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  background: color-mix(in srgb, var(--term-bg) 88%, var(--surface-chrome));
+  border-top: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--term-bg) 86%, var(--surface-chrome));
   scrollbar-width: none;
 }
 .mobile-terminal-toolbar::-webkit-scrollbar { display: none; }
 .mobile-terminal-toolbar button {
-  min-width: 38px;
-  min-height: 38px;
+  min-width: 36px;
+  min-height: 32px;
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.06);
-  color: #ededed;
+  border: 0;
+  border-radius: var(--m-radius-control);
+  padding: 0 8px;
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  color: var(--fg-2);
   font: 0.75rem/1 var(--mono);
   touch-action: manipulation;
 }
-.mobile-terminal-toolbar button:active { background: rgba(255, 255, 255, 0.14); }
-.mobile-terminal-toolbar button.is-active { border-color: #4da3ff; background: rgba(0, 112, 243, 0.24); color: #fff; }
+.mobile-terminal-toolbar button:active {
+  background: color-mix(in srgb, var(--fg) 14%, transparent);
+  transform: scale(0.94);
+}
+.mobile-terminal-toolbar button.is-active {
+  background: color-mix(in srgb, var(--m-tint) 24%, transparent);
+  color: var(--m-tint);
+}
+.mobile-terminal-toolbar .m-termkeys-sep {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 18px;
+  background: color-mix(in srgb, var(--fg) 14%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-terminal-toolbar button:active { transform: none; }
+  .mobile-layout .m-sess-card:active,
+  .mobile-layout .m-sess-close:active { transform: none; }
+}
 
 /* ─────────────── 键盘弹出降级：为终端/SFTP 释放空间 ─────────────── */
 
 .mobile-layout.is-keyboard-open .m-compactbar-fixed,
 .mobile-layout.is-keyboard-open.mobile-current-sessions .m-compactbar,
+.mobile-layout.is-keyboard-open .m-termbar,
 .mobile-layout.is-keyboard-open.mobile-current-files .m-compactbar,
 .mobile-layout.is-keyboard-open .m-tabbar { display: none; }
 
@@ -1028,7 +1142,6 @@
   .mobile-layout .m-compactbar-fixed,
   .mobile-layout .m-tabbar { backdrop-filter: none; -webkit-backdrop-filter: none; }
   .mobile-layout .m-search,
-  .mobile-layout .m-state-pill,
   .mobile-layout .m-round-btn,
   .mobile-layout .sftp-mobile-actions button { backdrop-filter: none; -webkit-backdrop-filter: none; }
   :root[data-eizhu-mobile] .m-sheet {

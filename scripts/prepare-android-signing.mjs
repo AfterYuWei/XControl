@@ -31,6 +31,13 @@ if (content.includes('eizhu-signing-patch')) {
 }
 
 const MARKER = 'eizhu-signing-patch'
+// 注意：build.gradle.kts 中 `java` 会被脚本作用域的 java 扩展访问器遮蔽，
+// 不能写 java.util.Properties() 全限定名，必须用短名 Properties()；
+// 文件顶部需要 `import java.util.Properties`（模板自带时不再重复添加）。
+const PROPERTIES_IMPORT = 'import java.util.Properties'
+if (!content.includes(PROPERTIES_IMPORT)) {
+  content = `${PROPERTIES_IMPORT}\n${content}`
+}
 const signingConfig = [
   `    // ${MARKER}: 存在 keystore.properties 时使用固定上传密钥签名，`,
   '    // 保证 APK 之间可以覆盖升级（debug 构建不再依赖 runner 随机 debug 密钥）。',
@@ -38,12 +45,12 @@ const signingConfig = [
   '        create("eizhu") {',
   '            val keystorePropertiesFile = rootProject.file("keystore.properties")',
   '            if (keystorePropertiesFile.exists()) {',
-  '                val keystoreProperties = java.util.Properties()',
+  '                val keystoreProperties = Properties()',
   '                keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }',
-  '                keyAlias = keystoreProperties["keyAlias"] as String',
-  '                keyPassword = keystoreProperties["password"] as String',
-  '                storeFile = file(keystoreProperties["storeFile"] as String)',
-  '                storePassword = keystoreProperties["password"] as String',
+  '                keyAlias = keystoreProperties.getProperty("keyAlias")',
+  '                keyPassword = keystoreProperties.getProperty("password")',
+  '                storeFile = file(keystoreProperties.getProperty("storeFile"))',
+  '                storePassword = keystoreProperties.getProperty("password")',
   '            }',
   '        }',
   '    }',

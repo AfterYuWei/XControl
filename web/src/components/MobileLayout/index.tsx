@@ -127,11 +127,10 @@ export function MobileLayout() {
   }, [imeSeen])
 
   // 新建终端 tab（发起新连接）时自动进入会话终端页；切换/关闭已有 tab 不打扰当前层级。
-  // 只对「首次激活」的 tab id 生效，避免关卡回退、pill 切换误触发。
+  // SFTP/Vault 由底栏导航显式切页，不能跟随 activeTab 的通用回退自动跳转：
+  // 否则关闭最后一个终端时，store 回退到辅助 tab 会把用户带离会话页。
   const knownTerminalIdsRef = useRef<Set<string>>(new Set())
   useEffect(() => {
-    if (activeTab?.kind === 'sftp') go('files')
-    if (activeTab?.kind === 'vault') go('vault')
     if (activeTab?.kind !== 'terminal') return
     if (knownTerminalIdsRef.current.has(activeTab.id)) return
     knownTerminalIdsRef.current.add(activeTab.id)
@@ -166,20 +165,18 @@ export function MobileLayout() {
       const tab = tabs.find((candidate) => candidate.kind === 'sftp')
       if (tab) {
         setActiveTab(tab.id)
-        // 已是激活 tab 时 kind 未变化、下方 effect 不会重跑，必须直接导航，
-        // 否则「离开后再点回来」会出现点击无反应。
-        if (tab.id === activeTabId) go(next)
       } else {
         openSftpTab()
       }
+      go(next)
     } else if (next === 'vault') {
       const tab = tabs.find((candidate) => candidate.kind === 'vault')
       if (tab) {
         setActiveTab(tab.id)
-        if (tab.id === activeTabId) go(next)
       } else {
         openVaultTab()
       }
+      go(next)
     } else if (next === 'sessions') {
       // 会话 tab 固定回到一级列表，可预测
       setSessionsLevel('list')

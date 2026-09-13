@@ -7,7 +7,7 @@ export type MobileSection = 'hosts' | 'sessions' | 'files' | 'vault' | 'settings
 const NAV_ITEMS: Array<{ id: MobileSection; label: string; icon: ComponentType<{ size?: number }> }> = [
   { id: 'hosts', label: '主机', icon: Server },
   { id: 'sessions', label: '会话', icon: MonitorSmartphone },
-  { id: 'files', label: '文件', icon: Files },
+  { id: 'files', label: 'SFTP', icon: Files },
   { id: 'vault', label: '密码库', icon: KeyRound },
   { id: 'settings', label: '设置', icon: Settings },
 ]

@@ -187,12 +187,12 @@ export const sftpApi = {
     sessionId: string,
     reference: string,
     destDir: string,
-    overwrite = false,
+    conflictResolution: ConflictResolution = 'ask',
   ) => invokeCommand<SftpUploadResponse>('sftp_upload_document', {
     sessionId,
     reference,
     destDir,
-    overwrite,
+    conflictResolution,
   }),
 
   /** Stage remote files in Rust without loading them into memory. */
@@ -202,13 +202,20 @@ export const sftpApi = {
   exportDownload: (taskId: string) =>
     invokeCommand<string | null>('sftp_export_download', { taskId }),
 
-  downloadToDocuments: async (sessionId: string, paths: string[]) => {
+  downloadToDocuments: async (
+    sessionId: string,
+    paths: string[],
+    onTasks?: (tasks: TransferTask[]) => void,
+    onProgress?: (task: TransferTask) => void,
+  ) => {
     const response = await invokeCommand<SftpDownloadResponse>('sftp_download', { sessionId, paths })
+    onTasks?.(response.tasks)
     for (const task of response.tasks) {
       while (true) {
         const current = (await invokeCommand<TransferTask[]>('sftp_list_transfers', { sessionId }))
           .find((candidate) => candidate.id === task.id)
         if (!current) throw new Error('下载任务已丢失')
+        onProgress?.(current)
         if (current.status === 'failed' || current.status === 'cancelled') {
           throw new Error(current.error_message || '下载未完成')
         }

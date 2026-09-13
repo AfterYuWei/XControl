@@ -83,18 +83,29 @@ pub(crate) async fn sftp_upload_document(
     reference: String,
     dest_dir: String,
     overwrite: Option<bool>,
+    conflict_resolution: Option<String>,
 ) -> Result<SftpUploadResponse, CommandError> {
     let (path, name, size) = gateway.resolve(&reference)?;
     let result = async {
-        let begin = sftp::sftp_upload_begin(
+        let resolution = conflict_resolution.unwrap_or_else(|| {
+            if overwrite.unwrap_or(false) {
+                "overwrite".into()
+            } else {
+                "ask".into()
+            }
+        });
+        let Some(begin) = sftp::sftp_upload_begin_with_resolution(
             service.inner(),
             session_id,
             name,
             dest_dir,
-            overwrite.unwrap_or(false),
+            &resolution,
             size,
         )
-        .await?;
+        .await?
+        else {
+            return Ok(SftpUploadResponse { tasks: Vec::new() });
+        };
         let upload_id = begin.upload_id.clone();
         let transfer = async {
             let mut file = tokio::fs::File::open(path)
@@ -120,7 +131,15 @@ pub(crate) async fn sftp_upload_document(
         transfer
     }
     .await;
-    let _ = gateway.release(&reference);
+    // PATH_EXISTS with `ask` is an intermediate decision point. Keep the
+    // staged reference alive so the same document can be retried with the
+    // user's overwrite/rename/skip choice; every terminal outcome releases it.
+    let awaiting_conflict_resolution = result
+        .as_ref()
+        .is_err_and(|error| error.code == "PATH_EXISTS");
+    if !awaiting_conflict_resolution {
+        let _ = gateway.release(&reference);
+    }
     result
 }
 

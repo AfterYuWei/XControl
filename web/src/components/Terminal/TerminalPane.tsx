@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useTerminal } from '@/hooks/useTerminal'
 import { useSessionChannel } from '@/hooks/useSessionChannel'
 import { useSessionStore } from '@/store/session'
@@ -9,13 +9,13 @@ import { sessionApi } from '@/api/session'
 import { ConnectionDialog } from '@/components/ConnectionDialog'
 import { useCompletion } from '@/hooks/useCompletion'
 import { useMobileTerminalGestures } from '@/hooks/useMobileTerminalGestures'
-import { IME_OPEN_THRESHOLD_PX, useImeInset } from '@/hooks/useMobileIme'
+import { IME_OPEN_THRESHOLD_PX, useImeInset, useMobileKeyboardVisible } from '@/hooks/useMobileIme'
 import { CompletionPanel } from '@/components/Terminal/CompletionPanel'
 import { AuthPromptDialog } from '@/components/Terminal/AuthPromptDialog'
 import { MobileTerminalToolbar } from '@/components/Terminal/MobileTerminalToolbar'
 import { TerminalActionMenu, type TerminalActionMenuItem } from '@/components/Terminal/TerminalActionMenu'
 import { TerminalSelectionHandles } from '@/components/Terminal/TerminalSelectionHandles'
-import { isMobileKeyboardOpen } from '@/lib/mobileViewport'
+import { getTerminalSelectionClientRect } from '@/lib/terminalSelection'
 import { isMobileRuntime } from '@/lib/platform'
 import { writeClipboardText, readClipboardText } from '@/lib/clipboard'
 import { toast } from 'sonner'
@@ -68,10 +68,21 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     clearTabHostKeyPrompt,
   } = useSessionStore()
   const { profiles } = useProfileStore()
-  const { fontSize, fontFamily, fontFamilyCN, terminalTheme, terminalPopupMenu, setFontSize } = useSettingsStore()
+  const {
+    fontSize,
+    mobileTerminalFontSize,
+    fontFamily,
+    fontFamilyCN,
+    terminalTheme,
+    terminalPopupMenu,
+    setFontSize,
+    setMobileTerminalFontSize,
+  } = useSettingsStore()
+  const isMobile = isMobileRuntime()
+  const effectiveFontSize = isMobile ? mobileTerminalFontSize : fontSize
 
   // 默认字体大小（用于显示相对变化）
-  const DEFAULT_FONT_SIZE = 7
+  const DEFAULT_FONT_SIZE = isMobile ? 10 : 7
 
   // 'default' 终端主题跟随应用深浅色（浅色切 one-light），显式选择的主题固定
   const resolvedAppTheme = useResolvedTheme()
@@ -88,7 +99,10 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   const [backendLogs, setBackendLogs] = useState<ConnectionLogEntry[]>([])
   const [hostKeyPrompt, setHostKeyPrompt] = useState<{ current?: string; known?: string }>({})
   const [authRequest, setAuthRequest] = useState<AuthenticationRequestPayload>()
-  const [fontSizeHint, setFontSizeHint] = useState<{ show: boolean; size: number }>({ show: false, size: fontSize })
+  const [fontSizeHint, setFontSizeHint] = useState<{ show: boolean; size: number }>({
+    show: false,
+    size: effectiveFontSize,
+  })
   const hasSpecificError = useRef(false)
   const fontSizeHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -137,8 +151,10 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   )
 
   const handleFontSizeChange = useCallback((delta: number) => {
-    const newSize = Math.min(32, Math.max(6, fontSize + delta))
-    setFontSize(newSize)
+    const minimum = isMobile ? 8 : 6
+    const newSize = Math.min(32, Math.max(minimum, effectiveFontSize + delta))
+    if (isMobile) setMobileTerminalFontSize(newSize)
+    else setFontSize(newSize)
 
     // 显示字体大小提示
     if (fontSizeHintTimeoutRef.current) {
@@ -148,7 +164,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     fontSizeHintTimeoutRef.current = setTimeout(() => {
       setFontSizeHint({ show: false, size: newSize })
     }, 1500)
-  }, [fontSize, setFontSize])
+  }, [effectiveFontSize, isMobile, setFontSize, setMobileTerminalFontSize])
 
   // Last size reported to the backend. Skipping duplicate reports avoids
   // flooding the WS during font load / fit retries, where xterm fires
@@ -166,7 +182,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
 
   const { write, writeln, clear, reset, fit, getSize, getTerminal, selectWordAt } = useTerminal({
     containerRef,
-    fontSize,
+    fontSize: effectiveFontSize,
     fontFamily,
     fontFamilyCN,
     terminalTheme: effectiveTerminalTheme,
@@ -183,13 +199,34 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
   // ── 移动端键盘门控与手势 ──────────────────────────────────────
   // 点按终端不再唤起软键盘：默认把 xterm 隐藏 textarea 置为 readOnly
   // （readOnly 聚焦不弹键盘），只有工具栏键盘开关显式放开才能呼出。
-  const isMobile = isMobileRuntime()
-  const [keyboardVisible, setKeyboardVisible] = useState(false)
   const [actionMenu, setActionMenu] = useState<{
     open: boolean
     position: { x: number; y: number }
     items: TerminalActionMenuItem[]
+    avoidRect?: { left: number; top: number; right: number; bottom: number }
   }>({ open: false, position: { x: 0, y: 0 }, items: [] })
+
+  const imeInset = useImeInset()
+  const keyboardVisible = useMobileKeyboardVisible(imeInset)
+  const lastOpenImeInsetRef = useRef(0)
+  const keyboardVisibleRef = useRef(keyboardVisible)
+  const toolbarIntentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [toolbarImeInset, setToolbarImeInset] = useState(0)
+
+  useEffect(() => {
+    keyboardVisibleRef.current = keyboardVisible
+    if (!isMobile) return
+    if (imeInset > IME_OPEN_THRESHOLD_PX) {
+      if (toolbarIntentTimerRef.current !== null) {
+        clearTimeout(toolbarIntentTimerRef.current)
+        toolbarIntentTimerRef.current = null
+      }
+      lastOpenImeInsetRef.current = imeInset
+      setToolbarImeInset(imeInset)
+    } else if (!keyboardVisible) {
+      setToolbarImeInset(0)
+    }
+  }, [imeInset, isMobile, keyboardVisible])
 
   useEffect(() => {
     if (!isMobile) return
@@ -199,56 +236,31 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
     if (!keyboardVisible && document.activeElement === textarea) textarea.blur()
   }, [isMobile, keyboardVisible, getTerminal])
 
-  // Android 返回键等系统行为收起键盘时，同步回开关状态：
-  // 原生 IME insets 为准（adjustPan 下 visualViewport 不收缩）；
-  // iOS/无插件环境回退 visualViewport 高度差判断。
-  const imeInset = useImeInset()
-  const imeSeenRef = useRef(false)
-  const imeWasOpenRef = useRef(false)
-  const toggleAtRef = useRef(0)
-  useEffect(() => {
-    if (imeInset > IME_OPEN_THRESHOLD_PX) {
-      imeSeenRef.current = true
-      imeWasOpenRef.current = true
-    }
-    if (imeInset === 0 && imeWasOpenRef.current) {
-      imeWasOpenRef.current = false
-      setKeyboardVisible(false)
-    }
-  }, [imeInset])
-  useEffect(() => {
-    if (!isMobile) return
-    const viewport = window.visualViewport
-    const sync = () => {
-      // 插件在报 IME 时完全交由上方 insets 逻辑；开关呼出后的 IME 动画
-      // 初期视口尚未收缩，避免被误判为关闭而立刻翻回
-      if (imeSeenRef.current) return
-      if (Date.now() - toggleAtRef.current < 800) return
-      if (viewport && !isMobileKeyboardOpen(viewport.height, window.innerHeight)) {
-        setKeyboardVisible(false)
-      }
-    }
-    viewport?.addEventListener('resize', sync)
-    viewport?.addEventListener('scroll', sync)
-    return () => {
-      viewport?.removeEventListener('resize', sync)
-      viewport?.removeEventListener('scroll', sync)
-    }
-  }, [isMobile])
-
   const toggleKeyboard = useCallback(() => {
     const terminal = getTerminal()
     const textarea = terminal?.textarea
     if (!textarea) return
-    toggleAtRef.current = Date.now()
+    if (toolbarIntentTimerRef.current !== null) {
+      clearTimeout(toolbarIntentTimerRef.current)
+      toolbarIntentTimerRef.current = null
+    }
     if (keyboardVisible) {
+      // 先让快捷栏与收键盘同时起步；按钮着色仍只跟随真实 IME 状态。
+      setToolbarImeInset(0)
       textarea.readOnly = true
       terminal.blur()
-      setKeyboardVisible(false)
     } else {
+      // adjustPan 下原生 IME 高度通常到动画末尾才送达。用上次真实高度
+      // （首次按屏幕比例估算）立即启动，再由原生值无缝校准终点。
+      const predictedInset = lastOpenImeInsetRef.current
+        || Math.min(360, Math.max(260, window.innerHeight * 0.4))
+      setToolbarImeInset(predictedInset)
+      toolbarIntentTimerRef.current = setTimeout(() => {
+        toolbarIntentTimerRef.current = null
+        if (!keyboardVisibleRef.current) setToolbarImeInset(0)
+      }, 700)
       textarea.readOnly = false
       terminal.focus()
-      setKeyboardVisible(true)
     }
   }, [getTerminal, keyboardVisible])
 
@@ -298,7 +310,12 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
               .catch(() => toast.error('无法读取剪贴板'))
           },
         })
-        setActionMenu({ open: true, position, items })
+        setActionMenu({
+          open: true,
+          position,
+          items,
+          avoidRect: getTerminalSelectionClientRect(terminal),
+        })
       },
     },
     isMobile,
@@ -511,6 +528,10 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
       }, 50)
     },
     onClose: () => {
+      // 移动端从终端返回会话列表会卸载画布并主动取消前端订阅，SSH
+      // 后端会话仍然存活，不能把这次组件清理误判成网络断线。
+      // 真正的 disconnect/error 仍由 handleSessionMessage 处理。
+      if (isMobile) return
       if (channelStatusRef.current === 'connected' && !hasSpecificError.current && !isReconnectingRef.current) {
         hasSpecificError.current = true
         setConnectionError('连接已断开')
@@ -635,13 +656,23 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
         clearTimeout(fontSizeHintTimeoutRef.current)
         fontSizeHintTimeoutRef.current = null
       }
+      if (toolbarIntentTimerRef.current !== null) {
+        clearTimeout(toolbarIntentTimerRef.current)
+        toolbarIntentTimerRef.current = null
+      }
     }
   }, [])
 
   const profileIcon = profiles.find((item) => item.id === tab.profileId)?.icon
 
   return (
-    <div className="terminal-pane-root relative flex h-full w-full flex-col" style={{ background: 'var(--term-bg)' }}>
+    <div
+      className="terminal-pane-root relative flex h-full w-full flex-col"
+      style={{
+        background: 'var(--term-bg)',
+        '--terminal-ime-inset': `${toolbarImeInset}px`,
+      } as CSSProperties}
+    >
       <div ref={containerRef} className="term-host relative min-h-0 flex-1">
         {isMobile && <TerminalSelectionHandles getTerminal={getTerminal} hostRef={containerRef} />}
       </div>
@@ -657,6 +688,7 @@ export function TerminalPane({ tab, isActive }: TerminalPaneProps) {
           position={actionMenu.position}
           containerRef={containerRef}
           items={actionMenu.items}
+          avoidRect={actionMenu.avoidRect}
           onClose={closeActionMenu}
         />
       )}

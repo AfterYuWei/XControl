@@ -68,6 +68,15 @@
   min-height: 0;
 }
 
+/* SSH 二级页是一张连续画布：安全区、Tab 区与终端使用同一主题背景。 */
+.mobile-layout.is-terminal-level,
+.mobile-layout.is-terminal-level .m-page,
+.mobile-layout .m-sess-terminal,
+.mobile-layout .m-sess-terminal .m-termbar,
+.mobile-layout .m-sess-terminal .m-session-content {
+  background: var(--mobile-terminal-bg);
+}
+
 .mobile-layout .m-page-fill {
   flex: 1;
   min-height: 0;
@@ -233,6 +242,12 @@
     inset 0 1px 0 var(--edge-highlight),
     0 0 0 1px var(--edge-soft),
     0 12px 36px -12px rgba(20, 24, 31, 0.35);
+}
+
+:root[data-eizhu-mobile-sheet-open] .mobile-layout .m-tabbar {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .mobile-layout .m-tab {
@@ -478,14 +493,16 @@
 .mobile-layout .m-sess-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .mobile-layout .m-sess-card {
+  min-height: 84px;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px;
+  padding: 14px 12px 14px 14px;
   border-radius: var(--m-radius-card);
   background: var(--m-fill);
   box-shadow: var(--m-specular);
@@ -493,33 +510,38 @@
   touch-action: manipulation;
   user-select: none;
   -webkit-user-select: none;
+  transition: transform 100ms ease-out, background-color 100ms ease-out;
 }
-.mobile-layout .m-sess-card:active { transform: scale(0.97); }
+.mobile-layout .m-sess-card:active {
+  transform: scale(0.985);
+  background: var(--bg-active);
+}
 
 .mobile-layout .m-sess-icon {
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
   flex: none;
   display: grid;
   place-items: center;
-  border-radius: var(--m-radius-row-icon);
+  border-radius: 13px;
   background: var(--surface-panel);
   color: var(--m-tint);
 }
-.mobile-layout .m-sess-icon svg { width: 18px; height: 18px; }
+.mobile-layout .m-sess-icon svg { width: 20px; height: 20px; }
 
 .mobile-layout .m-sess-copy {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 
 .mobile-layout .m-sess-name {
   overflow: hidden;
   color: var(--fg);
-  font: 600 0.9375rem/1.2 var(--sans);
+  font: 600 1rem/1.2 var(--sans);
+  letter-spacing: -0.01em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -527,7 +549,7 @@
 .mobile-layout .m-sess-meta {
   overflow: hidden;
   color: var(--fg-4);
-  font: 400 0.75rem/1.2 var(--mono);
+  font: 400 0.775rem/1.25 var(--mono);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -541,6 +563,31 @@
   font: 400 0.75rem/1.35 var(--sans);
 }
 
+.mobile-layout .m-sess-tail {
+  min-width: 54px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.mobile-layout .m-sess-latency {
+  min-height: 20px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--surface-panel);
+  color: var(--fg-4);
+  font: 550 0.6875rem/1 var(--mono);
+  white-space: nowrap;
+}
+.mobile-layout .m-sess-latency.is-good { color: var(--green); }
+.mobile-layout .m-sess-latency.is-fair { color: var(--yellow); }
+.mobile-layout .m-sess-latency.is-poor { color: var(--red); }
+.mobile-layout .m-sess-latency.is-pending { color: var(--fg-5); }
+
 .mobile-layout .m-sess-status {
   flex: none;
   display: inline-flex;
@@ -552,8 +599,8 @@
 }
 
 .mobile-layout .m-sess-close {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   flex: none;
   display: grid;
   place-items: center;
@@ -959,7 +1006,7 @@
     var(--m-specular),
     var(--shadow-floating);
   outline: none;
-  touch-action: none;
+  touch-action: pan-y;
 }
 
 :root[data-eizhu-mobile] .m-sheet-handle {
@@ -969,6 +1016,8 @@
   border-radius: 999px;
   background: var(--fg-5);
   opacity: 0.4;
+  touch-action: none;
+  cursor: grab;
 }
 
 :root[data-eizhu-mobile] .m-sheet-title {
@@ -1008,7 +1057,40 @@
 
 /* ─────────────── 终端 / SFTP 适配（复用桌面组件） ─────────────── */
 
-.mobile-main .term-wrap { height: 100%; margin: 0; border: 0; border-radius: 0; }
+.mobile-main .term-wrap {
+  height: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+/* 移动端 Tab 顶条与 SSH 画布视觉连续：组件仍分层，去掉桌面卡片阴影和活动缝。 */
+.mobile-layout .m-session-content .term-wrap { box-shadow: none; }
+.mobile-layout .m-session-content .term-wrap:not(.sftp-aware)::before { display: none; }
+
+/* xterm 自绘滚动条：保留 14px 透明触控区，只把可见滑块收成 3px。 */
+.mobile-layout .term-wrap .xterm-scrollable-element > .scrollbar.vertical {
+  background: transparent !important;
+}
+.mobile-layout .term-wrap .xterm-scrollable-element > .scrollbar.vertical > .slider {
+  right: 2px !important;
+  left: auto !important;
+  width: 3px !important;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fg) 30%, transparent) !important;
+}
+
+/* 兼容仍使用 WebView 原生滚动容器的 xterm 版本。 */
+.mobile-layout .term-wrap .xterm-viewport {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--fg) 30%, transparent) transparent;
+}
+.mobile-layout .term-wrap .xterm-viewport::-webkit-scrollbar { width: 3px; }
+.mobile-layout .term-wrap .xterm-viewport::-webkit-scrollbar-track { background: transparent; }
+.mobile-layout .term-wrap .xterm-viewport::-webkit-scrollbar-thumb {
+  min-height: 28px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fg) 30%, transparent);
+}
 .mobile-layout .sftp-panes { display: block; }
 .mobile-layout .sftp-pane { width: 100%; height: 100%; border: 0; border-radius: 0; }
 .mobile-layout .sftp-cell-size,
@@ -1046,8 +1128,388 @@
 .mobile-layout .sftp-tx-clear { padding: 6px; }
 .mobile-layout .sftp-tx-clear .sftp-tx-clear-label { display: none; }
 
+/* ─────────────── 手机 SFTP：独立触控界面 ─────────────── */
+
+.mobile-layout .msftp-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface-app);
+}
+
+.mobile-layout .msftp-header {
+  min-height: 56px;
+  flex: none;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  align-items: center;
+  padding: 4px 8px;
+  background: var(--m-glass-bar);
+  backdrop-filter: var(--m-glass-blur);
+  -webkit-backdrop-filter: var(--m-glass-blur);
+  box-shadow: var(--m-specular);
+  z-index: 3;
+}
+
+.mobile-layout .msftp-selection-header { grid-template-columns: 52px minmax(0, 1fr) auto; }
+.mobile-layout .msftp-selection-header > strong {
+  overflow: hidden;
+  color: var(--fg);
+  font: 600 1rem/1.2 var(--sans);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-layout .msftp-icon-btn,
+.mobile-layout .msftp-text-btn {
+  min-width: 44px;
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg-2);
+  touch-action: manipulation;
+}
+.mobile-layout .msftp-icon-btn:disabled { opacity: 0.28; }
+.mobile-layout .msftp-icon-btn:not(:disabled):active,
+.mobile-layout .msftp-text-btn:active { transform: scale(0.92); background: var(--bg-active); }
+.mobile-layout .msftp-icon-btn svg { width: 20px; height: 20px; }
+.mobile-layout .msftp-text-btn {
+  width: auto;
+  padding: 0 10px;
+  color: var(--accent);
+  font: 550 0.8125rem/1 var(--sans);
+}
+
+.mobile-layout .msftp-server-title {
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 0;
+  padding: 0 8px;
+  background: transparent;
+  color: var(--fg);
+  touch-action: manipulation;
+}
+.mobile-layout .msftp-server-title strong,
+.mobile-layout .msftp-server-title span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mobile-layout .msftp-server-title strong { font: 600 1.0625rem/1.1 var(--sans); letter-spacing: -0.01em; }
+.mobile-layout .msftp-server-title span { color: var(--fg-4); font: 450 0.6875rem/1 var(--sans); }
+.mobile-layout .msftp-header-actions { display: flex; }
+
+.mobile-layout .msftp-path {
+  width: calc(100% - 24px);
+  min-height: 38px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 12px 4px;
+  border: 0;
+  padding: 0 10px;
+  border-radius: 12px;
+  background: var(--m-fill);
+  box-shadow: var(--m-specular);
+  color: var(--fg-3);
+  touch-action: manipulation;
+}
+.mobile-layout .msftp-path:active { transform: scale(0.99); background: var(--bg-active); }
+.mobile-layout .msftp-path span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--fg-2);
+  font: 450 0.75rem/1 var(--mono);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-layout .msftp-list {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 10px calc(var(--m-tabbar-h) + var(--m-tabbar-inset) + 72px);
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.mobile-layout .msftp-list::-webkit-scrollbar { display: none; }
+
+.mobile-layout .msftp-row {
+  min-height: 62px;
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  border-radius: 14px;
+  color: var(--fg);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.mobile-layout .msftp-row + .msftp-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 52px;
+  right: 10px;
+  height: 1px;
+  background: var(--m-separator);
+  transform: scaleY(0.5);
+}
+.mobile-layout .msftp-row.is-selected { background: var(--accent-bg); }
+.mobile-layout .msftp-row-main {
+  min-width: 0;
+  min-height: 62px;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 0;
+  padding: 7px 4px 7px 8px;
+  border-radius: 14px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  touch-action: pan-y;
+}
+.mobile-layout .msftp-row-main:active { background: var(--bg-active); }
+.mobile-layout .msftp-row-icon {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--surface-panel);
+  color: var(--accent);
+}
+.mobile-layout .msftp-row.is-selected .msftp-row-icon { background: var(--accent); color: white; }
+.mobile-layout .msftp-row-more {
+  width: 44px;
+  min-height: 44px;
+  flex: none;
+  align-self: center;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg-4);
+  touch-action: manipulation;
+}
+.mobile-layout .msftp-row-more:active { background: var(--bg-active); color: var(--fg-2); }
+.mobile-layout .msftp-row-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 5px; }
+.mobile-layout .msftp-row-copy strong,
+.mobile-layout .msftp-row-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mobile-layout .msftp-row-copy strong { font: 550 0.9375rem/1.15 var(--sans); letter-spacing: -0.005em; }
+.mobile-layout .msftp-row-copy small { color: var(--fg-4); font: 400 0.7rem/1 var(--sans); }
+
+.mobile-layout .msftp-state {
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 24px;
+  color: var(--fg-4);
+  font: 450 0.8125rem/1.4 var(--sans);
+  text-align: center;
+}
+.mobile-layout .msftp-state > svg { width: 28px; height: 28px; opacity: 0.65; }
+.mobile-layout .msftp-state.is-error > svg,
+.mobile-layout .msftp-state.is-error strong { color: var(--red); }
+
+.mobile-layout .msftp-empty {
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px 28px calc(var(--m-tabbar-h) + var(--m-tabbar-inset));
+  text-align: center;
+}
+.mobile-layout .msftp-empty-icon { width: 64px; height: 64px; display: grid; place-items: center; border-radius: 20px; background: var(--m-fill); color: var(--accent); box-shadow: var(--m-specular); }
+.mobile-layout .msftp-empty strong { font: 600 1.0625rem/1.25 var(--sans); }
+.mobile-layout .msftp-empty p { max-width: 290px; margin: 0; color: var(--fg-4); font: 400 0.8125rem/1.5 var(--sans); }
+.mobile-layout .msftp-primary { min-height: 44px; border-radius: 999px; padding-inline: 18px; }
+
+.mobile-layout .msftp-selection-bar,
+.mobile-layout .msftp-transfer-summary {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(var(--m-tabbar-h) + var(--m-tabbar-inset) + 10px);
+  z-index: 12;
+  min-height: 58px;
+  border: 0;
+  border-radius: 20px;
+  background: var(--m-glass-heavy);
+  backdrop-filter: var(--m-glass-blur);
+  -webkit-backdrop-filter: var(--m-glass-blur);
+  box-shadow: var(--m-specular), 0 10px 30px rgb(0 0 0 / 18%);
+}
+.mobile-layout .msftp-selection-bar { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); padding: 4px; }
+.mobile-layout .msftp-selection-bar button {
+  min-width: 44px;
+  min-height: 50px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--fg-2);
+  font: 500 0.625rem/1 var(--sans);
+  touch-action: manipulation;
+}
+.mobile-layout .msftp-selection-bar button svg { width: 18px; height: 18px; }
+.mobile-layout .msftp-selection-bar button:active { transform: scale(0.93); background: var(--bg-active); }
+.mobile-layout .msftp-selection-bar button:disabled { opacity: 0.3; }
+.mobile-layout .msftp-selection-bar button.is-danger { color: var(--red); }
+
+.mobile-layout .msftp-transfer-summary {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 20px;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 12px;
+  color: var(--fg-2);
+  text-align: left;
+  touch-action: manipulation;
+}
+.mobile-layout .msftp-transfer-summary:active { transform: scale(0.985); }
+.mobile-layout .msftp-transfer-summary-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 11px; background: var(--accent-bg); color: var(--accent); }
+.mobile-layout .msftp-transfer-summary > span:nth-child(2) { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.mobile-layout .msftp-transfer-summary strong,
+.mobile-layout .msftp-transfer-summary small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mobile-layout .msftp-transfer-summary strong { font: 600 0.8125rem/1 var(--sans); }
+.mobile-layout .msftp-transfer-summary small { color: var(--fg-4); font: 400 0.6875rem/1 var(--sans); }
+.mobile-layout .msftp-transfer-summary > svg { width: 17px; color: var(--fg-5); }
+
+/* SFTP 内容型 Sheet 通过 Portal 渲染，因此限定在移动 runtime 根标记。 */
+:root[data-eizhu-mobile] .msftp-server-sheet,
+:root[data-eizhu-mobile] .msftp-directory-sheet,
+:root[data-eizhu-mobile] .msftp-transfer-sheet {
+  max-height: min(78dvh, calc(var(--mobile-viewport-height, 100dvh) - var(--safe-inset-top) - 20px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+:root[data-eizhu-mobile] .msftp-sheet-search { display: flex; align-items: center; gap: 8px; margin: 8px 12px; padding: 0 10px; border-radius: 12px; background: var(--bg-input); }
+:root[data-eizhu-mobile] .msftp-sheet-search > svg { width: 17px; color: var(--fg-4); }
+:root[data-eizhu-mobile] .msftp-sheet-search input { height: 42px; flex: 1; border: 0; padding: 0; background: transparent; box-shadow: none; }
+:root[data-eizhu-mobile] .msftp-server-list,
+:root[data-eizhu-mobile] .msftp-directory-list,
+:root[data-eizhu-mobile] .msftp-transfer-list { min-height: 0; flex: 1; overflow-y: auto; padding: 4px 10px 10px; overscroll-behavior: contain; }
+:root[data-eizhu-mobile] .msftp-sheet-label { padding: 12px 10px 6px; color: var(--fg-4); font: 550 0.6875rem/1 var(--sans); letter-spacing: 0.03em; }
+:root[data-eizhu-mobile] .msftp-server-list button,
+:root[data-eizhu-mobile] .msftp-directory-list > button {
+  width: 100%;
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  border: 0;
+  padding: 7px 10px;
+  border-radius: 13px;
+  background: transparent;
+  color: var(--fg-2);
+  text-align: left;
+  touch-action: manipulation;
+}
+:root[data-eizhu-mobile] .msftp-server-list button:active,
+:root[data-eizhu-mobile] .msftp-directory-list > button:active { background: var(--bg-active); }
+:root[data-eizhu-mobile] .msftp-server-list button.is-active { background: var(--accent-bg); color: var(--accent); }
+:root[data-eizhu-mobile] .msftp-server-list button > svg,
+:root[data-eizhu-mobile] .msftp-directory-list button > svg { width: 18px; height: 18px; flex: none; }
+:root[data-eizhu-mobile] .msftp-server-list button > span { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+:root[data-eizhu-mobile] .msftp-server-list strong,
+:root[data-eizhu-mobile] .msftp-server-list small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-eizhu-mobile] .msftp-server-list strong { font: 550 0.9375rem/1.1 var(--sans); }
+:root[data-eizhu-mobile] .msftp-server-list small { color: var(--fg-4); font: 400 0.6875rem/1 var(--mono); }
+:root[data-eizhu-mobile] .msftp-sheet-empty { min-height: 120px; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 20px; color: var(--fg-4); font: 450 0.8125rem/1.4 var(--sans); text-align: center; }
+:root[data-eizhu-mobile] .msftp-sheet-empty.is-error { flex-direction: column; color: var(--red); }
+:root[data-eizhu-mobile] .msftp-sheet-fallback { min-height: 44px; flex: none; border: 0; border-top: 1px solid var(--border-subtle); background: transparent; color: var(--accent); font: 550 0.8125rem/1 var(--sans); touch-action: manipulation; }
+
+:root[data-eizhu-mobile] .msftp-target-tabs { display: flex; gap: 6px; overflow-x: auto; padding: 7px 12px; }
+:root[data-eizhu-mobile] .msftp-target-tabs button { min-height: 36px; flex: none; border: 0; border-radius: 999px; padding: 0 13px; background: var(--bg-elevated); color: var(--fg-3); font: 500 0.75rem/1 var(--sans); }
+:root[data-eizhu-mobile] .msftp-target-tabs button.is-active { background: var(--accent-bg); color: var(--accent); }
+:root[data-eizhu-mobile] .msftp-picker-path { min-height: 48px; display: flex; align-items: center; gap: 6px; margin: 0 12px 4px; border-radius: 12px; background: var(--bg-input); }
+:root[data-eizhu-mobile] .msftp-picker-path button { width: 44px; height: 44px; display: grid; place-items: center; border: 0; background: transparent; color: var(--fg-2); }
+:root[data-eizhu-mobile] .msftp-picker-path button:disabled { opacity: 0.25; }
+:root[data-eizhu-mobile] .msftp-picker-path span { min-width: 0; flex: 1; overflow: hidden; font: 450 0.75rem/1 var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+:root[data-eizhu-mobile] .msftp-directory-list > button > span { min-width: 0; flex: 1; overflow: hidden; font: 500 0.875rem/1 var(--sans); text-overflow: ellipsis; white-space: nowrap; }
+:root[data-eizhu-mobile] .msftp-picker-error { margin: 4px 16px; color: var(--red); font: 450 0.75rem/1.35 var(--sans); }
+:root[data-eizhu-mobile] .msftp-sheet-footer { flex: none; display: flex; justify-content: flex-end; gap: 8px; padding: 10px 12px 12px; border-top: 1px solid var(--border-subtle); }
+:root[data-eizhu-mobile] .msftp-sheet-footer button { min-height: 44px; }
+
+:root[data-eizhu-mobile] .msftp-file-meta { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 14px 12px; color: var(--fg-4); font: 400 0.6875rem/1.3 var(--sans); }
+:root[data-eizhu-mobile] .msftp-file-meta code { width: 100%; overflow: hidden; padding: 9px; border-radius: 10px; background: var(--bg-input); color: var(--fg-3); font: 400 0.6875rem/1.35 var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+
+:root[data-eizhu-mobile] .msftp-transfer-item { min-height: 66px; display: flex; align-items: center; gap: 10px; padding: 8px 6px; }
+:root[data-eizhu-mobile] .msftp-transfer-item + .msftp-transfer-item { border-top: 1px solid var(--border-subtle); }
+:root[data-eizhu-mobile] .msftp-transfer-dir { width: 34px; height: 34px; flex: none; display: grid; place-items: center; border-radius: 10px; background: var(--accent-bg); color: var(--accent); }
+:root[data-eizhu-mobile] .msftp-transfer-dir svg { width: 17px; }
+:root[data-eizhu-mobile] .msftp-transfer-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 5px; }
+:root[data-eizhu-mobile] .msftp-transfer-copy strong,
+:root[data-eizhu-mobile] .msftp-transfer-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-eizhu-mobile] .msftp-transfer-copy strong { font: 550 0.8125rem/1 var(--sans); }
+:root[data-eizhu-mobile] .msftp-transfer-copy small { color: var(--fg-4); font: 400 0.65rem/1 var(--sans); }
+:root[data-eizhu-mobile] .msftp-transfer-copy > span { height: 3px; overflow: hidden; border-radius: 999px; background: var(--bg-elevated); }
+:root[data-eizhu-mobile] .msftp-transfer-copy i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+:root[data-eizhu-mobile] .msftp-transfer-item > button { width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 999px; background: transparent; color: var(--fg-4); }
+:root[data-eizhu-mobile] .msftp-transfer-item > button:active { background: var(--bg-active); }
+:root[data-eizhu-mobile] .msftp-transfer-item > button svg { width: 17px; }
+
+:root[data-eizhu-mobile] .msftp-conflict-copy { display: flex; align-items: flex-start; gap: 10px; margin: 12px 16px; color: var(--fg-3); font: 400 0.8125rem/1.45 var(--sans); }
+:root[data-eizhu-mobile] .msftp-conflict-copy svg { flex: none; color: var(--yellow); }
+:root[data-eizhu-mobile] .msftp-conflict-copy p { margin: 0; }
+:root[data-eizhu-mobile] .msftp-conflict-actions {
+  display: grid;
+  gap: 7px;
+  padding: 0 10px 12px;
+}
+:root[data-eizhu-mobile] .msftp-conflict-actions button { min-height: 54px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 4px; border: 0; border-radius: 13px; padding: 8px 12px; background: var(--bg-elevated); color: var(--fg); text-align: left; }
+:root[data-eizhu-mobile] .msftp-conflict-actions button:active { background: var(--bg-active); }
+:root[data-eizhu-mobile] .msftp-conflict-actions strong { font: 550 0.875rem/1 var(--sans); }
+:root[data-eizhu-mobile] .msftp-conflict-actions span { color: var(--fg-4); font: 400 0.6875rem/1 var(--sans); }
+
+.msftp-spin { animation: msftp-spin 0.8s linear infinite; }
+@keyframes msftp-spin { to { transform: rotate(360deg); } }
+
 /* 终端快捷键条（仅移动运行时渲染）：跟随终端主题底色，按键走令牌体系。
    布局 = [按键区可横滑] + [分隔线] + [键盘开关固定最右]。 */
+.mobile-layout .terminal-pane-root {
+  /* Android adjustPan 不缩小 WebView：用原生 IME 高度在布局内腾出空间，
+     并以 visualViewport 的逐帧高度提前跟随键盘动画。短过渡只负责吸收
+     厂商 ROM 的离散 insets 跳变，不加回弹，且反向时从当前画面继续。 */
+  --terminal-effective-ime-inset: max(
+    var(--terminal-ime-inset, 0px),
+    var(--mobile-viewport-ime-inset, 0px)
+  );
+  padding-bottom: max(
+    0px,
+    calc(var(--terminal-effective-ime-inset) - var(--safe-inset-bottom))
+  );
+  transition: padding-bottom 280ms cubic-bezier(0.32, 0.72, 0, 1);
+}
 .mobile-terminal-toolbar {
   flex: none;
   display: flex;
@@ -1056,8 +1518,6 @@
   padding: 6px max(8px, var(--safe-inset-left));
   border-top: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--term-bg) 86%, var(--surface-chrome));
-  /* 键盘弹出时工具栏抬升到 IME 上方（高度由原生 system-insets 提供） */
-  transform: translateY(calc(-1 * var(--m-keyboard-inset, 0px)));
 }
 .mobile-terminal-toolbar .m-termkeys-scroll {
   flex: 1 1 auto;
@@ -1126,27 +1586,27 @@
   display: flex;
   flex-direction: row;
   align-items: stretch;
-  padding: 3px;
-  border-radius: 12px;
+  padding: 2px;
+  border-radius: 10px;
   background: color-mix(in srgb, var(--surface-panel) 92%, transparent);
   border: 1px solid var(--border-subtle);
   box-shadow: 0 10px 28px rgb(0 0 0 / 22%), 0 2px 8px rgb(0 0 0 / 14%);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  transform-origin: bottom center;
 }
 .m-term-menu.is-swallowed { pointer-events: none; }
 .m-term-menu-item {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 9px 12px;
+  gap: 4px;
+  min-height: 32px;
+  padding: 6px 9px;
   border: 0;
-  border-radius: 9px;
+  border-radius: 8px;
   background: transparent;
   color: var(--fg-1);
-  font: 500 0.8125rem/1.2 var(--sans);
+  font: 500 0.75rem/1.1 var(--sans);
   white-space: nowrap;
   touch-action: manipulation;
 }
@@ -1169,18 +1629,36 @@
 }
 .m-term-handle {
   position: absolute;
-  width: 22px;
-  height: 22px;
-  border-radius: 50% 50% 50% 4px;
-  background: var(--m-tint);
-  box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
+  width: 36px;
+  height: 36px;
   pointer-events: auto;
   touch-action: none;
 }
-.m-term-handle.is-start { transform: rotate(-90deg); }
-.m-term-handle.is-end { transform: rotate(180deg); }
+.m-term-handle::before {
+  content: '';
+  position: absolute;
+  top: 10px;
+  left: 11px;
+  width: 14px;
+  height: 14px;
+  border: 1px solid color-mix(in srgb, white 72%, transparent);
+  border-radius: 50%;
+  background: var(--m-tint);
+  box-shadow: 0 2px 5px rgb(0 0 0 / 24%);
+}
+.m-term-handle::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 17px;
+  width: 2px;
+  height: 8px;
+  border-radius: 999px 999px 0 0;
+  background: var(--m-tint);
+}
 
 @media (prefers-reduced-motion: reduce) {
+  .mobile-layout .terminal-pane-root { transition: none; }
   .mobile-terminal-toolbar button:active { transform: none; }
   .mobile-layout .m-sess-card:active,
   .mobile-layout .m-sess-close:active { transform: none; }
@@ -1211,6 +1689,17 @@
     border-left: 1px solid var(--border-subtle);
   }
   .mobile-layout .m-settings-flow { max-width: 720px; margin: 0 auto; }
+  .mobile-layout .msftp-tablet-panes {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    overflow: hidden;
+  }
+  .mobile-layout .msftp-tablet-panes > .msftp-root { min-width: 0; flex: 1; }
+  .mobile-layout .msftp-tablet-panes > .sftp-divider { background: var(--border-subtle); }
+  .mobile-layout .msftp-tablet-panes .msftp-header { grid-template-columns: 48px minmax(0, 1fr) auto; }
+  .mobile-layout .msftp-tablet-panes .msftp-list { padding-inline: 12px; }
 }
 
 /* 触控目标（仅移动运行时） */
@@ -1227,6 +1716,12 @@
 
 @media (prefers-reduced-motion: reduce) {
   .mobile-layout .m-compactbar-fixed { animation: none; }
+  .mobile-layout .msftp-icon-btn:active,
+  .mobile-layout .msftp-text-btn:active,
+  .mobile-layout .msftp-path:active,
+  .mobile-layout .msftp-selection-bar button:active,
+  .mobile-layout .msftp-transfer-summary:active { transform: none; }
+  .msftp-spin { animation: none; }
 }
 
 @media (prefers-reduced-transparency: reduce) {
@@ -1239,7 +1734,10 @@
   .mobile-layout .m-tabbar { backdrop-filter: none; -webkit-backdrop-filter: none; }
   .mobile-layout .m-search,
   .mobile-layout .m-round-btn,
-  .mobile-layout .sftp-mobile-actions button { backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .mobile-layout .sftp-mobile-actions button,
+  .mobile-layout .msftp-header,
+  .mobile-layout .msftp-selection-bar,
+  .mobile-layout .msftp-transfer-summary { backdrop-filter: none; -webkit-backdrop-filter: none; }
   :root[data-eizhu-mobile] .m-sheet {
     background: var(--surface-overlay);
     backdrop-filter: none;

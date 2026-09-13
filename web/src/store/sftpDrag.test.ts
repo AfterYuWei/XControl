@@ -9,6 +9,7 @@ import {
   type SftpDropTarget,
 } from './sftp'
 import type { SftpEntry } from '@/types/sftp'
+import type { SftpTab } from './sftp'
 
 const entry = (path: string, isDir = false): SftpEntry => ({
   name: path.split('/').pop() || '/',
@@ -35,6 +36,40 @@ const target = (destDir: string, session = 'session-b'): SftpDropTarget => ({
 })
 
 describe('SFTP drag helpers', () => {
+  it('移动端初始化不暴露本机私有目录', () => {
+    const store = createSftpStore({ includeLocalTab: false })
+    expect(store.getState().leftTabs).toEqual([])
+    expect(store.getState().rightTabs).toEqual([])
+  })
+
+  it('切换服务器标签并支持多选、全选和取消', () => {
+    const store = createSftpStore({ includeLocalTab: false })
+    const makeTab = (id: string): SftpTab => ({
+      id,
+      server: { id, name: id, host: id, port: 22, username: 'root' },
+      sessionId: `session-${id}`,
+      path: '/',
+      view: 'list',
+      showHidden: false,
+      selected: new Set(),
+      entries: [entry('/one.txt'), entry('/two.txt')],
+      tree: null,
+      loading: false,
+      error: null,
+      fetchSeq: 0,
+    })
+    store.setState({ rightTabs: [makeTab('alpha'), makeTab('beta')], activeRightTabId: 'alpha' })
+
+    store.getState().setActiveTab('right', 'beta')
+    expect(store.getState().activeRightTabId).toBe('beta')
+    store.getState().select('right', '/one.txt', { additive: true })
+    expect(store.getState().rightTabs[1].selected).toEqual(new Set(['/one.txt']))
+    store.getState().selectAll('right')
+    expect(store.getState().rightTabs[1].selected).toEqual(new Set(['/one.txt', '/two.txt']))
+    store.getState().clearSelection('right')
+    expect(store.getState().rightTabs[1].selected.size).toBe(0)
+  })
+
   it('removes duplicate entries and descendants of selected folders', () => {
     expect(normalizeDraggedEntries([
       entry('/root/a', true),

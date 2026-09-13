@@ -100,7 +100,7 @@ export function MobileAppearancePanel() {
 /** 终端设置（移动端二级页）。 */
 export function MobileTerminalPanel() {
   const {
-    fontSize, setFontSize,
+    mobileTerminalFontSize, setMobileTerminalFontSize,
     fontFamily, setFontFamily,
     fontFamilyCN, setFontFamilyCN,
     terminalTheme, setTerminalTheme,
@@ -139,7 +139,13 @@ export function MobileTerminalPanel() {
           </Select>
         </FieldRow>
         <FieldRow label="终端字体大小" desc="终端文字的大小">
-          <Stepper value={fontSize} min={8} max={32} unit="px" onChange={setFontSize} />
+          <Stepper
+            value={mobileTerminalFontSize}
+            min={8}
+            max={32}
+            unit="px"
+            onChange={setMobileTerminalFontSize}
+          />
         </FieldRow>
         <FieldRow label="自动补全" desc="输入时显示浮动补全面板">
           <Switch checked={terminalPopupMenu} onCheckedChange={setTerminalPopupMenu} />

@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { Terminal } from '@xterm/xterm'
+import {
+  inclusiveSelectionEnd,
+  screenElementOf,
+  selectionSpecFromInclusiveCells,
+  terminalScreenMetrics,
+  type BufferCell,
+  type ScreenMetrics,
+} from '@/lib/terminalSelection'
 
 interface TerminalSelectionHandlesProps {
   getTerminal: () => Terminal | null
@@ -8,187 +16,204 @@ interface TerminalSelectionHandlesProps {
   hostRef: React.RefObject<HTMLElement | null>
 }
 
-interface SelectionRects {
-  start: { x: number; y: number }
-  end: { x: number; y: number }
+interface HandlePoint {
+  x: number
+  y: number
+  visible: boolean
 }
 
-const HANDLE_SIZE = 22
+interface SelectionRects {
+  start: HandlePoint
+  end: HandlePoint
+}
 
-function dispatchMouse(element: Element, type: 'mousedown' | 'mousemove' | 'mouseup', x: number, y: number, buttons: number) {
-  element.dispatchEvent(
-    new MouseEvent(type, {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-      detail: 1,
-      button: 0,
-      buttons,
-      clientX: x,
-      clientY: y,
-    }),
-  )
+const HANDLE_HIT_SIZE = 36
+const HANDLE_ATTACH_Y = 4
+
+function handleClientPoint(
+  cell: BufferCell,
+  edge: 'start' | 'end',
+  metrics: ScreenMetrics,
+): { x: number; y: number } {
+  return {
+    x: metrics.rect.left + (cell.x + (edge === 'end' ? 1 : 0)) * metrics.cellWidth,
+    y: metrics.rect.top + (cell.y - metrics.viewportY + 1) * metrics.cellHeight,
+  }
+}
+
+function cellFromHandlePoint(
+  clientX: number,
+  clientY: number,
+  edge: 'start' | 'end',
+  terminal: Terminal,
+  metrics: ScreenMetrics,
+): BufferCell {
+  const relativeX = clientX - metrics.rect.left
+  const relativeY = clientY - metrics.rect.top
+  const rawColumn = edge === 'start'
+    ? Math.floor(relativeX / metrics.cellWidth)
+    : Math.ceil(relativeX / metrics.cellWidth) - 1
+  const rawScreenRow = Math.ceil(relativeY / metrics.cellHeight) - 1
+  return {
+    x: Math.min(Math.max(rawColumn, 0), terminal.cols - 1),
+    y: Math.min(
+      Math.max(rawScreenRow, 0),
+      terminal.rows - 1,
+    ) + metrics.viewportY,
+  }
 }
 
 /**
- * 移动端终端选区手柄：双击选词后显示两个可拖动水滴（仿系统文本选择器）。
- * 拖动通过合成 mouse 事件驱动 xterm SelectionService，天然支持跨行选区。
- * canvas 终端无法使用系统选择器，此为替代实现。仅移动端渲染；
- * 滚动/选区消失时自动隐藏。
+ * 移动端终端选区手柄。拖动时直接把触点换算成 xterm buffer 坐标，
+ * 以另一端为固定锚点调用 terminal.select，因此跨行选择不依赖浏览器合成鼠标事件。
  */
 export function TerminalSelectionHandles({ getTerminal, hostRef }: TerminalSelectionHandlesProps) {
   const [rects, setRects] = useState<SelectionRects | null>(null)
   const draggingRef = useRef<'start' | 'end' | null>(null)
+  const fixedCellRef = useRef<BufferCell | null>(null)
+  const grabOffsetRef = useRef({ x: 0, y: 0 })
 
-  const screenElOf = useCallback(() => getTerminal()?.element?.querySelector('.xterm-screen') as HTMLElement | null, [getTerminal])
-
-  /** 由 xterm 选区（buffer 坐标）计算两个手柄在 host 内的像素位置 */
   const syncRects = useCallback(() => {
     const terminal = getTerminal()
     const host = hostRef.current
-    const screen = screenElOf()
-    if (!terminal || !host || !screen || !terminal.hasSelection()) {
+    const range = terminal?.getSelectionPosition()
+    if (!terminal || !host || !range || !terminal.hasSelection()) {
       setRects(null)
       return
     }
-    const sel = terminal.getSelectionPosition()
-    if (!sel) {
+    const metrics = terminalScreenMetrics(terminal)
+    if (!metrics) {
       setRects(null)
       return
     }
     const hostRect = host.getBoundingClientRect()
-    const screenRect = screen.getBoundingClientRect()
-    const cellWidth = screenRect.width / terminal.cols
-    const cellHeight = screenRect.height / terminal.rows
-    if (cellWidth <= 0 || cellHeight <= 0) {
-      setRects(null)
-      return
-    }
-    const viewportY = terminal.buffer.active.viewportY
-    const baseX = screenRect.left - hostRect.left
-    const baseY = screenRect.top - hostRect.top
+    const end = inclusiveSelectionEnd(range, terminal.cols)
+    const startClient = handleClientPoint(range.start, 'start', metrics)
+    const endClient = handleClientPoint(end, 'end', metrics)
+    const visible = (point: { x: number; y: number }) => (
+      point.y >= metrics.rect.top - 1 && point.y <= metrics.rect.bottom + 1
+    )
     setRects({
-      // 起点手柄：选区首单元格左上；终点手柄：末单元格右下（end.x 为排他列）
-      start: { x: baseX + sel.start.x * cellWidth, y: baseY + (sel.start.y - viewportY) * cellHeight },
-      end: { x: baseX + sel.end.x * cellWidth, y: baseY + (sel.end.y - viewportY + 1) * cellHeight },
+      start: {
+        x: startClient.x - hostRect.left,
+        y: startClient.y - hostRect.top,
+        visible: visible(startClient),
+      },
+      end: {
+        x: endClient.x - hostRect.left,
+        y: endClient.y - hostRect.top,
+        visible: visible(endClient),
+      },
     })
-  }, [getTerminal, hostRef, screenElOf])
+  }, [getTerminal, hostRef])
 
-  // xterm 在组件挂载后才由 useTerminal 创建，rAF 重试直到实例可用再挂事件
   useEffect(() => {
     let raf = 0
     let disposed = false
     let disposers: Array<{ dispose: () => void }> = []
+    let observer: ResizeObserver | undefined
     const tryAttach = () => {
       if (disposed) return
       const terminal = getTerminal()
-      if (!terminal) {
+      const host = hostRef.current
+      const screen = terminal ? screenElementOf(terminal) : null
+      if (!terminal || !host || !screen) {
         raf = requestAnimationFrame(tryAttach)
         return
       }
       disposers = [
         terminal.onSelectionChange(syncRects),
-        terminal.onScroll(() => setRects(null)),
+        terminal.onScroll(syncRects),
+        terminal.onRender(syncRects),
       ]
+      observer = new ResizeObserver(syncRects)
+      observer.observe(host)
+      observer.observe(screen)
+      syncRects()
     }
     tryAttach()
     return () => {
       disposed = true
       cancelAnimationFrame(raf)
-      disposers.forEach((d) => d.dispose())
+      observer?.disconnect()
+      disposers.forEach((disposer) => disposer.dispose())
     }
-  }, [getTerminal, syncRects])
+  }, [getTerminal, hostRef, syncRects])
 
-  /** 合成 mouse 序列的锚点：固定选区的另一端（拖起手柄锚在旧终点，反之亦然） */
-  const anchorFor = useCallback(
-    (which: 'start' | 'end'): { x: number; y: number } | null => {
-      const terminal = getTerminal()
-      const screen = screenElOf()
-      const sel = terminal?.getSelectionPosition()
-      if (!terminal || !screen || !sel) return null
-      const rect = screen.getBoundingClientRect()
-      const cellWidth = rect.width / terminal.cols
-      const cellHeight = rect.height / terminal.rows
-      const viewportY = terminal.buffer.active.viewportY
-      if (which === 'start') {
-        // 锚在当前选区终点（排他列 - 1 即最后一个被选中的单元格）
-        return {
-          x: rect.left + (sel.end.x - 0.5) * cellWidth,
-          y: rect.top + (sel.end.y - viewportY + 0.5) * cellHeight,
-        }
-      }
-      return {
-        x: rect.left + (sel.start.x + 0.5) * cellWidth,
-        y: rect.top + (sel.start.y - viewportY + 0.5) * cellHeight,
-      }
-    },
-    [getTerminal, screenElOf],
-  )
+  const updateSelection = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const edge = draggingRef.current
+    const fixed = fixedCellRef.current
+    const terminal = getTerminal()
+    if (!edge || !fixed || !terminal) return
+    const metrics = terminalScreenMetrics(terminal)
+    if (!metrics) return
+    const moving = cellFromHandlePoint(
+      event.clientX - grabOffsetRef.current.x,
+      event.clientY - grabOffsetRef.current.y,
+      edge,
+      terminal,
+      metrics,
+    )
+    const selection = selectionSpecFromInclusiveCells(fixed, moving, terminal.cols)
+    terminal.select(selection.column, selection.row, selection.length)
+  }, [getTerminal])
 
-  const handlePointerDown = useCallback(
-    (which: 'start' | 'end', event: React.PointerEvent<HTMLDivElement>) => {
-      const terminal = getTerminal()
-      const screen = screenElOf()
-      const anchor = anchorFor(which)
-      if (!terminal || !screen || !anchor) return
-      event.preventDefault()
-      event.stopPropagation()
-      draggingRef.current = which
-      event.currentTarget.setPointerCapture(event.pointerId)
-      // mousedown 在固定端起步，后续 mousemove 由 xterm 自行扩展选区（支持跨行）
-      dispatchMouse(screen, 'mousedown', anchor.x, anchor.y, 1)
-    },
-    [anchorFor, getTerminal, screenElOf],
-  )
+  const handlePointerDown = useCallback((
+    edge: 'start' | 'end',
+    event: React.PointerEvent<HTMLDivElement>,
+  ) => {
+    const terminal = getTerminal()
+    const range = terminal?.getSelectionPosition()
+    if (!terminal || !range) return
+    const metrics = terminalScreenMetrics(terminal)
+    if (!metrics) return
+    const start = { x: range.start.x, y: range.start.y }
+    const end = inclusiveSelectionEnd(range, terminal.cols)
+    const moving = edge === 'start' ? start : end
+    const handlePoint = handleClientPoint(moving, edge, metrics)
 
-  const handlePointerMove = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      const screen = screenElOf()
-      if (!screen || !draggingRef.current) return
-      dispatchMouse(screen, 'mousemove', event.clientX, event.clientY, 1)
-    },
-    [screenElOf],
-  )
+    event.preventDefault()
+    event.stopPropagation()
+    draggingRef.current = edge
+    fixedCellRef.current = edge === 'start' ? end : start
+    grabOffsetRef.current = {
+      x: event.clientX - handlePoint.x,
+      y: event.clientY - handlePoint.y,
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }, [getTerminal])
 
-  const handlePointerUp = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      const screen = screenElOf()
-      if (!screen || !draggingRef.current) return
-      draggingRef.current = null
-      dispatchMouse(screen, 'mouseup', event.clientX, event.clientY, 0)
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId)
-      }
-    },
-    [screenElOf],
-  )
+  const handlePointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!draggingRef.current) return
+    updateSelection(event)
+    draggingRef.current = null
+    fixedCellRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }, [updateSelection])
 
   if (!rects) return null
 
+  const renderHandle = (edge: 'start' | 'end', point: HandlePoint) => point.visible && (
+    <div
+      className={`m-term-handle is-${edge}`}
+      style={{
+        left: point.x - HANDLE_HIT_SIZE / 2,
+        top: point.y - HANDLE_ATTACH_Y,
+      }}
+      aria-hidden="true"
+      onPointerDown={(event) => handlePointerDown(edge, event)}
+      onPointerMove={updateSelection}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+    />
+  )
+
   return (
     <div className="m-term-select-layer" aria-hidden="true">
-      <div
-        className="m-term-handle is-start"
-        style={{
-          left: rects.start.x - HANDLE_SIZE / 2,
-          top: rects.start.y - HANDLE_SIZE + 4,
-        }}
-        onPointerDown={(event) => handlePointerDown('start', event)}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-      />
-      <div
-        className="m-term-handle is-end"
-        style={{
-          left: rects.end.x - HANDLE_SIZE / 2,
-          top: rects.end.y - 4,
-        }}
-        onPointerDown={(event) => handlePointerDown('end', event)}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-      />
+      {renderHandle('start', rects.start)}
+      {renderHandle('end', rects.end)}
     </div>
   )
 }

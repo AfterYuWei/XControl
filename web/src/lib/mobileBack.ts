@@ -22,13 +22,18 @@ export function consumeMobileBackNavigation(root: Document = document): boolean 
   }
 
   const active = root.activeElement
-  if (!isSearchInput(active)) return false
-  if (active.value) {
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
-    setter?.call(active, '')
-    active.dispatchEvent(new Event('input', { bubbles: true }))
-    active.dispatchEvent(new Event('change', { bubbles: true }))
+  if (isSearchInput(active)) {
+    if (active.value) {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      setter?.call(active, '')
+      active.dispatchEvent(new Event('input', { bubbles: true }))
+      active.dispatchEvent(new Event('change', { bubbles: true }))
+    }
+    active.blur()
+    return true
   }
-  active.blur()
-  return true
+
+  const sftpBack = new Event('eizhu:mobile-sftp-back', { bubbles: false, cancelable: true })
+  root.dispatchEvent(sftpBack)
+  return sftpBack.defaultPrevented
 }

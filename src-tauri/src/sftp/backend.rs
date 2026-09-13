@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::SystemTime};
 
 use chrono::{DateTime, Utc};
-use russh_sftp::client::SftpSession;
+use russh_sftp::{client::SftpSession, protocol::OpenFlags};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::{infrastructure::platform::local_files, ssh::transport::ConnectedRoute};
@@ -225,6 +225,28 @@ impl FileBackend {
                 .map_err(file_error),
             Self::Remote { sftp, .. } => sftp
                 .create(path)
+                .await
+                .map(|file| Box::new(file) as BackendWriter)
+                .map_err(sftp_error),
+        }
+    }
+
+    /// Create a new file for writing without replacing an entry that appeared
+    /// after conflict preflight.
+    pub async fn open_write_new(&self, path: &str) -> Result<BackendWriter, SftpError> {
+        match self {
+            Self::Local => tokio::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(local_files::path_from_api(path))
+                .await
+                .map(|file| Box::new(file) as BackendWriter)
+                .map_err(file_error),
+            Self::Remote { sftp, .. } => sftp
+                .open_with_flags(
+                    path,
+                    OpenFlags::CREATE | OpenFlags::EXCLUDE | OpenFlags::WRITE,
+                )
                 .await
                 .map(|file| Box::new(file) as BackendWriter)
                 .map_err(sftp_error),

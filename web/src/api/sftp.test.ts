@@ -9,6 +9,22 @@ import { sftpApi } from './sftp'
 afterEach(() => invokeMock.mockReset())
 
 describe('sftpApi', () => {
+  it.each(['ask', 'overwrite', 'rename', 'skip'] as const)(
+    '移动文档上传传递 %s 冲突策略',
+    async (conflictResolution) => {
+      invokeMock.mockResolvedValue({ tasks: [] })
+
+      await sftpApi.uploadDocument('session-1', 'document://one', '/srv', conflictResolution)
+
+      expect(invokeMock).toHaveBeenCalledWith('sftp_upload_document', {
+        sessionId: 'session-1',
+        reference: 'document://one',
+        destDir: '/srv',
+        conflictResolution,
+      })
+    },
+  )
+
   it('通过细粒度 Tauri command 发起跨会话传输', async () => {
     const response = { task_id: 'tx-1', method: 'relay', tasks: [] }
     invokeMock.mockResolvedValue(response)

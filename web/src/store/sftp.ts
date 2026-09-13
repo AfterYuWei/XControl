@@ -257,6 +257,7 @@ export interface SftpStore {
   refresh: (pane: PaneSide) => Promise<void>
   select: (pane: PaneSide, path: string, opts?: { additive?: boolean }) => void
   clearSelection: (pane: PaneSide) => void
+  selectAll: (pane: PaneSide) => void
   toggleView: (pane: PaneSide) => Promise<void>
   setView: (pane: PaneSide, v: SftpViewMode) => Promise<void>
   toggleShowHidden: (pane: PaneSide) => Promise<void>
@@ -282,6 +283,14 @@ export interface SftpStore {
   /** 桌面端外部文件拖入悬停（Tauri onDragDropEvent 驱动）。 */
   setExternalHover: (target: SftpDropTarget | null, count: number) => void
   resolveDirectoryDrop: (mode: DirectoryTransferMode | null) => Promise<void>
+  moveEntries: (pane: PaneSide, paths: string[], destDir: string) => Promise<void>
+  transferEntries: (
+    sourcePane: PaneSide,
+    paths: string[],
+    targetPane: PaneSide,
+    targetTabId: string,
+    destDir: string,
+  ) => Promise<void>
   cancelTransfer: (id: string) => Promise<void>
   clearCompleted: () => Promise<void>
 
@@ -342,16 +351,22 @@ function makeTab(server: SftpServer): SftpTab {
 /** The zustand store API type for an SFTP instance. */
 export type SftpStoreApi = StoreApi<SftpStore>
 
+export interface SftpStoreOptions {
+  /** Desktop starts with the local filesystem; mobile only exposes remote sessions. */
+  includeLocalTab?: boolean
+}
+
 /**
  * Create a fresh, INDEPENDENT SFTP store instance. Each SFTP tab gets its
  * own store so multiple SFTP pages never share state.
  */
-export function createSftpStore(): SftpStoreApi {
-  const initialLocalTab = makeTab(LOCAL_SERVER)
+export function createSftpStore(options: SftpStoreOptions = {}): SftpStoreApi {
+  const includeLocalTab = options.includeLocalTab ?? true
+  const initialLocalTab = includeLocalTab ? makeTab(LOCAL_SERVER) : null
 
   const api = createStore<SftpStore>((set, get) => ({
-    leftTabs: [initialLocalTab],
-    activeLeftTabId: initialLocalTab.id,
+    leftTabs: initialLocalTab ? [initialLocalTab] : [],
+    activeLeftTabId: initialLocalTab?.id ?? '',
     rightTabs: [],
     activeRightTabId: '',
 
@@ -442,6 +457,12 @@ export function createSftpStore(): SftpStoreApi {
 
     clearSelection: (pane) =>
       set(updateActiveTab(get(), pane, (t) => ({ ...t, selected: new Set() }))),
+
+    selectAll: (pane) =>
+      set(updateActiveTab(get(), pane, (t) => ({
+        ...t,
+        selected: new Set(t.entries.map((entry) => entry.path)),
+      }))),
 
     toggleView: async (pane) => {
       const { tabs, activeId } = tabsOf(get(), pane)
@@ -623,6 +644,34 @@ export function createSftpStore(): SftpStoreApi {
       set({ pendingDirectoryDrop: null })
       if (!pending || !mode) return
       await startExplicitTransfer(get, set, pending.drag, pending.target, mode)
+    },
+
+    moveEntries: async (pane, paths, destDir) => {
+      const tab = activeTabOf(get(), pane)
+      if (!tab?.sessionId || paths.length === 0) return
+      await runMove(get, set, {
+        sessionId: tab.sessionId,
+        paths,
+        destDir,
+        targetPane: pane,
+        targetTabId: tab.id,
+      })
+    },
+
+    transferEntries: async (sourcePane, paths, targetPane, targetTabId, destDir) => {
+      const source = activeTabOf(get(), sourcePane)
+      const target = tabsOf(get(), targetPane).tabs.find((tab) => tab.id === targetTabId)
+      if (!source?.sessionId || !target?.sessionId || paths.length === 0) return
+      await runTransfer(get, set, {
+        sourceSessionId: source.sessionId,
+        targetSessionId: target.sessionId,
+        paths,
+        destDir,
+        targetPane,
+        targetTabId,
+        direction: transferDirection(sourcePane, targetPane),
+        directoryMode: 'preserve',
+      })
     },
 
     dismissConflict: () => set({ pendingConflict: null }),

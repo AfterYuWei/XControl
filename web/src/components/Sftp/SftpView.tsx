@@ -14,6 +14,8 @@ import { useExternalDrop } from '@/hooks/useExternalDrop'
 import { sftpApi } from '@/api/sftp'
 import { HostKeyDialog } from './HostKeyDialog'
 import { isMobileRuntime } from '@/lib/platform'
+import { mobileSftpLayout, MOBILE_SFTP_TABLET_QUERY } from '@/lib/mobileSftp'
+import { MobileSftpView } from './MobileSftpView'
 
 /** SFTP file manager — symmetric dual-pane layout. Both panes are identical
  *  multi-server tab strips; the left pane starts connected to the local
@@ -25,9 +27,12 @@ import { isMobileRuntime } from '@/lib/platform'
  *  fully independent state & rendering. */
 export function SftpView() {
   const mobile = isMobileRuntime()
+  const [tablet, setTablet] = useState(() => mobile
+    && typeof window.matchMedia === 'function'
+    && mobileSftpLayout(window.matchMedia(MOBILE_SFTP_TABLET_QUERY).matches) === 'tablet')
   // One store per SftpView instance, created once via the lazy useState
   // initializer so it survives re-renders but is never recreated.
-  const [store] = useState<SftpStoreApi>(() => createSftpStore())
+  const [store] = useState<SftpStoreApi>(() => createSftpStore({ includeLocalTab: !mobile }))
 
   const [pickerPane, setPickerPane] = useState<PaneSide | null>(null)
 
@@ -35,6 +40,15 @@ export function SftpView() {
   useEffect(() => {
     store.getState().loadServers()
   }, [store])
+
+  useEffect(() => {
+    if (!mobile || typeof window.matchMedia !== 'function') return
+    const media = window.matchMedia(MOBILE_SFTP_TABLET_QUERY)
+    const update = () => setTablet(mobileSftpLayout(media.matches) === 'tablet')
+    update()
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [mobile])
 
   // 桌面端外部文件拖入（Tauri onDragDropEvent → OS 真实路径导入；浏览器走 HTML5）
   useExternalDrop(store)
@@ -97,13 +111,26 @@ export function SftpView() {
   return (
     <SftpStoreContext.Provider value={store}>
       <div className="sftp-root">
-        <div className="sftp-panes">
-          {!mobile && <FilePane pane="left" onPickServer={() => setPickerPane('left')} />}
-          {!mobile && <div className="sftp-divider" />}
-          <FilePane pane="right" onPickServer={() => setPickerPane('right')} />
-        </div>
-
-        <TransferQueue />
+        {mobile ? (
+          tablet ? (
+            <div className="msftp-tablet-panes">
+              <MobileSftpView pane="left" onPickServer={() => setPickerPane('left')} showTransferSummary={false} />
+              <div className="sftp-divider" />
+              <MobileSftpView pane="right" onPickServer={() => setPickerPane('right')} />
+            </div>
+          ) : (
+            <MobileSftpView pane="right" onPickServer={() => setPickerPane('right')} />
+          )
+        ) : (
+          <>
+            <div className="sftp-panes">
+              <FilePane pane="left" onPickServer={() => setPickerPane('left')} />
+              <div className="sftp-divider" />
+              <FilePane pane="right" onPickServer={() => setPickerPane('right')} />
+            </div>
+            <TransferQueue />
+          </>
+        )}
 
         <ServerPicker
           open={pickerPane !== null}

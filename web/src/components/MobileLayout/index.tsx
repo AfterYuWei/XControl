@@ -1,18 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { onBackButtonPress } from '@tauri-apps/api/app'
 import { TerminalView } from '@/components/Terminal'
 import { Toaster } from '@/components/ui/sonner'
 import { useProfileStore } from '@/store/profile'
 import { useSessionStore } from '@/store/session'
-import { useSettingsStore } from '@/store/settings'
+import { useResolvedTheme, useSettingsStore } from '@/store/settings'
 import { getPlatformCapabilities } from '@/lib/platform'
+import { getTerminalThemeMeta, resolveTerminalThemeId } from '@/lib/terminalThemes'
 import { consumeMobileBackNavigation } from '@/lib/mobileBack'
-import { isMobileKeyboardOpen } from '@/lib/mobileViewport'
-import { IME_OPEN_THRESHOLD_PX, useImeInset } from '@/hooks/useMobileIme'
+import { useImeInset, useMobileKeyboardVisible } from '@/hooks/useMobileIme'
 import { scheduleSilentMobileUpdateCheck } from '@/lib/mobileUpdate'
 import { toast } from 'sonner'
-import { MobileHeader } from './MobileHeader'
 import { MobileTabBar, type MobileSection } from './MobileTabBar'
 import { MobileEmpty } from './MobileEmpty'
 import { MobileHostList } from './MobileHostList'
@@ -34,10 +33,14 @@ export function MobileLayout() {
   // 会话 tab 的层级：list 卡片列表 / terminal 终端页（放这里供 Android back 先弹这一层）
   const [sessionsLevel, setSessionsLevel] = useState<'list' | 'terminal'>('list')
   const [settingsSub, setSettingsSub] = useState<MobileSettingsSubPage | null>(null)
-  const [keyboardOpen, setKeyboardOpen] = useState(false)
   const { fetchProfiles, fetchGroups } = useProfileStore()
   const { tabs, activeTabId, setActiveTab, openSftpTab, openVaultTab, closeTab } = useSessionStore()
   const theme = useSettingsStore((state) => state.theme)
+  const terminalTheme = useSettingsStore((state) => state.terminalTheme)
+  const resolvedAppTheme = useResolvedTheme()
+  const mobileTerminalBackground = getTerminalThemeMeta(
+    resolveTerminalThemeId(terminalTheme, resolvedAppTheme),
+  ).theme.background ?? '#0A0A0A'
   const activeTab = tabs.find((tab) => tab.id === activeTabId)
   const terminalTabs = tabs.filter((tab) => tab.kind === 'terminal')
   const connectedTabs = terminalTabs.filter((tab) => tab.status === 'connected').length
@@ -97,24 +100,23 @@ export function MobileLayout() {
   // 键盘检测：原生 IME insets 优先（adjustPan 下视口不收缩，visualViewport
   // 不可靠），插件不可用（iOS/浏览器预览）时回退视口高度差判断。
   const imeInset = useImeInset()
-  const [imeSeen, setImeSeen] = useState(false)
-  useEffect(() => {
-    if (imeInset > 0) setImeSeen(true)
-  }, [imeInset])
-  // 一旦确认插件在报 IME（出现过非零值），键盘开合完全以原生 insets 为准
-  useEffect(() => {
-    if (imeSeen) setKeyboardOpen(imeInset > IME_OPEN_THRESHOLD_PX)
-  }, [imeSeen, imeInset])
+  const keyboardOpen = useMobileKeyboardVisible(imeInset)
 
   useEffect(() => {
     const viewport = window.visualViewport
     const updateViewport = () => {
       const viewportHeight = viewport?.height ?? window.innerHeight
-      document.documentElement.style.setProperty(
+      const root = document.documentElement
+      root.style.setProperty(
         '--mobile-viewport-height',
         `${viewportHeight}px`,
       )
-      if (!imeSeen) setKeyboardOpen(isMobileKeyboardOpen(viewportHeight, window.innerHeight))
+      // visualViewport 会跟随 Android 键盘动画逐帧变化，比原生 IME command
+      // 的最终值更早到达；直接写 CSS 变量可避免 React 高频重渲染。
+      root.style.setProperty(
+        '--mobile-viewport-ime-inset',
+        `${Math.max(0, window.innerHeight - viewportHeight)}px`,
+      )
     }
     updateViewport()
     viewport?.addEventListener('resize', updateViewport)
@@ -123,8 +125,9 @@ export function MobileLayout() {
       viewport?.removeEventListener('resize', updateViewport)
       viewport?.removeEventListener('scroll', updateViewport)
       document.documentElement.style.removeProperty('--mobile-viewport-height')
+      document.documentElement.style.removeProperty('--mobile-viewport-ime-inset')
     }
-  }, [imeSeen])
+  }, [])
 
   // 新建终端 tab（发起新连接）时自动进入会话终端页；切换/关闭已有 tab 不打扰当前层级。
   // SFTP/Vault 由底栏导航显式切页，不能跟随 activeTab 的通用回退自动跳转：
@@ -210,6 +213,7 @@ export function MobileLayout() {
       className={`mobile-layout mobile-current-${section} ${
         section === 'sessions' && sessionsLevel === 'terminal' ? 'is-terminal-level' : ''
       } ${keyboardOpen ? 'is-keyboard-open' : ''}`}
+      style={{ '--mobile-terminal-bg': mobileTerminalBackground } as CSSProperties}
       role="application"
       aria-label="eizhu 移动端"
     >
@@ -253,7 +257,6 @@ export function MobileLayout() {
 
             {section === 'files' && (
               <div className="m-page-stack">
-                <MobileHeader variant="compact" title="文件" />
                 <div className="m-page-fill"><TerminalView /></div>
               </div>
             )}

@@ -37,4 +37,13 @@ describe('Android 返回键消费顺序', () => {
   it('没有临时界面时交给页面级返回逻辑', () => {
     expect(consumeMobileBackNavigation()).toBe(false)
   })
+
+  it('允许移动 SFTP 先消费目录级返回', () => {
+    const handler = (event: Event) => event.preventDefault()
+    document.addEventListener('eizhu:mobile-sftp-back', handler)
+
+    expect(consumeMobileBackNavigation()).toBe(true)
+
+    document.removeEventListener('eizhu:mobile-sftp-back', handler)
+  })
 })

@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, MonitorSmartphone, MoreVertical, Plus, RefreshCw, X, XCircle } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronLeft, MonitorSmartphone, MoreVertical, Plus, RefreshCw, Search, X, XCircle } from 'lucide-react'
 import { MobileHeader } from './MobileHeader'
 import { MobileEmpty } from './MobileEmpty'
 import { MobileSheet, type MobileSheetItem } from './MobileSheet'
@@ -19,6 +19,8 @@ const STATUS_LABELS = {
   reconnecting: '重连中',
 } as const
 
+const LATENCY_REFRESH_MS = 30_000
+
 export type MobileSessionsLevel = 'list' | 'terminal'
 
 interface MobileSessionsPageProps {
@@ -31,14 +33,33 @@ interface MobileSessionsPageProps {
 }
 
 export function MobileSessionsPage({ level, onOpenSession, onBackToList, onGoHosts, onCloseTab }: MobileSessionsPageProps) {
-  const { tabs, activeTabId, updateTabStatus, markTabError } = useSessionStore()
+  const { tabs, activeTabId, updateTabStatus, updateTabLatency, markTabError } = useSessionStore()
   const profiles = useProfileStore((state) => state.profiles)
   const scrollRef = useRef<HTMLDivElement>(null)
   const collapsed = useHeaderCollapse(scrollRef)
   const [sheetTabId, setSheetTabId] = useState<string | null>(null)
+  const [sessionQuery, setSessionQuery] = useState('')
 
   const terminalTabs = useMemo(() => tabs.filter((tab) => tab.kind === 'terminal'), [tabs])
+  const visibleTerminalTabs = useMemo(() => {
+    const query = sessionQuery.trim().toLocaleLowerCase()
+    if (!query) return terminalTabs
+    return terminalTabs.filter((tab) => {
+      const searchable = [
+        tab.profileName,
+        tab.host,
+        tab.username,
+        tab.port?.toString(),
+        STATUS_LABELS[tab.status],
+      ]
+      return searchable.some((value) => value?.toLocaleLowerCase().includes(query))
+    })
+  }, [sessionQuery, terminalTabs])
   const connectedCount = terminalTabs.filter((tab) => tab.status === 'connected').length
+  const connectedSessionKey = terminalTabs
+    .filter((tab) => tab.status === 'connected' && tab.sessionId)
+    .map((tab) => `${tab.id}:${tab.sessionId}`)
+    .join('|')
 
   const profileOf = (tab: SessionTab) => profiles?.find((item) => item.id === tab.profileId)
 
@@ -71,6 +92,33 @@ export function MobileSessionsPage({ level, onOpenSession, onBackToList, onGoHos
     items.push({ id: 'close', label: '关闭会话', icon: XCircle, danger: true, onSelect: () => onCloseTab(sheetTab.id) })
     return items
   }, [sheetTab, onCloseTab, reconnect])
+
+  // 终端画布在会话列表页不会挂载，因此由列表主动测量 SSH ping；进入列表后
+  // 立即给出首个结果，随后低频刷新。只更新前端 store，不触发后端搜索。
+  useEffect(() => {
+    if (level !== 'list' || !connectedSessionKey) return
+    let disposed = false
+
+    const measureConnectedSessions = () => {
+      const connectedTabs = useSessionStore.getState().tabs.filter(
+        (tab) => tab.kind === 'terminal' && tab.status === 'connected' && tab.sessionId,
+      )
+      connectedTabs.forEach((tab) => {
+        const startedAt = performance.now()
+        void sessionApi.ping(tab.sessionId!).then(() => {
+          if (disposed) return
+          updateTabLatency(tab.id, Math.max(1, Math.round(performance.now() - startedAt)))
+        }).catch(() => undefined)
+      })
+    }
+
+    measureConnectedSessions()
+    const timer = window.setInterval(measureConnectedSessions, LATENCY_REFRESH_MS)
+    return () => {
+      disposed = true
+      window.clearInterval(timer)
+    }
+  }, [connectedSessionKey, level, updateTabLatency])
 
   if (level === 'terminal') {
     return (
@@ -160,6 +208,22 @@ export function MobileSessionsPage({ level, onOpenSession, onBackToList, onGoHos
       />
       <div className="m-page-scroll" ref={scrollRef}>
         <div className="m-page-body">
+          <label className="m-search">
+            <Search aria-hidden="true" />
+            <input
+              type="search"
+              value={sessionQuery}
+              placeholder="搜索名称、地址或用户"
+              aria-label="搜索会话"
+              onChange={(event) => setSessionQuery(event.target.value)}
+            />
+            {sessionQuery && (
+              <button type="button" className="m-search-clear" aria-label="清除搜索" onClick={() => setSessionQuery('')}>
+                <X size={14} />
+              </button>
+            )}
+          </label>
+
           {terminalTabs.length === 0 ? (
             <MobileEmpty
               icon={MonitorSmartphone}
@@ -167,52 +231,76 @@ export function MobileSessionsPage({ level, onOpenSession, onBackToList, onGoHos
               description="从主机页选择一台服务器连接。"
               action={<button type="button" className="m-empty-action" onClick={onGoHosts}>选择主机</button>}
             />
+          ) : visibleTerminalTabs.length === 0 ? (
+            <MobileEmpty
+              icon={Search}
+              title="未找到相关会话"
+              description="试试其他名称、地址或用户名。"
+            />
           ) : (
             <div className="m-sess-list">
-              {terminalTabs.map((tab) => (
-                <div
-                  key={tab.id}
-                  className="m-sess-card"
-                  role="button"
-                  tabIndex={0}
-                  onPointerDown={() => onOpenSession(tab.id)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault()
-                      onOpenSession(tab.id)
-                    }
-                  }}
-                >
-                  <span className="m-sess-icon">
-                    <ServerIcon iconKey={profileOf(tab)?.icon} size={18} />
-                  </span>
-                  <div className="m-sess-copy">
-                    <strong className="m-sess-name">{tab.profileName}</strong>
-                    <span className="m-sess-meta">
-                      {tab.username || 'root'}@{tab.host || '—'}{tab.port ? `:${tab.port}` : ''}
-                      {tab.status === 'connected' && typeof tab.latency === 'number' ? ` · ${tab.latency}ms` : ''}
-                    </span>
-                    {tab.status === 'error' && tab.errorMessage && (
-                      <span className="m-sess-error">{tab.errorMessage}</span>
-                    )}
-                  </div>
-                  <span className="m-sess-status">
-                    <span className={`m-dot is-${tab.status}`} />
-                    {STATUS_LABELS[tab.status]}
-                  </span>
-                  <button
-                    type="button"
-                    className="m-sess-close"
-                    aria-label={`关闭 ${tab.profileName}`}
-                    onPointerDown={(event) => {
-                      event.stopPropagation()
-                      onCloseTab(tab.id)
+              {visibleTerminalTabs.map((tab) => {
+                const latency = tab.status === 'connected' && typeof tab.latency === 'number'
+                  ? tab.latency
+                  : null
+                const latencyTone = latency === null
+                  ? 'pending'
+                  : latency < 100
+                    ? 'good'
+                    : latency < 300
+                      ? 'fair'
+                      : 'poor'
+                return (
+                  <div
+                    key={tab.id}
+                    className="m-sess-card"
+                    role="button"
+                    tabIndex={0}
+                    onPointerDown={() => onOpenSession(tab.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        onOpenSession(tab.id)
+                      }
                     }}
                   >
-                    <X size={14} />
-                  </button>
-                </div>
-              ))}
+                    <span className="m-sess-icon">
+                      <ServerIcon iconKey={profileOf(tab)?.icon} size={20} />
+                    </span>
+                    <div className="m-sess-copy">
+                      <strong className="m-sess-name">{tab.profileName}</strong>
+                      <span className="m-sess-meta">
+                        {tab.username || 'root'}@{tab.host || '—'}{tab.port ? `:${tab.port}` : ''}
+                      </span>
+                      {tab.status === 'error' && tab.errorMessage && (
+                        <span className="m-sess-error">{tab.errorMessage}</span>
+                      )}
+                    </div>
+                    <div className="m-sess-tail">
+                      {tab.status === 'connected' && (
+                        <span className={`m-sess-latency is-${latencyTone}`}>
+                          {latency === null ? '测量中' : `${latency} ms`}
+                        </span>
+                      )}
+                      <span className="m-sess-status">
+                        <span className={`m-dot is-${tab.status}`} />
+                        {STATUS_LABELS[tab.status]}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="m-sess-close"
+                      aria-label={`关闭 ${tab.profileName}`}
+                      onPointerDown={(event) => {
+                        event.stopPropagation()
+                        onCloseTab(tab.id)
+                      }}
+                    >
+                      <X size={15} />
+                    </button>
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>

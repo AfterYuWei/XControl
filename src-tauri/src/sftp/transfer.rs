@@ -76,7 +76,7 @@ pub(super) struct TransferManager {
 
 #[derive(Debug, Serialize)]
 pub(crate) struct SftpUploadResponse {
-    tasks: Vec<TransferTask>,
+    pub(crate) tasks: Vec<TransferTask>,
 }
 
 #[derive(Debug, Serialize)]
@@ -504,6 +504,17 @@ fn validate_upload_name(name: &str) -> Result<(), CommandError> {
     Ok(())
 }
 
+fn validate_conflict_resolution(resolution: &str) -> Result<(), CommandError> {
+    if matches!(resolution, "ask" | "overwrite" | "rename" | "skip") {
+        Ok(())
+    } else {
+        Err(CommandError::new(
+            "VALIDATION",
+            "invalid conflict_resolution",
+        ))
+    }
+}
+
 pub(crate) async fn sftp_upload_begin(
     state: &SftpService,
     session_id: String,
@@ -512,21 +523,34 @@ pub(crate) async fn sftp_upload_begin(
     overwrite: bool,
     size: u64,
 ) -> Result<SftpUploadBeginResponse, CommandError> {
+    sftp_upload_begin_with_resolution(
+        state,
+        session_id,
+        name,
+        dest_dir,
+        if overwrite { "overwrite" } else { "ask" },
+        size,
+    )
+    .await?
+    .ok_or_else(|| CommandError::new("INTERNAL", "upload was unexpectedly skipped"))
+}
+
+pub(crate) async fn sftp_upload_begin_with_resolution(
+    state: &SftpService,
+    session_id: String,
+    name: String,
+    dest_dir: String,
+    conflict_resolution: &str,
+    size: u64,
+) -> Result<Option<SftpUploadBeginResponse>, CommandError> {
     validate_upload_name(&name)?;
+    validate_conflict_resolution(conflict_resolution)?;
     let (session, backend) = state.backend(&session_id).await?;
     let destination_dir = clean_path(&dest_dir);
     backend
         .mkdir_all(&destination_dir)
         .await
         .map_err(internal)?;
-    let destination = join_path(&destination_dir, &name);
-    if !overwrite && backend.stat(&destination).await.is_ok() {
-        return Err(CommandError::new(
-            "PATH_EXISTS",
-            format!("file already exists: {destination}"),
-        ));
-    }
-
     let permit = state
         .transfers
         .semaphore
@@ -534,10 +558,61 @@ pub(crate) async fn sftp_upload_begin(
         .acquire_owned()
         .await
         .map_err(|_| CommandError::new("INTERNAL", "transfer manager stopped"))?;
-    let writer = backend.open_write(&destination).await.map_err(internal)?;
+    let requested_destination = join_path(&destination_dir, &name);
+    let (destination, writer) = match conflict_resolution {
+        "overwrite" => {
+            let destination =
+                resolve_destination(&backend, requested_destination, conflict_resolution)
+                    .await
+                    .map_err(internal)?
+                    .expect("overwrite always resolves a destination");
+            let writer = backend.open_write(&destination).await.map_err(internal)?;
+            (destination, writer)
+        }
+        "rename" => {
+            let mut destination = if backend.stat(&requested_destination).await.is_ok() {
+                auto_rename(&backend, &requested_destination)
+                    .await
+                    .map_err(internal)?
+            } else {
+                requested_destination.clone()
+            };
+            loop {
+                match backend.open_write_new(&destination).await {
+                    Ok(writer) => break (destination, writer),
+                    Err(_) if backend.stat(&destination).await.is_ok() => {
+                        destination = auto_rename(&backend, &requested_destination)
+                            .await
+                            .map_err(internal)?;
+                    }
+                    Err(error) => return Err(internal(error)),
+                }
+            }
+        }
+        "ask" | "skip" => {
+            if backend.stat(&requested_destination).await.is_ok() {
+                if conflict_resolution == "skip" {
+                    return Ok(None);
+                }
+                return Err(upload_path_exists(&requested_destination));
+            }
+            match backend.open_write_new(&requested_destination).await {
+                Ok(writer) => (requested_destination, writer),
+                Err(_) if backend.stat(&requested_destination).await.is_ok() => {
+                    if conflict_resolution == "skip" {
+                        return Ok(None);
+                    }
+                    return Err(upload_path_exists(&requested_destination));
+                }
+                Err(error) => return Err(internal(error)),
+            }
+        }
+        _ => unreachable!("validated conflict resolution"),
+    };
+    let task_name = base_name(&destination);
     let transfer = state
         .transfers
-        .create(session_id.clone(), name.clone(), "upload", size)
+        .create(session_id.clone(), task_name, "upload", size)
         .await;
     TransferManager::set_transferring(&transfer).await;
     let upload_id = format!("ul-{}", uuid::Uuid::new_v4());
@@ -556,10 +631,15 @@ pub(crate) async fn sftp_upload_begin(
             _permit: permit,
         }),
     );
-    Ok(SftpUploadBeginResponse {
+    Ok(Some(SftpUploadBeginResponse {
         upload_id,
         tasks: vec![TransferManager::snapshot(&transfer).await],
-    })
+    }))
+}
+
+fn upload_path_exists(destination: &str) -> CommandError {
+    CommandError::new("PATH_EXISTS", format!("file already exists: {destination}"))
+        .with_details(serde_json::json!({ "dest_path": destination }))
 }
 
 pub(crate) async fn upload_chunk(
@@ -1786,6 +1866,44 @@ mod tests {
 
     impl SftpEventSink for TestEvents {
         fn emit_sftp(&self, _event_type: &'static str, _payload: serde_json::Value) {}
+    }
+
+    #[test]
+    fn upload_conflict_resolution_rejects_unknown_values() {
+        for resolution in ["ask", "overwrite", "rename", "skip"] {
+            assert!(validate_conflict_resolution(resolution).is_ok());
+        }
+        let error = validate_conflict_resolution("replace").unwrap_err();
+        assert_eq!(error.code, "VALIDATION");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn upload_destination_supports_rename_skip_and_overwrite() {
+        let directory = tempfile::tempdir().unwrap();
+        let original = directory.path().join("report.txt");
+        tokio::fs::write(&original, b"old").await.unwrap();
+        let backend = FileBackend::Local;
+        let original_api = original.to_string_lossy().into_owned();
+
+        assert!(backend.open_write_new(&original_api).await.is_err());
+        assert_eq!(tokio::fs::read(&original).await.unwrap(), b"old");
+
+        let renamed = resolve_destination(&backend, original_api.clone(), "rename")
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(renamed.ends_with("report (1).txt"));
+        assert!(resolve_destination(&backend, original_api.clone(), "skip")
+            .await
+            .unwrap()
+            .is_none());
+        let overwritten = resolve_destination(&backend, original_api.clone(), "overwrite")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(overwritten, original_api);
+        assert!(!original.exists());
     }
 
     #[tokio::test]

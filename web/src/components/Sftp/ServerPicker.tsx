@@ -10,6 +10,7 @@ import { resolveGroupIcon } from '@/lib/groupIcons'
 import { groupApi } from '@/api/group'
 import type { Group } from '@/types/group'
 import type { SftpServer } from '@/types/sftp'
+import { isMobileRuntime } from '@/lib/platform'
 
 interface ServerPickerProps {
   open: boolean
@@ -80,7 +81,7 @@ export function ServerPicker({ open, pane, onClose }: ServerPickerProps) {
         aria-selected={isSelected}
         tabIndex={0}
         className={`sftp-server-card ${isRecommended ? 'recommended' : ''} ${isSelected ? 'selected' : ''}`}
-        onClick={() => setSelectedId(s.id)}
+        onClick={() => isMobileRuntime() ? handleConnect(s) : setSelectedId(s.id)}
         onDoubleClick={() => handleConnect(s)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -126,7 +127,7 @@ export function ServerPicker({ open, pane, onClose }: ServerPickerProps) {
           </Button>
         </div>
         <div className="sftp-picker-sub">
-          单击选中服务器，双击进行连接。当前终端会话的服务器已高亮。
+          {isMobileRuntime() ? '点击服务器即可连接。' : '单击选中服务器，双击进行连接。'}当前终端会话的服务器已高亮。
         </div>
         <div className="sftp-picker-list">
           {grouped.map(({ group, list }) => {

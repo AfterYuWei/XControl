@@ -9,7 +9,9 @@ const DEFAULT_UPDATE_CHANNEL: UpdateChannel = configuredBuildChannel === 'test' 
 
 interface SettingsStore {
   theme: Theme
+  /** 桌面终端字号；移动端使用独立设置，避免跨平台互相覆盖。 */
   fontSize: number
+  mobileTerminalFontSize: number
   fontFamily: string
   fontFamilyCN: string
   sidebarWidth: number
@@ -29,6 +31,7 @@ interface SettingsStore {
   setTheme: (theme: Theme) => void
   toggleTheme: () => void
   setFontSize: (size: number) => void
+  setMobileTerminalFontSize: (size: number) => void
   setFontFamily: (family: string) => void
   setFontFamilyCN: (family: string) => void
   setSidebarWidth: (width: number) => void
@@ -101,6 +104,7 @@ export const useSettingsStore = create<SettingsStore>()(
     (set, get) => ({
       theme: 'system',
       fontSize: 7,
+      mobileTerminalFontSize: 10,
       fontFamily: "'JetBrains Mono'",
       fontFamilyCN: "'Noto Sans SC'",
       sidebarWidth: 240,
@@ -125,6 +129,7 @@ export const useSettingsStore = create<SettingsStore>()(
         applyTheme(next)
       },
       setFontSize: (fontSize) => set({ fontSize }),
+      setMobileTerminalFontSize: (mobileTerminalFontSize) => set({ mobileTerminalFontSize }),
       setFontFamily: (fontFamily) => set({ fontFamily }),
       setFontFamilyCN: (fontFamilyCN) => set({ fontFamilyCN }),
       setSidebarWidth: (sidebarWidth) => {
